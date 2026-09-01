@@ -2,6 +2,7 @@ import "./canvas.keal"
 import "./color.keal"
 import "./geom.keal"
 import "./text.keal"
+import "./theme.keal"
 
 /// The view tree: what an application says it wants on the screen.
 ///
@@ -34,6 +35,7 @@ public val kToggle = 12
 public val kTabs = 13
 public val kProgress = 14
 public val kBadge = 15
+public val kHandle = 16
 
 /// Where children sit along the axis they are stacked on.
 public val mainStart = 0
@@ -77,6 +79,9 @@ public class View {
     public var minH: Float = 0.0
     /// Share of the space left over on the main axis. 0 takes none.
     public var weight: Float = 0.0
+    /// This view asks for nothing of its own along the stacking axis, and
+    /// takes only its share. What `grows()` sets.
+    public var basisZero: Bool = false
     public var mainAlign: Int = 0
     public var crossAlign: Int = 3
 
@@ -110,6 +115,24 @@ public class View {
     public var icon: String = ""
     /// Selected index, for tabs.
     public var index: Int = 0
+    /// Answers the pointer with `onDrag` rather than with a click.
+    public var draggable: Bool = false
+    /// A view that is not a control but still takes a click — what makes a
+    /// `custom` able to be a widget of its own.
+    public var clickable: Bool = false
+    /// The pointer shape over this view, or -1 to leave it alone.
+    public var cursor: Int = -1
+    /// Children's `weight` is an exact share of the room rather than a share
+    /// of what is left over — which is what a splitter needs and what a
+    /// stack of buttons does not.
+    public var exact: Bool = false
+    /// Children are laid on top of one another in the same rectangle, in the
+    /// order given, rather than stacked end to end.
+    public var layered: Bool = false
+    /// Inside a `stack`, sit at a named position instead of filling it.
+    public var placed: Bool = false
+    public var placeX: Float = 0.0
+    public var placeY: Float = 0.0
     public var options: List<String> = []
     public var password: Bool = false
 
@@ -118,9 +141,18 @@ public class View {
     public var onFloat: (Float) -> Unit = { v -> }
     public var onString: (String) -> Unit = { s -> }
     public var onIndex: (Int) -> Unit = { i -> }
-    /// A view that paints itself. It is handed a canvas already clipped to
-    /// its own rectangle, and the rectangle, in points.
-    public var onDraw: (Canvas, Rect) -> Unit = { c, r -> }
+    /// The moment the pointer goes down on this view, in window points —
+    /// before it is known whether this will be a click or a drag. Where a
+    /// handler records what it is dragging *from*.
+    public var onGrab: (Float, Float) -> Unit = { x, y -> }
+    /// Where the pointer is now, in window points, while dragging.
+    public var onDrag: (Float, Float) -> Unit = { x, y -> }
+    /// Where the pointer let go, in window points. Only called if the press
+    /// actually turned into a drag — a plain click fires `onTap` instead.
+    public var onDragEnd: (Float, Float) -> Unit = { x, y -> }
+    /// A view that paints itself, handed a `Paint`: a canvas already clipped
+    /// to its rectangle, that rectangle, the fonts and the theme.
+    public var onDraw: (Paint) -> Unit = { p -> }
 
     /// Where layout put it, in points, in window coordinates.
     public var frame: Rect = noRect()
@@ -146,10 +178,21 @@ public class View {
     public func sized(a: Float, b: Float): View { this.wantW = a; this.wantH = b; return this }
     /// A floor under the size, leaving the content free to ask for more.
     public func least(a: Float, b: Float): View { this.minW = a; this.minH = b; return this }
-    /// Take a share of what is left over. Two views with `grows()` split it.
-    public func grows(): View { this.weight = 1.0; return this }
-    /// Take a named share of it.
-    public func growsBy(f: Float): View { this.weight = f; return this }
+    /// Take a share of the room, starting from nothing rather than from what
+    /// the content happens to want — CSS's `flex: 1`, and for the same reason:
+    /// a pane that fills a window should be the size of the window, not the
+    /// size of everything anyone ever put in it.
+    public func grows(): View {
+        this.weight = 1.0
+        this.basisZero = true
+        return this
+    }
+    /// A named share of it, on the same terms.
+    public func growsBy(f: Float): View {
+        this.weight = f
+        this.basisZero = true
+        return this
+    }
 
     public func pads(i: Insets): View { this.pad = i; return this }
     /// The same padding on all four sides.
@@ -203,6 +246,40 @@ public class View {
     public func kindOf(v: Int): View { this.variant = v; return this }
     /// An icon before the label — see `icon()` for the names.
     public func withIcon(name: String): View { this.icon = name; return this }
+    /// Divide the room among the children in proportion to their `weight`,
+    /// exactly, rather than sharing out only the surplus. Children with no
+    /// weight keep the size they asked for and are taken off the top.
+    public func shares(): View { this.exact = true; return this }
+    /// Let the pointer drag this view. All three are given window points:
+    /// `grab` when the button goes down, `move` as it travels, `drop` where it
+    /// let go. A press that never moved is a click and fires `onTap` instead.
+    public func dragged(grab: (Float, Float) -> Unit,
+                        move: (Float, Float) -> Unit,
+                        drop: (Float, Float) -> Unit): View {
+        this.draggable = true
+        this.onGrab = grab
+        this.onDrag = move
+        this.onDragEnd = drop
+        return this
+    }
+    /// Take a click without being a control — what turns a `custom` into a
+    /// widget of its own.
+    public func tappable(f: () -> Unit): View {
+        this.onTap = f
+        this.clickable = true
+        return this
+    }
+    /// The pointer shape while over this view.
+    public func pointer(c: Int): View { this.cursor = c; return this }
+    /// Inside a `stack`, put this view at these window points and give it the
+    /// size it asked for, rather than the whole layer. Menus, tooltips and
+    /// the ghost under a drag are all this.
+    public func at(x: Float, y: Float): View {
+        this.placed = true
+        this.placeX = x
+        this.placeY = y
+        return this
+    }
 }
 
 func mk(kind: Int): View {
@@ -229,6 +306,18 @@ public func row(kids: List<View>): View {
     return v
 }
 
+/// Children one on top of another, all in the same rectangle, the last one
+/// nearest the viewer. This is how a drag ghost, a menu or a dialog gets over
+/// the interface without the interface knowing about it — and, because `hit`
+/// searches children last first, the top layer answers the pointer first.
+public func stack(kids: List<View>): View {
+    val v = mk(kBox)
+    v.layered = true
+    v.vertical = true
+    v.kids = kids
+    return v
+}
+
 /// One child in a box of its own — somewhere to hang a background, a padding
 /// or a shadow that the child should not carry itself.
 public func box(kid: View): View { return column([kid]) }
@@ -249,6 +338,10 @@ public func scroll(kids: List<View>): View {
     v.kids = kids
     return v
 }
+
+/// A view that is nothing: no size, no ink, no answer to the pointer. What an
+/// overlay is when there is nothing to overlay.
+public func nothing(): View { return mk(kSpacer) }
 
 /// Empty space that takes whatever is left over. Two of them centre what is
 /// between them.
@@ -395,9 +488,32 @@ public func tabs(titles: List<String>, selected: Int, chose: (Int) -> Unit): Vie
     return v
 }
 
-/// A view that paints itself: a chart, a canvas, a game board. It is handed a
-/// canvas clipped to its own rectangle, and that rectangle in points.
-public func custom(draw: (Canvas, Rect) -> Unit): View {
+/// A bar to drag: the divider between two panes, the edge of a sidebar.
+/// It draws as nothing until the pointer is on it, and then as a tint.
+public func handle(vertical: Bool,
+                   grab: (Float, Float) -> Unit,
+                   move: (Float, Float) -> Unit): View {
+    val v = mk(kHandle)
+    v.vertical = vertical
+    v.draggable = true
+    v.onGrab = grab
+    v.onDrag = move
+    v.cursor = if (vertical) { 3 } else { 4 }
+    return v
+}
+
+/// A view that paints and takes up no room — a background inside a `stack`,
+/// a note of where something landed. It fills the layer it is in, because a
+/// layer's children all get the layer's rectangle.
+public func underlay(draw: (Paint) -> Unit): View {
+    return custom(draw).sized(0.0, 0.0)
+}
+
+/// A view that paints itself: a chart, an editor, a game board. It is handed
+/// a `Paint` — a clipped canvas, its rectangle, the fonts and the theme — so
+/// it can draw text and match the rest of the interface without being told
+/// twice what the interface looks like.
+public func custom(draw: (Paint) -> Unit): View {
     val v = mk(kCustom)
     v.onDraw = draw
     return v

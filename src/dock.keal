@@ -1,0 +1,460 @@
+import "./canvas.keal"
+import "./color.keal"
+import "./geom.keal"
+import "./state.keal"
+import "./text.keal"
+import "./theme.keal"
+import "./view.keal"
+
+/// Docking: splits, tabs, and dragging a panel from one to another.
+///
+/// The arrangement is a binary tree. A **leaf** is a group of tabs with one of
+/// them showing; a **split** is two children side by side or one above the
+/// other, with a fraction saying where the divider sits and a divider the user
+/// can drag. Nothing else — every arrangement a docking interface can be in is
+/// some tree of those two, and a tree of two cases is a tree you can reason
+/// about, save, and restore.
+///
+/// The panels themselves are ordinary keal-view: each one is a function to a
+/// view, exactly like a whole application's `build`. A panel does not know it
+/// is docked.
+
+// ------------------------------------------------------------------- panels
+
+/// One dockable thing: a title, and what goes under it.
+public class Panel(public val id: String, public var title: String) {
+    public var icon: String = ""
+    public var closable: Bool = true
+    /// What the panel shows. Called during the frame, like any other view
+    /// function, and may read whatever state it likes.
+    public var body: () -> View = { -> label("") }
+}
+
+public func panelOf(id: String, title: String, body: () -> View): Panel {
+    val p = Panel(id, title)
+    p.body = body
+    return p
+}
+
+// -------------------------------------------------------------------- nodes
+
+var nextNid: Int = 1
+
+/// A node of the arrangement: either a group of tabs or a split of two.
+public class Node {
+    public var nid: Int = 0
+    public var split: Bool = false
+    /// For a split: true when the two children are stacked, so the divider
+    /// lies across.
+    public var vertical: Bool = false
+    /// How much of the room the first child gets, 0.0 to 1.0.
+    public var fraction: Float = 0.5
+    public var a: Node? = null
+    public var b: Node? = null
+    /// For a leaf: the panels in it, and which one is showing.
+    public var tabs: List<String> = []
+    public var active: Int = 0
+    /// Where this node was drawn last frame. Recorded during painting, which
+    /// is the only moment the layout is known — and it is known in time,
+    /// because the pointer event that needs it arrives after the frame it
+    /// happened on. The drop zones and the divider both read it.
+    public var area: Rect = noRect()
+}
+
+/// A group of tabs.
+public func leaf(ids: List<String>): Node {
+    val n = Node()
+    n.nid = nextNid
+    nextNid = nextNid + 1
+    n.tabs = ids
+    return n
+}
+
+/// Two nodes side by side, `first` taking `fraction` of the width.
+public func beside(first: Node, second: Node, fraction: Float): Node {
+    return splitOf(first, second, fraction, false)
+}
+
+/// Two nodes stacked, `first` taking `fraction` of the height.
+public func above(first: Node, second: Node, fraction: Float): Node {
+    return splitOf(first, second, fraction, true)
+}
+
+func splitOf(first: Node, second: Node, fraction: Float, vertical: Bool): Node {
+    val n = Node()
+    n.nid = nextNid
+    nextNid = nextNid + 1
+    n.split = true
+    n.vertical = vertical
+    n.fraction = clampF(fraction, 0.05, 0.95)
+    n.a = first
+    n.b = second
+    return n
+}
+
+// --------------------------------------------------------------- the drop zones
+
+public val zoneNone = 0
+public val zoneLeft = 1
+public val zoneRight = 2
+public val zoneTop = 3
+public val zoneBottom = 4
+public val zoneCentre = 5
+
+// --------------------------------------------------------------------- dock
+
+/// A whole docking arrangement, and whatever is being dragged across it.
+public class Dock(public var root: Node) {
+    public var panels: Map<String, Panel> = {}
+    /// The panel under the pointer's thumb, or "" when nothing is moving.
+    public var dragging: String = ""
+    public var pointerX: Float = 0.0
+    public var pointerY: Float = 0.0
+    /// The leaf the drop would land in, and where in it.
+    public var target: Int = 0
+    public var zone: Int = 0
+    /// The divider being dragged: which node, and what it was before.
+    public var grabbed: Int = 0
+    public var grabbedFraction: Float = 0.5
+    public var grabbedX: Float = 0.0
+    public var grabbedY: Float = 0.0
+
+    public proc add(p: Panel) { this.panels[p.id] = p }
+
+    public func panel(id: String): Panel? { return this.panels[id] }
+
+    /// The leaf holding a panel, or null.
+    public func holder(id: String): Node? { return findHolder(this.root, id) }
+
+    /// Show a panel, wherever it is docked.
+    public proc reveal(id: String) {
+        val n = findHolder(this.root, id)
+        if (n == null) { return }
+        var i = 0
+        while (i < n.tabs.size) {
+            if (n.tabs[i] == id) { n.active = i; invalidate(); return }
+            i++
+        }
+    }
+
+    /// Take a panel out of the arrangement. Nothing is destroyed — the panel
+    /// itself stays registered and can be dropped back in.
+    public proc detach(id: String) {
+        val n = findHolder(this.root, id)
+        if (n == null) { return }
+        var i = 0
+        while (i < n.tabs.size) {
+            if (n.tabs[i] == id) { n.tabs.removeAt(i); break }
+            i++
+        }
+        if (n.active >= n.tabs.size) { n.active = (n.tabs.size - 1).max(0) }
+        val pruned = prune(this.root)
+        if (pruned != null) { this.root = pruned }
+        invalidate()
+    }
+
+    /// Put a panel into a leaf: as another tab, or by splitting it.
+    public proc dropInto(targetNid: Int, zone: Int, id: String) {
+        if (zone == zoneNone) { return }
+        this.detach(id)
+        // The leaf may have disappeared when the panel left it — the last tab
+        // of a group, dragged out and dropped back into the same group. There
+        // is then nothing to split, and the panel goes back to the root.
+        val t = findNid(this.root, targetNid) ?: this.root
+        if (zone == zoneCentre) {
+            if (t.split) { return }
+            t.tabs.add(id)
+            t.active = t.tabs.size - 1
+            invalidate()
+            return
+        }
+        val fresh = leaf([id])
+        val vertical = (zone == zoneTop) or (zone == zoneBottom)
+        val firstIsNew = (zone == zoneLeft) or (zone == zoneTop)
+        val made = if (firstIsNew) { splitOf(fresh, t, 0.32, vertical) }
+                   else { splitOf(t, fresh, 0.68, vertical) }
+        this.root = replaceNid(this.root, t.nid, made) ?: made
+        invalidate()
+    }
+}
+
+/// A dock holding one leaf with these panels in it.
+public func dockOf(ids: List<String>): Dock { return Dock(leaf(ids)) }
+
+// ---------------------------------------------------------- tree arithmetic
+
+func findHolder(n: Node?, id: String): Node? {
+    if (n == null) { return null }
+    if (not n.split) {
+        if (n.tabs.contains(id)) { return n }
+        return null
+    }
+    return findHolder(n.a, id) ?: findHolder(n.b, id)
+}
+
+func findNid(n: Node?, nid: Int): Node? {
+    if (n == null) { return null }
+    if (n.nid == nid) { return n }
+    if (not n.split) { return null }
+    return findNid(n.a, nid) ?: findNid(n.b, nid)
+}
+
+/// Drop the leaves that have no tabs left, and the splits that are left with
+/// one child. A tree with nothing in it answers null.
+func prune(n: Node?): Node? {
+    if (n == null) { return null }
+    if (not n.split) {
+        if (n.tabs.size == 0) { return null }
+        return n
+    }
+    val na = prune(n.a)
+    val nb = prune(n.b)
+    if (na == null) { return nb }
+    if (nb == null) { return na }
+    var m = n
+    m.a = na
+    m.b = nb
+    return m
+}
+
+func replaceNid(n: Node?, nid: Int, with: Node): Node? {
+    if (n == null) { return null }
+    if (n.nid == nid) { return with }
+    if (not n.split) { return n }
+    var m = n
+    m.a = replaceNid(n.a, nid, with)
+    m.b = replaceNid(n.b, nid, with)
+    return m
+}
+
+/// Every leaf, in order — what the drop test walks.
+public proc leaves(n: Node?, var out: List<Node>) {
+    if (n == null) { return }
+    if (not n.split) { out.add(n); return }
+    leaves(n.a, out)
+    leaves(n.b, out)
+}
+
+/// The leaf under a point, and which quarter of it — what a drop would do.
+/// The edges win over the middle, and the nearest edge wins over the others,
+/// which is what makes aiming for "the left of this panel" reliable.
+public func zoneAt(d: Dock, x: Float, y: Float): Int {
+    val hit = leafAt(d, x, y)
+    if (hit == null) { return zoneNone }
+    val r = hit.area
+    if (isEmpty(r)) { return zoneNone }
+    val l = (x - r.x) / r.w
+    val rr = (r.x + r.w - x) / r.w
+    val tt = (y - r.y) / r.h
+    val bb = (r.y + r.h - y) / r.h
+    val edge = 0.28
+    var best = zoneCentre
+    var m = edge
+    if (l < m) { m = l; best = zoneLeft }
+    if (rr < m) { m = rr; best = zoneRight }
+    if (tt < m) { m = tt; best = zoneTop }
+    if (bb < m) { m = bb; best = zoneBottom }
+    return best
+}
+
+public func leafAt(d: Dock, x: Float, y: Float): Node? {
+    val ls: List<Node> = []
+    leaves(d.root, ls)
+    var i = 0
+    while (i < ls.size) {
+        if (holds(ls[i].area, x, y)) { return ls[i] }
+        i++
+    }
+    return null
+}
+
+/// Where a drop would put the panel, in window points — what the overlay
+/// draws so that the answer is visible before the button is let go.
+public func zoneRect(r: Rect, zone: Int): Rect {
+    if (zone == zoneCentre) { return r }
+    if (zone == zoneLeft) { return Rect(r.x, r.y, r.w * 0.32, r.h) }
+    if (zone == zoneRight) { return Rect(r.x + r.w * 0.68, r.y, r.w * 0.32, r.h) }
+    if (zone == zoneTop) { return Rect(r.x, r.y, r.w, r.h * 0.32) }
+    if (zone == zoneBottom) { return Rect(r.x, r.y + r.h * 0.68, r.w, r.h * 0.32) }
+    return noRect()
+}
+
+// ----------------------------------------------------------- the view of it
+
+/// The whole arrangement, as views. Drop this into an application's `build`
+/// and give it `grows()`; everything below is ordinary keal-view.
+public func dockView(var d: Dock, t: Theme): View {
+    return nodeView(d, t, d.root)
+}
+
+func nodeView(var d: Dock, t: Theme, var n: Node): View {
+    if (n.split) { return splitView(d, t, n) }
+    return leafView(d, t, n)
+}
+
+func splitView(var d: Dock, t: Theme, var n: Node): View {
+    val first = n.a
+    val second = n.b
+    if (first == null) { return spacer() }
+    if (second == null) { return nodeView(d, t, first) }
+    val bar = handle(not n.vertical,
+        { x, y ->
+            d.grabbed = n.nid
+            d.grabbedFraction = n.fraction
+            d.grabbedX = x
+            d.grabbedY = y
+        },
+        { x, y ->
+            val span = if (n.vertical) { n.area.h } else { n.area.w }
+            if (span > 1.0) {
+                val delta = if (n.vertical) { y - d.grabbedY } else { x - d.grabbedX }
+                n.fraction = clampF(d.grabbedFraction + delta / span, 0.06, 0.94)
+            }
+        })
+    val kids = [
+        nodeView(d, t, first).growsBy(n.fraction),
+        bar,
+        nodeView(d, t, second).growsBy(1.0 - n.fraction)
+    ]
+    val body = if (n.vertical) { column(kids) } else { row(kids) }
+    // `shares()` is what makes the divider land where it was dropped: the
+    // children take exactly their fraction of the room, not a share of the
+    // surplus over what their contents happen to want.
+    return stack([recorder(n), body.shares()])
+}
+
+/// A view that draws nothing and remembers where it was. This is how a node
+/// learns its own rectangle: the layout is only known once the frame is laid
+/// out, and painting is the first moment after that — early enough, because
+/// the pointer event that reads it belongs to the frame after this one.
+func recorder(var n: Node): View {
+    return underlay({ p -> n.area = p.area })
+}
+
+func leafView(var d: Dock, t: Theme, var n: Node): View {
+    var body = emptyPanel(t)
+    if (n.tabs.size > 0) {
+        val idx = clampI(n.active, 0, n.tabs.size - 1)
+        val p = d.panel(n.tabs[idx])
+        if (p != null) {
+            val make = p.body
+            body = make()
+        }
+    }
+    val inner = column([
+        tabStrip(d, t, n),
+        stack([body]).grows()
+    ])
+    inner.bg(t.surface)
+    inner.rounded(t.radiusMd)
+    inner.outline(t.border, t.hairline)
+    return stack([
+        recorder(n),
+        column([inner.grows()]).padAll(t.gap(0.75))
+    ])
+}
+
+func emptyPanel(t: Theme): View {
+    return column([
+        spacer(),
+        label("rien ici").color(t.textMuted).centered(),
+        spacer()
+    ])
+}
+
+func tabStrip(var d: Dock, t: Theme, var n: Node): View {
+    val items: List<View> = []
+    var i = 0
+    while (i < n.tabs.size) {
+        val idx = i
+        val p = d.panel(n.tabs[idx])
+        if (p != null) { items.add(tabView(d, t, n, p, idx)) }
+        i++
+    }
+    items.add(spacer())
+    return stack([
+        underlay({ p ->
+            val r = p.area
+            p.canvas.fillRound(Rect(r.x, r.y, r.w, r.h + t.radiusMd), t.radiusMd, t.surfaceHi)
+            p.canvas.fillRect(Rect(r.x, r.y + r.h - t.hairline, r.w, t.hairline), t.border)
+        }),
+        row(items).padXY(t.gap(1.0), 0.0)
+    ]).h(t.strip)
+}
+
+func tabView(var d: Dock, t: Theme, var n: Node, p: Panel, idx: Int): View {
+    val chosen = idx == n.active
+    val pid = p.id
+    val face = underlay({ p ->
+        if (chosen) {
+            val r = p.area
+            p.canvas.fillRound(Rect(r.x, r.y + t.gap(0.75), r.w, r.h), t.radiusSm, t.surface)
+            p.canvas.fillRound(Rect(r.x + t.gap(2.0), r.y + r.h - t.gap(0.5),
+                                    (r.w - t.gap(4.0)).max(2.0), t.gap(0.5)),
+                               t.gap(0.25), t.accent)
+        }
+    })
+    // The chain is broken into statements because a newline after `)` ends a
+    // statement in Keal, and each of these answers the same view anyway.
+    face.tappable({ -> n.active = idx; invalidate() })
+    face.dragged(
+        { x, y -> d.dragging = ""; d.pointerX = x; d.pointerY = y },
+        { x, y ->
+            d.dragging = pid
+            d.pointerX = x
+            d.pointerY = y
+            d.target = 0
+            d.zone = zoneAt(d, x, y)
+            val over = leafAt(d, x, y)
+            if (over != null) { d.target = over.nid }
+        },
+        { x, y ->
+            val z = d.zone
+            val tgt = d.target
+            d.dragging = ""
+            // A literal, not `zoneNone`: the C backend cannot yet compile a
+            // lambda that captures a top-level binding, and a constant is one.
+            d.zone = 0
+            d.target = 0
+            if (tgt != 0) { d.dropInto(tgt, z, pid) }
+            invalidate()
+        })
+
+    val ink = if (chosen) { t.textPrimary } else { t.textSecondary }
+    val bits: List<View> = []
+    if (p.icon != "") { bits.add(icon(p.icon).color(ink).fontSize(t.fontBase)) }
+    bits.add(label(p.title).color(ink).fontSize(t.fontSm + 1.0))
+    if (p.closable) {
+        bits.add(iconButton("close", { -> d.detach(pid) })
+                    .sized(t.gap(4.5), t.gap(4.5)).rounded(t.radiusSm))
+    }
+    return stack([
+        face,
+        row(bits).gaps(t.gap(1.5)).padXY(t.gap(2.5), 0.0).aligned(mainStart, crossCenter)
+    ])
+}
+
+/// What a drop would do, drawn over everything. Give this to `app.overlay`.
+public func dockOverlay(var d: Dock, t: Theme): View {
+    if (d.dragging == "") { return nothing() }
+    val p = d.panel(d.dragging)
+    val title = if (p == null) { d.dragging } else { p.title }
+    return stack([
+        underlay({ p ->
+            val over = leafAt(d, d.pointerX, d.pointerY)
+            if (over != null) {
+                val zr = zoneRect(over.area, d.zone)
+                if (not isEmpty(zr)) {
+                    p.canvas.fillRound(zr, t.radiusMd, withAlpha(t.accent, 55))
+                    p.canvas.strokeRound(zr, t.radiusMd, 2.0, t.accent)
+                }
+            }
+        }),
+        row([label(title).color(t.textOnAccent).fontSize(t.fontSm + 1.0)])
+            .padXY(t.gap(2.5), t.gap(1.5))
+            .bg(t.accent)
+            .rounded(t.radiusSm)
+            .raised(10.0)
+            .at(d.pointerX + 12.0, d.pointerY + 10.0)
+    ])
+}

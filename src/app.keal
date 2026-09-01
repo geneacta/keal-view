@@ -36,6 +36,10 @@ public class App(public var title: String, public var width: Int, public var hei
     /// character that no text field claimed. Answer true to say it was
     /// handled and stop it going further.
     public var onKey: (Event) -> Bool = { e -> false }
+    /// Drawn over the interface, in the same rectangle, after everything
+    /// else — and asked about the pointer before anything else. Menus,
+    /// dialogs, tooltips and the ghost under a drag live here.
+    public var overlay: () -> View = { -> nothing() }
     /// Called once the window is open and the fonts are loaded, before the
     /// first frame.
     public var onStart: () -> Unit = { -> }
@@ -110,7 +114,11 @@ public proc run(var app: App) {
         val area = canvas.bounds()
 
         val make = app.build
-        var root = make()
+        val paintOver = app.overlay
+        val layers: List<View> = []
+        layers.add(make())
+        layers.add(paintOver())
+        var root = stack(layers)
         layout(ui, root, area)
         var i = 0
         while (i < events.size) {
@@ -118,7 +126,10 @@ public proc run(var app: App) {
             i++
         }
         if (revision() != lastRev) {
-            root = make()
+            val again: List<View> = []
+            again.add(make())
+            again.add(paintOver())
+            root = stack(again)
             layout(ui, root, area)
             lastRev = revision()
         }
@@ -169,6 +180,10 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
             return
         }
         ui.active = h.id
+        // A press has not yet become a drag. Which of the two it turns out to
+        // be decides whether letting go is a click or a drop.
+        ui.setMemo(mixId(h.id, 9), 0.0)
+        if (h.draggable) { val g = h.onGrab; g(e.x, e.y) }
         ui.hot = h.id
         // Only a text field keeps the keyboard after a click. A button that
         // took focus on click would leave a ring behind it, which is what
@@ -189,6 +204,12 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         invalidate()
         val n = nodeById(root, id)
         if (n == null) { return }
+        if (ui.memoOf(mixId(id, 9), 0.0) > 0.5) {
+            val drop = n.onDragEnd
+            drop(e.x, e.y)
+            ui.setMemo(mixId(id, 9), 0.0)
+            return
+        }
         if (not holds(n.frame, e.x, e.y)) { return }
         fire(n)
         return
@@ -236,6 +257,7 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
 /// arguments, and a local is the way round it until the backend is fixed.
 /// Reported upstream; every `val h = ...` below is that same workaround.
 proc fire(var n: View) {
+    if (n.clickable) { val h = n.onTap; h(); return }
     if (n.kind == kButton) { val h = n.onTap; h(); return }
     if (n.kind == kCheck) { val h = n.onBool; h(not n.on); return }
     if (n.kind == kToggle) { val h = n.onBool; h(not n.on); return }
@@ -246,11 +268,34 @@ proc drag(var ui: Ui, var root: View, e: Event) {
     if (a == null) { return }
     if (a.kind == kSlider) { sliderToPointer(ui, a, e.x); return }
     if (a.kind == kField) { caretToPointer(ui, a, e, true); return }
+    if (a.draggable) {
+        val dx = e.x - ui.pointer.downX
+        val dy = e.y - ui.pointer.downY
+        // Three points of slop, so that a click with a shaky hand is still a
+        // click and not a one-pixel drag.
+        if (ui.memoOf(mixId(a.id, 9), 0.0) < 0.5) {
+            if ((dx * dx + dy * dy).sqrt() < 3.0) { return }
+            ui.setMemo(mixId(a.id, 9), 1.0)
+        }
+        val move = a.onDrag
+        move(e.x, e.y)
+        invalidate()
+        return
+    }
 }
 
 proc setCursor(var ui: Ui, root: View, e: Event) {
+    // While a drag is under way the shape belongs to what is being dragged,
+    // not to whatever the pointer happens to be over.
+    if (ui.active != 0) {
+        val a = nodeById(root, ui.active)
+        if (a != null) {
+            if (a.cursor >= 0) { ui.wantCursor(a.cursor); return }
+        }
+    }
     val h = hit(root, e.x, e.y)
     if (h == null) { ui.wantCursor(cursorArrow()); return }
+    if (h.cursor >= 0) { ui.wantCursor(h.cursor); return }
     if (h.kind == kField) { ui.wantCursor(cursorText()); return }
     ui.wantCursor(cursorArrow())
 }
@@ -431,7 +476,11 @@ public proc snapshot(var app: App, w: Int, h: Int, scale: Float, path: String) {
     val started = app.onStart
     started()
     val make = app.build
-    val root = make()
+    val paintOver = app.overlay
+    val layers: List<View> = []
+    layers.add(make())
+    layers.add(paintOver())
+    val root = stack(layers)
     val area = canvas.bounds()
     layout(ui, root, area)
     canvas.clear(app.theme.bg)

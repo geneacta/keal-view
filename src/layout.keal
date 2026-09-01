@@ -108,6 +108,11 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
         var acc = 0.0
         for (o in v.options) { acc = acc + ui.fonts.width(o, st, sc) + t.gap(5.0) }
         w = acc
+    } else { if (v.kind == kHandle) {
+        // A divider is thin along the axis it divides and takes whatever it
+        // is given across it.
+        w = if (v.vertical) { t.gap(1.5) } else { availW }
+        hh = if (v.vertical) { availH } else { t.gap(1.5) }
     } else { if (v.kind == kSpacer) {
         w = 0.0
         hh = 0.0
@@ -126,15 +131,25 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
         var n = 0
         var i = 0
         while (i < v.kids.size) {
-            val s = measure(ui, v.kids[i], innerW, innerH)
-            val km = if (v.vertical) { s.h } else { s.w }
+            val kid = v.kids[i]
+            val s = measure(ui, kid, innerW, innerH)
+            // A view that grows asks for nothing of its own along the axis it
+            // is stacked on, so a container is never inflated by a child that
+            // was only ever going to take what was left.
+            val km = if (kid.basisZero) { 0.0 } else { if (v.vertical) { s.h } else { s.w } }
             val kc = if (v.vertical) { s.w } else { s.h }
-            main = main + km
+            // Layered children share one rectangle, so the box is as big as
+            // the largest of them rather than as big as all of them.
+            if (v.layered) {
+                if (km > main) { main = km }
+            } else {
+                main = main + km
+            }
             if (kc > cross) { cross = kc }
             n++
             i++
         }
-        if (n > 1) { main = main + v.space * (n - 1).toFloat() }
+        if ((n > 1) and (not v.layered)) { main = main + v.space * (n - 1).toFloat() }
         if (v.vertical) {
             w = cross + v.pad.left + v.pad.right
             hh = main + v.pad.top + v.pad.bottom + stripH
@@ -146,7 +161,7 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
             v.content = main + v.pad.top + v.pad.bottom
             hh = availH
         }
-    } } } } } } } } } } } } }
+    } } } } } } } } } } } } } }
 
     if (v.wantW >= 0.0) { w = v.wantW }
     if (v.wantH >= 0.0) { hh = v.wantH }
@@ -155,6 +170,14 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
     v.mw = w
     v.mh = hh
     return Size(w, hh)
+}
+
+/// How much of the stacking axis a child asks for. A growing child asks for
+/// nothing and takes its share instead.
+func mainOf(parent: View, k: View): Float {
+    if (k.basisZero) { return 0.0 }
+    if (parent.vertical) { return k.mh }
+    return k.mw
 }
 
 func boxAvail(v: View, avail: Float, horizontal: Bool): Float {
@@ -182,6 +205,18 @@ public proc arrange(ui: Ui, var v: View, r: Rect) {
     var inner = r
     if (v.kind == kPanel) { inner = Rect(r.x, r.y + t.strip, r.w, (r.h - t.strip).max(0.0)) }
     inner = inset(inner, v.pad)
+
+    if (v.layered) {
+        var j = 0
+        while (j < v.kids.size) {
+            val k = v.kids[j]
+            measure(ui, k, inner.w, inner.h)
+            if (k.placed) { arrange(ui, k, Rect(k.placeX, k.placeY, k.mw, k.mh)) }
+            else { arrange(ui, k, inner) }
+            j++
+        }
+        return
+    }
 
     if (v.kind == kScroll) {
         // Content is laid out at its natural height and slid up by however far
@@ -216,7 +251,7 @@ public proc arrange(ui: Ui, var v: View, r: Rect) {
     while (i < v.kids.size) {
         val k = v.kids[i]
         measure(ui, k, inner.w, inner.h)
-        used = used + (if (v.vertical) { k.mh } else { k.mw })
+        used = used + mainOf(v, k)
         weight = weight + k.weight
         i++
     }
@@ -224,6 +259,22 @@ public proc arrange(ui: Ui, var v: View, r: Rect) {
     if (n > 1) { used = used + v.space * (n - 1).toFloat() }
     val room = if (v.vertical) { inner.h } else { inner.w }
     val extra = (room - used).max(0.0)
+
+    // With `shares()`, the weighted children divide the room exactly: what
+    // the unweighted ones need comes off the top, and the rest is split in
+    // proportion. It is the difference between a splitter that lands where
+    // it was dropped and one that drifts.
+    var fixedUsed = 0.0
+    if (v.exact and (weight > 0.0)) {
+        var j = 0
+        while (j < v.kids.size) {
+            val k = v.kids[j]
+            if (k.weight <= 0.0) { fixedUsed = fixedUsed + mainOf(v, k) }
+            j++
+        }
+        if (v.kids.size > 1) { fixedUsed = fixedUsed + v.space * (v.kids.size - 1).toFloat() }
+    }
+    val shareRoom = (room - fixedUsed).max(0.0)
 
     // Where the block starts, when nothing grows and there is room to spare.
     var cursor = if (v.vertical) { inner.y } else { inner.x }
@@ -239,8 +290,11 @@ public proc arrange(ui: Ui, var v: View, r: Rect) {
     i = 0
     while (i < n) {
         val k = v.kids[i]
-        var main = if (v.vertical) { k.mh } else { k.mw }
-        if ((weight > 0.0) and (k.weight > 0.0)) { main = main + extra * k.weight / weight }
+        var main = mainOf(v, k)
+        if ((weight > 0.0) and (k.weight > 0.0)) {
+            if (v.exact) { main = shareRoom * k.weight / weight }
+            else { main = main + extra * k.weight / weight }
+        }
         var cross = if (v.vertical) { k.mw } else { k.mh }
         val roomCross = if (v.vertical) { inner.w } else { inner.h }
         val fixedCross = if (v.vertical) { k.wantW >= 0.0 } else { k.wantH >= 0.0 }
@@ -278,6 +332,9 @@ public func interactive(v: View): Bool {
     if (v.kind == kField) { return true }
     if (v.kind == kTabs) { return true }
     if (v.kind == kScroll) { return true }
+    if (v.kind == kHandle) { return true }
+    if (v.draggable) { return true }
+    if (v.clickable) { return true }
     return false
 }
 

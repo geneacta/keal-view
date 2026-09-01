@@ -1,3 +1,4 @@
+import "./canvas.keal"
 import "./color.keal"
 import "./geom.keal"
 import "./text.keal"
@@ -133,4 +134,46 @@ public func lightTheme(): Theme {
     t.danger = web("#dc2626")
     t.shadow = rgba(15, 23, 42, 60)
     return t
+}
+
+/// What a view that paints itself is handed.
+///
+/// A canvas alone would not be enough: text needs a font, and a widget that
+/// draws its own chrome needs the theme, or every custom view would carry its
+/// own idea of what a border looks like.
+public class Paint(
+    public val canvas: Canvas,
+    /// The view's own rectangle, in points. The canvas is already clipped to it.
+    public val area: Rect,
+    public val fonts: Fonts,
+    public val theme: Theme,
+    /// Whether the pointer is over this view, and whether it is pressed on
+    /// it — so a view that paints itself can react like the built-in ones.
+    public val hot: Bool,
+    public val pressed: Bool
+) {
+    public func scale(): Float { return this.canvas.scale }
+
+    /// One line of text in a box: aligned across, centred down, and cut with
+    /// an ellipsis if it does not fit.
+    public proc text(s: String, r: Rect, align: Int, st: TextStyle, col: Int) {
+        this.fonts.drawIn(this.canvas, s, r, align, st, col)
+    }
+
+    /// One line of text on a baseline, answering where the pen ended.
+    public func line(s: String, x: Float, baseline: Float, st: TextStyle, col: Int): Float {
+        return this.fonts.draw(this.canvas, s, x, baseline, st, col)
+    }
+
+    public func width(s: String, st: TextStyle): Float {
+        return this.fonts.width(s, st, this.canvas.scale)
+    }
+
+    public func lineHeight(st: TextStyle): Float {
+        return this.fonts.lineHeight(st, this.canvas.scale)
+    }
+
+    public func ascent(st: TextStyle): Float {
+        return this.fonts.ascent(st, this.canvas.scale)
+    }
 }

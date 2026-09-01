@@ -1,0 +1,349 @@
+import "../src/app.keal"
+import "../src/dock.keal"
+
+/// A docked workspace: panels in splits and tabs, dragged from one to another.
+///
+/// This is the "organise" half of keal-view. The arrangement is a tree of
+/// splits and tab groups; a panel is dragged by its tab, and the highlight
+/// under the pointer says where letting go would put it. Every panel below is
+/// an ordinary view function — none of them knows it is docked.
+///
+/// One convention worth noticing, because the language asks for it: no lambda
+/// here mentions a top-level binding. `keal build` cannot yet compile a
+/// closure that captures one, so every handler calls a `proc` instead of
+/// writing to a cell directly. It reads well enough — the handlers name what
+/// happens rather than how — and it is the only place keal-view's shape was
+/// decided by the compiler rather than by the design.
+
+// -------------------------------------------------------------------- state
+
+var t = darkTheme()
+
+val files = ["canvas.keal", "font.keal", "layout.keal", "paint.keal", "view.keal",
+             "dock.keal", "app.keal", "theme.keal", "color.keal", "geom.keal",
+             "state.keal", "text.keal", "ui.keal", "event.keal", "ffi.keal"]
+val chosen = state(1)
+val wrapLines = state(true)
+val liveReload = state(true)
+val fontScale = state(1.0)
+val filter = state("")
+val commandLine = state("")
+val log = state(["keal-view — prêt.", "15 modules chargés depuis src/."])
+val coverage = state(0.62)
+
+val source = [
+    "/// TrueType, read and rasterised in Keal.",
+    "public func loadFont(path: String): Font? {",
+    "    if (path == \"\") { return null }",
+    "    val b = kvBlobRead(path)",
+    "    if (b == 0) { return null }",
+    "    var base = 0",
+    "    if (u32(b, 0) == tag(\"ttcf\")) {",
+    "        base = u32(b, 12)",
+    "    }",
+    "    val f = Font(b, base)",
+    "    f.upem = u16(b, head + 18).toFloat()",
+    "    f.locaLong = i16(b, head + 50) == 1",
+    "    f.numGlyphs = u16(b, maxp + 4)",
+    "    chooseCmap(f)",
+    "    f.ok = true",
+    "    return f",
+    "}"
+]
+
+val dock = Dock(startingLayout())
+
+func startingLayout(): Node {
+    return beside(
+        leaf(["files"]),
+        above(
+            beside(leaf(["editor"]), leaf(["props", "preview"]), 0.68),
+            leaf(["terminal"]),
+            0.72),
+        0.19)
+}
+
+// ------------------------------------------------------- what the handlers do
+
+proc say(line: String) {
+    val l = log.get()
+    l.add(line)
+    if (l.size > 200) { l.removeAt(0) }
+    log.set(l)
+}
+
+proc chooseFile(i: Int) {
+    chosen.set(i)
+    say("ouvert  src/" + files[clampI(i, 0, files.size - 1)])
+}
+
+proc setFilter(s: String) { filter.set(s) }
+proc setCommand(s: String) { commandLine.set(s) }
+
+proc submitCommand() {
+    val c = commandLine.get()
+    if (c == "") { return }
+    say("› " + c)
+    commandLine.set("")
+}
+
+proc setWrap(b: Bool) {
+    wrapLines.set(b)
+    say("retour à la ligne : " + (if (b) { "oui" } else { "non" }))
+}
+
+proc setLive(b: Bool) { liveReload.set(b) }
+proc setFontScale(v: Float) { fontScale.set(v) }
+
+proc analyse() {
+    coverage.set(clampF(coverage.get() + 0.11, 0.0, 1.0))
+    say("analyse terminée — " + (coverage.get() * 100.0).round().toString() + " % couverts")
+}
+
+proc clearLog() {
+    log.set([])
+    coverage.set(0.0)
+}
+
+proc compile() {
+    say("keal build src/main.keal")
+    coverage.set(0.18)
+}
+
+proc revealFiles() {
+    dock.reveal("files")
+    say("panneau Fichiers au premier plan")
+}
+
+proc resetLayout() {
+    dock.root = startingLayout()
+    say("disposition remise à zéro")
+}
+
+proc registerPanels() {
+    dock.add(panelOf("files", "Fichiers", { -> filesPanel() }))
+    dock.add(panelOf("editor", "font.keal", { -> editorPanel() }))
+    dock.add(panelOf("terminal", "Terminal", { -> terminalPanel() }))
+    dock.add(panelOf("props", "Propriétés", { -> propertiesPanel() }))
+    dock.add(panelOf("preview", "Aperçu", { -> previewPanel() }))
+    setIcon("files", "folder")
+    setIcon("editor", "file")
+    setIcon("terminal", "menu")
+    setIcon("props", "gear")
+    setIcon("preview", "dot")
+}
+
+proc setIcon(id: String, name: String) {
+    val p = dock.panel(id)
+    if (p != null) { p.icon = name }
+}
+
+// ------------------------------------------------------------------- panels
+
+func filesPanel(): View {
+    val rows: List<View> = []
+    rows.add(field(filter.get(), "filtrer…", { s -> setFilter(s) }).keyed("filter"))
+    rows.add(gapV(t.gap(1.0)))
+    val needle = filter.get().toLower()
+    var i = 0
+    while (i < files.size) {
+        val idx = i
+        val name = files[idx]
+        if ((needle == "") or name.contains(needle)) {
+            val b = button(name, { -> chooseFile(idx) })
+            b.kindOf(quiet)
+            b.withIcon("file")
+            b.h(t.control - 4.0)
+            b.rounded(t.radiusSm)
+            b.font(t.small())
+            if (idx == chosen.get()) {
+                b.bg(t.accentSoft)
+                b.color(t.textPrimary)
+            }
+            rows.add(b)
+        }
+        i++
+    }
+    return scroll(rows).gaps(1.0).padAll(t.gap(2.0)).grows()
+}
+
+/// The editor draws itself: a gutter of line numbers, then the text. This is
+/// the escape hatch — a view handed a clipped canvas, its rectangle, the fonts
+/// and the theme, free to do anything inside its own bounds.
+func editorPanel(): View {
+    val src = source
+    val size = 12.0 * fontScale.get()
+    return custom({ p ->
+        val th = p.theme
+        val r = p.area
+        val st = TextStyle(size, false, true)
+        val lh = p.lineHeight(st)
+        val asc = p.ascent(st)
+        val gutter = p.width("0000", st) + th.gap(3.0)
+        p.canvas.fillRect(Rect(r.x, r.y, gutter, r.h), withAlpha(th.surfaceHi, 150))
+        p.canvas.fillRect(Rect(r.x + gutter, r.y, th.hairline, r.h), th.border)
+        var i = 0
+        while (i < src.size) {
+            val y = r.y + th.gap(2.0) + i.toFloat() * lh
+            if (y > r.y + r.h) { break }
+            p.text((i + 1).toString(), Rect(r.x, y, gutter - th.gap(2.0), lh), 2, st, th.textMuted)
+            p.line(src[i], r.x + gutter + th.gap(2.0), y + asc, st, th.textPrimary)
+            i++
+        }
+    }).grows()
+}
+
+func terminalPanel(): View {
+    val lines: List<View> = []
+    for (l in log.get()) {
+        lines.add(label(l).font(textMono(11.5)).color(t.textSecondary))
+    }
+    val entry = field(commandLine.get(), "une commande", { s -> setCommand(s) })
+    entry.keyed("cmd")
+    entry.grows()
+    entry.onTap = { -> submitCommand() }
+    return column([
+        scroll(lines).gaps(2.0).padAll(t.gap(2.0)).grows(),
+        row([
+            label("›").font(textMono(13.0)).color(t.accent).w(12.0),
+            entry
+        ]).gaps(t.gap(1.0)).padAll(t.gap(2.0)).aligned(mainStart, crossCenter)
+    ]).grows()
+}
+
+func propertiesPanel(): View {
+    return scroll([
+        heading("Affichage"),
+        toggle("Retour à la ligne", wrapLines.get(), { b -> setWrap(b) }),
+        checkbox("Rechargement à chaud", liveReload.get(), { b -> setLive(b) }),
+        gapV(t.gap(1.5)),
+        row([
+            label("Taille du texte").color(t.textSecondary).grows(),
+            badge((fontScale.get() * 100.0).round().toString() + " %")
+        ]).aligned(mainStart, crossCenter),
+        slider(fontScale.get(), 0.7, 2.0, { v -> setFontScale(v) }),
+        gapV(t.gap(2.0)),
+        divider(),
+        gapV(t.gap(2.0)),
+        heading("Analyse"),
+        row([
+            label("Couverture").color(t.textSecondary).grows(),
+            label((coverage.get() * 100.0).round().toString() + " %").color(t.textPrimary)
+        ]),
+        progress(coverage.get()),
+        gapV(t.gap(2.0)),
+        row([
+            button("Analyser", { -> analyse() }).kindOf(primary).grows(),
+            button("Effacer", { -> clearLog() }).kindOf(danger)
+        ]).gaps(t.gap(2.0)),
+        gapV(t.gap(2.0)),
+        divider(),
+        gapV(t.gap(2.0)),
+        heading("État"),
+        row([badge("prêt"), badge("15 modules"), badge("0 erreur")]).gaps(t.gap(1.5)),
+        gapV(t.gap(2.0)),
+        paragraph("Chaque contrôle de ce panneau est dessiné par le rasteriseur "
+                + "écrit en Keal : les coins, les bordures, les ombres et le texte.")
+            .color(t.textMuted).font(t.small())
+    ]).gaps(t.gap(1.5)).padAll(t.gap(3.0)).grows()
+}
+
+/// A chart, drawn by hand — proof that a view can be anything.
+func previewPanel(): View {
+    return custom({ p ->
+        val th = p.theme
+        val r = shrink(p.area, th.gap(4.0))
+        p.text("hauteur des glyphes rendus", Rect(r.x, r.y, r.w, 18.0), 0, th.small(), th.textMuted)
+        val plot = Rect(r.x, r.y + 24.0, r.w, (r.h - 24.0).max(1.0))
+        val n = 22
+        val bw = plot.w / n.toFloat()
+        var i = 0
+        // A lambda has no `return`, so the guard is the loop's condition.
+        if (isEmpty(r)) { i = n }
+        while (i < n) {
+            val ph = i.toFloat() / (n - 1).toFloat()
+            val wave = 0.35 + 0.6 * (0.5 + 0.5 * sinish(ph * 6.3))
+            val hh = plot.h * clampF(wave, 0.06, 1.0)
+            val bar = Rect(plot.x + bw * i.toFloat() + 1.5, plot.y + plot.h - hh,
+                           (bw - 3.0).max(1.0), hh)
+            p.canvas.fillRound(bar, 3.0, mix(th.accent, th.success, ph))
+            i++
+        }
+    }).grows()
+}
+
+/// A sine, near enough for a chart, without a trigonometric library: three
+/// terms of the Taylor series, folded into one period.
+func sinish(x: Float): Float {
+    var a = x % 6.283185
+    if (a > 3.141593) { a = a - 6.283185 }
+    val a3 = a * a * a
+    return a - a3 / 6.0 + a3 * a * a / 120.0
+}
+
+// ----------------------------------------------------------------- the shell
+
+val app = App("keal-view — atelier", 1180, 740)
+
+proc flipTheme() {
+    t = if (t.dark) { lightTheme() } else { darkTheme() }
+    app.theme = t
+    kvSetDark(t.dark)
+    say("thème : " + (if (t.dark) { "sombre" } else { "clair" }))
+}
+
+func toolbar(): View {
+    return stack([
+        underlay({ p ->
+            val th = p.theme
+            p.canvas.fillRect(p.area, th.surface)
+            p.canvas.fillRect(Rect(p.area.x, p.area.y + p.area.h - th.hairline,
+                                   p.area.w, th.hairline), th.border)
+        }),
+        row([
+            icon("gear").color(t.accent).fontSize(17.0),
+            label("Atelier").font(textBold(14.0)).color(t.textPrimary),
+            badge("keal-view"),
+            spacer(),
+            iconButton("play", { -> compile() }),
+            iconButton("search", { -> revealFiles() }),
+            iconButton("dot", { -> flipTheme() }),
+            button("Ranger", { -> resetLayout() }).kindOf(quiet)
+        ]).gaps(t.gap(2.0)).padXY(t.gap(3.0), 0.0).aligned(mainStart, crossCenter)
+    ]).h(t.gap(11.0))
+}
+
+func statusbar(): View {
+    return stack([
+        underlay({ p ->
+            val th = p.theme
+            p.canvas.fillRect(p.area, th.surface)
+            p.canvas.fillRect(Rect(p.area.x, p.area.y, p.area.w, th.hairline), th.border)
+        }),
+        row([
+            label("src/" + files[clampI(chosen.get(), 0, files.size - 1)])
+                .color(t.textSecondary).font(t.small()),
+            spacer(),
+            label(source.size.toString() + " lignes").color(t.textMuted).font(t.small()),
+            label("UTF-8").color(t.textMuted).font(t.small()),
+            label("Keal").color(t.textMuted).font(t.small())
+        ]).gaps(t.gap(4.0)).padXY(t.gap(3.0), 0.0).aligned(mainStart, crossCenter)
+    ]).h(t.gap(6.0))
+}
+
+func shell(): View {
+    return column([
+        toolbar(),
+        dockView(dock, t).grows(),
+        statusbar()
+    ]).grows()
+}
+
+func dragFeedback(): View { return dockOverlay(dock, t) }
+
+app.theme = t
+app.onStart = { -> registerPanels() }
+app.build = { -> shell() }
+app.overlay = { -> dragFeedback() }
+
+run(app)

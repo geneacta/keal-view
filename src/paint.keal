@@ -70,12 +70,25 @@ proc paintNode(var ui: Ui, v: View) {
         c.fillRect(Rect(r.x, r.y + (r.h - t.hairline) / 2.0, r.w, t.hairline), t.border)
         return
     }
+    if (v.kind == kHandle) {
+        // A divider is a gap until the pointer is on it, and then a line —
+        // visible enough to aim at, quiet enough to forget.
+        if (ui.isHot(v) or ui.isActive(v)) {
+            val thin = if (v.vertical) {
+                Rect(r.x + (r.w - t.hairline * 2.0) / 2.0, r.y, t.hairline * 2.0, r.h)
+            } else {
+                Rect(r.x, r.y + (r.h - t.hairline * 2.0) / 2.0, r.w, t.hairline * 2.0)
+            }
+            c.fillRound(thin, t.hairline, if (ui.isActive(v)) { t.accent } else { t.borderStrong })
+        }
+        return
+    }
     if (v.kind == kTabs) { paintTabs(ui, v); return }
     if (v.kind == kPanel) { paintPanel(ui, v); return }
     if (v.kind == kCustom) {
         c.push(r)
         val h = v.onDraw
-        h(c, r)
+        h(Paint(c, r, ui.fonts, t, ui.isHot(v), ui.isActive(v)))
         c.pop()
         return
     }
@@ -150,7 +163,13 @@ proc paintButton(var ui: Ui, v: View) {
     val textW = if (v.label == "") { 0.0 } else { ui.fonts.width(v.label, st, sc) }
     var total = iconW + textW
     if ((iconW > 0.0) and (textW > 0.0)) { total = total + gap }
+    // A button's label sits where it was told to: centred by default, which
+    // is what a button wants, and to one side where the button is really a
+    // row in a list.
+    val padX = t.gap(3.0)
     var x = r.x + (r.w - total) / 2.0
+    if (v.align == 0) { x = r.x + padX }
+    if (v.align == 2) { x = r.x + r.w - total - padX }
     if (iconW > 0.0) {
         drawIcon(c, v.icon, Rect(x, r.y + (r.h - iconW) / 2.0, iconW, iconW), ink, t.hairline * 1.6)
         x = x + iconW
@@ -371,8 +390,11 @@ proc paintScrollbar(var ui: Ui, v: View) {
     val x = r.x + r.w - w - t.gap(1.0)
     val y = r.y + t.gap(1.0) + travel * frac
     val hot = ui.isHot(v) or ui.isActive(v)
+    // The track is drawn too, faintly: a bar with nothing behind it reads as
+    // a stray mark, and a scrollable region should say so before it is touched.
+    c.fillRound(Rect(x, r.y + t.gap(1.0), w, trackH), w / 2.0, withAlpha(t.border, 120))
     c.fillRound(Rect(x, y, w, thumbH), w / 2.0,
-                if (hot) { t.borderStrong } else { withAlpha(t.borderStrong, 130) })
+                if (hot) { t.borderStrong } else { withAlpha(t.borderStrong, 190) })
 }
 
 /// The halo that says the keyboard is here. Drawn outside the control, so it
