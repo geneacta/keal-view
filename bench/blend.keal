@@ -1,0 +1,25 @@
+import "../src/color.keal"
+import "../src/ffi.keal"
+
+/// The per-pixel compositing loop, timed on its own.
+///
+/// `over` is the one function keal-view runs once per covered pixel, so its
+/// cost is the framework's floor. This composites forty million pixels at
+/// varying coverage and reports nanoseconds each.
+
+val n = 40000000
+var acc = 0
+val t0 = kvNow()
+var i = 0
+while (i < n) {
+    // The source, the destination and the coverage all change, so nothing
+    // can be hoisted out of the loop and the branches stay unpredictable.
+    val dst = 255 * 16777216 + (i % 251) * 65536 + (i % 241) * 256 + (i % 239)
+    val src = 200 * 16777216 + (i % 233) * 65536 + (i % 229) * 256 + (i % 227)
+    acc = (acc + over(dst, src, i % 256)) % 1000000007
+    i++
+}
+val ms = kvNow() - t0
+println("over(): ${n} pixels in ${(ms * 100.0).round().toFloat() / 100.0} ms")
+println("        ${(ms * 1000000.0 / n.toFloat() * 100.0).round().toFloat() / 100.0} ns each")
+println("        checksum ${acc}")

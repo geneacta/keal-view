@@ -4,18 +4,19 @@
 /// the inner loop: a record in Keal is a shared reference, so a per-pixel
 /// blend over a record would allocate and count. An `Int` is a register.
 ///
-/// The unpacking below is written with `/` and `%` rather than shifts because
-/// Keal has no bitwise operators yet. It costs nothing: every divisor is a
-/// literal power of two, and the C compiler turns each one into a shift.
+/// The packing is written with `shl`, `bor` and `band`, which say what they
+/// mean about bits. Only the three `/ 255` in `over` remain division, and
+/// those are division: 255 is not a power of two, and the C compiler folds a
+/// constant divisor into a multiply and a shift anyway.
 
 /// Fully opaque, from three channels in 0..255.
 public func rgb(r: Int, g: Int, b: Int): Int {
-    return 255 * 16777216 + clamp255(r) * 65536 + clamp255(g) * 256 + clamp255(b)
+    return (255 shl 24) bor (clamp255(r) shl 16) bor (clamp255(g) shl 8) bor clamp255(b)
 }
 
 /// With an alpha of its own, also 0..255.
 public func rgba(r: Int, g: Int, b: Int, a: Int): Int {
-    return clamp255(a) * 16777216 + clamp255(r) * 65536 + clamp255(g) * 256 + clamp255(b)
+    return (clamp255(a) shl 24) bor (clamp255(r) shl 16) bor (clamp255(g) shl 8) bor clamp255(b)
 }
 
 /// One level of grey.
@@ -40,7 +41,7 @@ public func web(s: String): Int {
             val hi = hexDigit(t[i * 2])
             val lo = hexDigit(t[i * 2 + 1])
             if ((hi < 0) or (lo < 0)) { return rgb(255, 0, 255) }
-            v[i] = hi * 16 + lo
+            v[i] = (hi shl 4) bor lo
             i++
         }
         return rgba(v[0], v[1], v[2], v[3])
@@ -49,14 +50,14 @@ public func web(s: String): Int {
 }
 
 /// The channels, taken back out.
-public func alphaOf(c: Int): Int { return (c / 16777216) % 256 }
-public func redOf(c: Int): Int   { return (c / 65536) % 256 }
-public func greenOf(c: Int): Int { return (c / 256) % 256 }
-public func blueOf(c: Int): Int  { return c % 256 }
+public func alphaOf(c: Int): Int { return (c shr 24) band 0xFF }
+public func redOf(c: Int): Int   { return (c shr 16) band 0xFF }
+public func greenOf(c: Int): Int { return (c shr 8) band 0xFF }
+public func blueOf(c: Int): Int  { return c band 0xFF }
 
 /// The same colour at a different opacity, `a` in 0..255.
 public func withAlpha(c: Int, a: Int): Int {
-    return clamp255(a) * 16777216 + (c % 16777216)
+    return (clamp255(a) shl 24) bor (c band 0x00FF_FFFF)
 }
 
 /// The same colour with its opacity scaled, `f` in 0.0..1.0 — what a
@@ -104,7 +105,7 @@ public func over(dst: Int, src: Int, cov: Int): Int {
     val r = (redOf(src) * a + redOf(dst) * ia) / 255
     val g = (greenOf(src) * a + greenOf(dst) * ia) / 255
     val b = (blueOf(src) * a + blueOf(dst) * ia) / 255
-    return 255 * 16777216 + r * 65536 + g * 256 + b
+    return (255 shl 24) bor (r shl 16) bor (g shl 8) bor b
 }
 
 // ------------------------------------------------------------- the small parts

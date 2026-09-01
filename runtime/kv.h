@@ -115,20 +115,6 @@ void    kvp_set_dark(int64_t dark);
 }
 #endif
 
-/* ----------------------------------------- the void calls, given a value */
-
-/* `extern func` is the only binding Keal has, and a `func` must return
- * something. A C function that returns nothing therefore needs one line of
- * wrapper apiece; they are inlined away to nothing. (Keal's own `func`/`proc`
- * split would express this exactly — `extern proc` is asked for upstream.) */
-static inline int64_t kvp_close_(void)                  { kvp_close(); return 0; }
-static inline int64_t kvp_wait_(int64_t ms)             { kvp_wait(ms); return 0; }
-static inline int64_t kvp_wake_(void)                   { kvp_wake(); return 0; }
-static inline int64_t kvp_set_title_(const char *t)     { kvp_set_title(t); return 0; }
-static inline int64_t kvp_set_cursor_(int64_t s)        { kvp_set_cursor(s); return 0; }
-static inline int64_t kvp_clipboard_set_(const char *s) { kvp_clipboard_set(s); return 0; }
-static inline int64_t kvp_set_dark_(int64_t d)          { kvp_set_dark(d); return 0; }
-
 /* ----------------------------------------------------------- the surface */
 
 /* The framebuffer belongs to this translation unit — the one Keal compiles
@@ -153,10 +139,9 @@ static inline int64_t kv_surface_h(void) { return kv_fb_h; }
 /* A store, bounds-checked. The check costs a predictable branch and buys the
  * property that no Keal program can scribble outside the window — which is
  * the whole reason the rasteriser is allowed to live in Keal at all. */
-static inline int64_t kv_set(int64_t x, int64_t y, int64_t argb) {
+static inline void kv_set(int64_t x, int64_t y, int64_t argb) {
     if ((uint64_t)x < (uint64_t)kv_fb_w && (uint64_t)y < (uint64_t)kv_fb_h)
         kv_fb[y * kv_fb_w + x] = (uint32_t)argb;
-    return 0;
 }
 
 static inline int64_t kv_get(int64_t x, int64_t y) {
@@ -169,19 +154,17 @@ static inline int64_t kv_get(int64_t x, int64_t y) {
  * rather than once per pixel where the span is already known to be solid and
  * clipped — the one place a memory-filling loop beats an inlined store, and
  * the only drawing primitive that is not Keal's own. */
-static inline int64_t kv_span(int64_t x, int64_t y, int64_t n, int64_t argb) {
-    if ((uint64_t)y >= (uint64_t)kv_fb_h) return 0;
+static inline void kv_span(int64_t x, int64_t y, int64_t n, int64_t argb) {
+    if ((uint64_t)y >= (uint64_t)kv_fb_h) return;
     if (x < 0) { n += x; x = 0; }
     if (x + n > kv_fb_w) n = kv_fb_w - x;
-    if (n <= 0) return 0;
+    if (n <= 0) return;
     uint32_t *p = kv_fb + y * kv_fb_w + x, c = (uint32_t)argb;
     for (int64_t i = 0; i < n; i++) p[i] = c;
-    return 0;
 }
 
-static inline int64_t kv_flush(void) {
+static inline void kv_flush(void) {
     kvp_present(kv_fb, kv_fb_w, kv_fb_h);
-    return 0;
 }
 
 /* -------------------------------------------------------------- the blob */
@@ -209,15 +192,13 @@ static inline int64_t kv_blob_get(int64_t h, int64_t i) {
     return (int64_t)((unsigned char *)h)[i];
 }
 
-static inline int64_t kv_blob_set(int64_t h, int64_t i, int64_t v) {
+static inline void kv_blob_set(int64_t h, int64_t i, int64_t v) {
     if (h && (uint64_t)i < (uint64_t)kv_blob_size(h))
         ((unsigned char *)h)[i] = (unsigned char)v;
-    return 0;
 }
 
-static inline int64_t kv_blob_free(int64_t h) {
+static inline void kv_blob_free(int64_t h) {
     if (h) free((unsigned char *)h - 8);
-    return 0;
 }
 
 /* Reading a file into a blob is the only file access keal-view adds, and it

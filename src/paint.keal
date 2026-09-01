@@ -87,8 +87,7 @@ proc paintNode(var ui: Ui, v: View) {
     if (v.kind == kPanel) { paintPanel(ui, v); return }
     if (v.kind == kCustom) {
         c.push(r)
-        val h = v.onDraw
-        h(Paint(c, r, ui.fonts, t, ui.isHot(v), ui.isActive(v)))
+        v.onDraw(Paint(c, r, ui.fonts, t, ui.isHot(v), ui.isActive(v)))
         c.pop()
         return
     }

@@ -17,7 +17,7 @@ native """
 /// Open the window. Answers 1 when it is on screen.
 public extern func kvOpen(title: borrow String, w: Int, h: Int): Int = "kvp_open"
 /// Take it down. Nothing may be drawn afterwards.
-public extern func kvClose(): Int = "kvp_close_"
+public extern proc kvClose() = "kvp_close"
 /// 1 until `kvClose`.
 public extern func kvAlive(): Int = "kvp_alive"
 /// The width of the surface, in device pixels — already multiplied by `kvScale`.
@@ -27,9 +27,9 @@ public extern func kvHeight(): Int = "kvp_height"
 /// Device pixels per logical point: 1.0 on an ordinary screen, 2.0 on a Retina one.
 public extern func kvScale(): Float = "kvp_scale"
 /// Rename the window's title bar.
-public extern func kvSetTitle(t: borrow String): Int = "kvp_set_title_"
+public extern proc kvSetTitle(t: borrow String) = "kvp_set_title"
 /// Ask for a pointer shape: 0 arrow, 1 hand, 2 I-beam, 3 ↔, 4 ↕.
-public extern func kvSetCursor(shape: Int): Int = "kvp_set_cursor_"
+public extern proc kvSetCursor(shape: Int) = "kvp_set_cursor"
 
 // ----------------------------------------------------------------- events
 
@@ -39,9 +39,9 @@ public extern func kvSetCursor(shape: Int): Int = "kvp_set_cursor_"
 public extern func kvPoll(): Int = "kvp_poll"
 /// Sleep until an event arrives or `ms` have passed. A negative `ms` waits
 /// for ever. This is what keeps an idle window off the processor.
-public extern func kvWait(ms: Int): Int = "kvp_wait_"
+public extern proc kvWait(ms: Int) = "kvp_wait"
 /// Wake a `kvWait` from elsewhere — an actor with news, a timer that fired.
-public extern func kvWake(): Int = "kvp_wake_"
+public extern proc kvWake() = "kvp_wake"
 
 public extern func kvEvKind(): Int = "kv_ev_kind"
 public extern func kvEvX(): Int = "kv_ev_x"
@@ -62,15 +62,15 @@ public extern func kvSurfaceW(): Int = "kv_surface_w"
 public extern func kvSurfaceH(): Int = "kv_surface_h"
 /// Write one pixel, as 0xAARRGGBB. Out of bounds is a no-op, never a crash:
 /// the clip is the rasteriser's job, and this is the net beneath it.
-public extern func kvPxSet(x: Int, y: Int, argb: Int): Int = "kv_set"
+public extern proc kvPxSet(x: Int, y: Int, argb: Int) = "kv_set"
 /// Read one pixel back. Out of bounds answers 0.
 public extern func kvPxGet(x: Int, y: Int): Int = "kv_get"
 /// Fill `n` pixels of row `y` from `x` with one colour, clipped to the
 /// surface. The single drawing primitive that is not written in Keal, because
 /// a run of identical stores is the one thing a C loop does better.
-public extern func kvSpan(x: Int, y: Int, n: Int, argb: Int): Int = "kv_span"
+public extern proc kvSpan(x: Int, y: Int, n: Int, argb: Int) = "kv_span"
 /// Hand the finished frame to the screen.
-public extern func kvFlush(): Int = "kv_flush"
+public extern proc kvFlush() = "kv_flush"
 
 // ------------------------------------------------------------------ blob
 
@@ -81,18 +81,18 @@ public extern func kvBlobNew(size: Int): Int = "kv_blob_new"
 public extern func kvBlobSize(h: Int): Int = "kv_blob_size"
 /// One byte, or -1 past the end. Inlined, so this is a load.
 public extern func kvBlobGet(h: Int, i: Int): Int = "kv_blob_get"
-public extern func kvBlobSet(h: Int, i: Int, v: Int): Int = "kv_blob_set"
-public extern func kvBlobFree(h: Int): Int = "kv_blob_free"
+public extern proc kvBlobSet(h: Int, i: Int, v: Int) = "kv_blob_set"
+public extern proc kvBlobFree(h: Int) = "kv_blob_free"
 
 // ------------------------------------------------------------------ host
 
 /// Milliseconds on a monotonic clock — for animation, never for the date.
 public extern func kvNow(): Float = "kvp_now_ms"
 public extern func kvClipboardGet(): own String = "kvp_clipboard_get"
-public extern func kvClipboardSet(s: borrow String): Int = "kvp_clipboard_set_"
+public extern proc kvClipboardSet(s: borrow String) = "kvp_clipboard_set"
 /// Tell the system's own chrome — the title bar, the traffic lights — which
 /// way the application's theme goes.
-public extern func kvSetDark(dark: Bool): Int = "kvp_set_dark_"
+public extern proc kvSetDark(dark: Bool) = "kvp_set_dark"
 /// The window's number as the system knows it — what `screencapture -l` takes.
 public extern func kvWindowId(): Int = "kvp_window_id"
 /// A path to a font the system already has: 0 sans, 1 sans bold, 2 monospace.

@@ -284,12 +284,171 @@ proc stateTests() {
     ok("a cell of strings works the same", s.get() == "b")
 }
 
+
+// -------------------------------------------------------------- interaction
+
+/// Events, synthesised and dispatched into a real laid-out tree. This is the
+/// half of the framework a screenshot cannot check: that a press and a release
+/// on the same button is a click, that the same press released elsewhere is
+/// not, that a drag is not a click, and that typing reaches the field with the
+/// focus and nothing else.
+func down(x: Float, y: Float): Event { return Event(evDown(), x, y, 1, 0, 0, 1, 0.0, 0.0, "") }
+func up(x: Float, y: Float): Event { return Event(evUp(), x, y, 1, 0, 0, 1, 0.0, 0.0, "") }
+func moveTo(x: Float, y: Float): Event { return Event(evMove(), x, y, 1, 0, 0, 0, 0.0, 0.0, "") }
+func typed(s: String): Event { return Event(evText(), 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, s) }
+func pressed(k: Int): Event { return Event(evKeyDown(), 0.0, 0.0, 0, k, 0, 0, 0.0, 0.0, "") }
+func wheel(x: Float, y: Float, dy: Float): Event {
+    return Event(evScroll(), x, y, 0, 0, 0, 0, 0.0, dy, "")
+}
+
+proc interactionTests() {
+    val ui = testUi()
+    val app = App("t", 400, 300)
+    val area = Rect(0.0, 0.0, 400.0, 300.0)
+
+    // A press and a release on the same button is a click.
+    var taps = 0
+    val b = button("go", { -> taps = taps + 1 }).sized(100.0, 30.0)
+    var tree = column([b])
+    layout(ui, tree, area)
+    val bx = centerX(b.frame)
+    val by = centerY(b.frame)
+    dispatch(ui, app, tree, moveTo(bx, by))
+    dispatch(ui, app, tree, down(bx, by))
+    ok("pressing marks the button active", ui.active == b.id)
+    dispatch(ui, app, tree, up(bx, by))
+    eqI("a press and a release is one click", taps, 1)
+    ok("and lets go afterwards", ui.active == 0)
+
+    // Released somewhere else, it is not.
+    dispatch(ui, app, tree, down(bx, by))
+    dispatch(ui, app, tree, up(bx + 300.0, by))
+    eqI("released elsewhere is not a click", taps, 1)
+
+    // A disabled button answers nothing at all.
+    var deadTaps = 0
+    val dead = button("no", { -> deadTaps = deadTaps + 1 }).sized(100.0, 30.0).off()
+    var t2 = column([dead])
+    layout(ui, t2, area)
+    dispatch(ui, app, t2, down(centerX(dead.frame), centerY(dead.frame)))
+    dispatch(ui, app, t2, up(centerX(dead.frame), centerY(dead.frame)))
+    eqI("a disabled button is not clicked", deadTaps, 0)
+
+    // A checkbox reports the value it would become, not the one it has.
+    var flag = false
+    val cb = checkbox("on", false, { v -> flag = v }).sized(120.0, 30.0)
+    var t3 = column([cb])
+    layout(ui, t3, area)
+    dispatch(ui, app, t3, down(cb.frame.x + 8.0, centerY(cb.frame)))
+    dispatch(ui, app, t3, up(cb.frame.x + 8.0, centerY(cb.frame)))
+    ok("ticking a box asks for true", flag)
+
+    // A slider follows the pointer, and stops at both ends.
+    var sv = 0.0
+    val sl = slider(0.0, 0.0, 100.0, { v -> sv = v }).sized(200.0, 30.0)
+    var t4 = column([sl])
+    layout(ui, t4, area)
+    dispatch(ui, app, t4, down(centerX(sl.frame), centerY(sl.frame)))
+    ok("pressing the middle of a slider lands near the middle", (sv - 50.0).abs() < 6.0)
+    // The value comes back through the tree on the next frame, as it would in
+    // a running application; a slider reports a change, not a position.
+    sl.value = sv
+    dispatch(ui, app, t4, moveTo(sl.frame.x - 500.0, centerY(sl.frame)))
+    eqF("dragging past the start stops at the start", sv, 0.0)
+    sl.value = sv
+    dispatch(ui, app, t4, moveTo(right(sl.frame) + 500.0, centerY(sl.frame)))
+    eqF("and past the end stops at the end", sv, 100.0)
+    dispatch(ui, app, t4, up(right(sl.frame), centerY(sl.frame)))
+
+    // A field takes the keyboard on a click, and gives it back on Escape.
+    var content = ""
+    val fld = field("", "type", { s -> content = s }).sized(200.0, 30.0)
+    var t5 = column([fld])
+    layout(ui, t5, area)
+    dispatch(ui, app, t5, down(fld.frame.x + 10.0, centerY(fld.frame)))
+    ok("clicking a field takes the focus", ui.focus == fld.id)
+    dispatch(ui, app, t5, up(fld.frame.x + 10.0, centerY(fld.frame)))
+    dispatch(ui, app, t5, typed("a"))
+    ok("typing reaches it", content == "a")
+    fld.label = content
+    dispatch(ui, app, t5, typed("b"))
+    ok("and again, after the value came back", content == "ab")
+    fld.label = content
+    dispatch(ui, app, t5, pressed(keyBackspace()))
+    ok("backspace takes one off", content == "a")
+    fld.label = content
+    dispatch(ui, app, t5, pressed(keyEscape()))
+    ok("escape gives the keyboard back", ui.focus == 0)
+    dispatch(ui, app, t5, typed("z"))
+    ok("and typing then goes nowhere", content == "a")
+
+    // Tab walks the controls that can take focus, in the order declared.
+    val f1 = field("", "one", { s -> }).sized(100.0, 30.0)
+    val f2 = field("", "two", { s -> }).sized(100.0, 30.0)
+    var t6 = column([f1, f2])
+    layout(ui, t6, area)
+    ui.focus = 0
+    dispatch(ui, app, t6, pressed(keyTab()))
+    ok("tab starts at the first", ui.focus == f1.id)
+    dispatch(ui, app, t6, pressed(keyTab()))
+    ok("and goes on to the second", ui.focus == f2.id)
+    dispatch(ui, app, t6, pressed(keyTab()))
+    ok("and wraps round", ui.focus == f1.id)
+
+    // A drag is not a click: the handler hears grab, move and drop, and the
+    // tap handler hears nothing.
+    var grabs = 0
+    var moves = 0
+    var drops = 0
+    var stray = 0
+    val grip = custom({ p -> }).sized(100.0, 100.0)
+    grip.tappable({ -> stray = stray + 1 })
+    grip.dragged({ x, y -> grabs = grabs + 1 },
+                 { x, y -> moves = moves + 1 },
+                 { x, y -> drops = drops + 1 })
+    var t7 = column([grip])
+    layout(ui, t7, area)
+    val gx = centerX(grip.frame)
+    val gy = centerY(grip.frame)
+    dispatch(ui, app, t7, down(gx, gy))
+    eqI("the press is reported as a grab", grabs, 1)
+    dispatch(ui, app, t7, moveTo(gx + 1.0, gy))
+    eqI("a tremor is not a drag", moves, 0)
+    dispatch(ui, app, t7, moveTo(gx + 40.0, gy))
+    eqI("a real move is", moves, 1)
+    dispatch(ui, app, t7, up(gx + 40.0, gy))
+    eqI("letting go is a drop", drops, 1)
+    eqI("and a drag is never a click", stray, 0)
+
+    // A press that never moved still is one.
+    dispatch(ui, app, t7, down(gx, gy))
+    dispatch(ui, app, t7, up(gx, gy))
+    eqI("a press that did not move is a click", stray, 1)
+    eqI("and not a drop", drops, 1)
+
+    // The wheel moves the region under the pointer, and stops at both ends.
+    val tall: List<View> = []
+    var i = 0
+    while (i < 40) { tall.add(label("row").h(20.0)); i++ }
+    val sc = scroll(tall).sized(200.0, 100.0)
+    var t8 = column([sc])
+    layout(ui, t8, area)
+    eqF("the region knows how tall its content is", sc.content, 800.0)
+    dispatch(ui, app, t8, wheel(centerX(sc.frame), centerY(sc.frame), -50.0))
+    eqF("the wheel scrolls it", ui.scrollOf(sc.id), 50.0)
+    dispatch(ui, app, t8, wheel(centerX(sc.frame), centerY(sc.frame), 500.0))
+    eqF("and stops at the top", ui.scrollOf(sc.id), 0.0)
+    dispatch(ui, app, t8, wheel(centerX(sc.frame), centerY(sc.frame), -99999.0))
+    eqF("and at the bottom", ui.scrollOf(sc.id), 700.0)
+}
+
 // --------------------------------------------------------------------- run
 
 colourTests()
 geometryTests()
 layoutTests()
 dockTests()
+interactionTests()
 textTests()
 stateTests()
 

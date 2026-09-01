@@ -336,10 +336,7 @@ func leafView(var d: Dock, t: Theme, var n: Node): View {
     if (n.tabs.size > 0) {
         val idx = clampI(n.active, 0, n.tabs.size - 1)
         val p = d.panel(n.tabs[idx])
-        if (p != null) {
-            val make = p.body
-            body = make()
-        }
+        if (p != null) { body = p.body() }
     }
     val inner = column([
         tabStrip(d, t, n),
@@ -412,9 +409,7 @@ func tabView(var d: Dock, t: Theme, var n: Node, p: Panel, idx: Int): View {
             val z = d.zone
             val tgt = d.target
             d.dragging = ""
-            // A literal, not `zoneNone`: the C backend cannot yet compile a
-            // lambda that captures a top-level binding, and a constant is one.
-            d.zone = 0
+            d.zone = zoneNone
             d.target = 0
             if (tgt != 0) { d.dropInto(tgt, z, pid) }
             invalidate()

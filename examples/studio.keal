@@ -8,12 +8,9 @@ import "../src/dock.keal"
 /// under the pointer says where letting go would put it. Every panel below is
 /// an ordinary view function — none of them knows it is docked.
 ///
-/// One convention worth noticing, because the language asks for it: no lambda
-/// here mentions a top-level binding. `keal build` cannot yet compile a
-/// closure that captures one, so every handler calls a `proc` instead of
-/// writing to a cell directly. It reads well enough — the handlers name what
-/// happens rather than how — and it is the only place keal-view's shape was
-/// decided by the compiler rather than by the design.
+/// The handlers that do something worth a name have one; the ones that only
+/// move a value write to the cell where they stand. Both work — a lambda here
+/// reads and writes the top-level cells directly.
 
 // -------------------------------------------------------------------- state
 
@@ -77,9 +74,6 @@ proc chooseFile(i: Int) {
     say("ouvert  src/" + files[clampI(i, 0, files.size - 1)])
 }
 
-proc setFilter(s: String) { filter.set(s) }
-proc setCommand(s: String) { commandLine.set(s) }
-
 proc submitCommand() {
     val c = commandLine.get()
     if (c == "") { return }
@@ -91,9 +85,6 @@ proc setWrap(b: Bool) {
     wrapLines.set(b)
     say("retour à la ligne : " + (if (b) { "oui" } else { "non" }))
 }
-
-proc setLive(b: Bool) { liveReload.set(b) }
-proc setFontScale(v: Float) { fontScale.set(v) }
 
 proc analyse() {
     coverage.set(clampF(coverage.get() + 0.11, 0.0, 1.0))
@@ -142,7 +133,7 @@ proc setIcon(id: String, name: String) {
 
 func filesPanel(): View {
     val rows: List<View> = []
-    rows.add(field(filter.get(), "filtrer…", { s -> setFilter(s) }).keyed("filter"))
+    rows.add(field(filter.get(), "filtrer…", { s -> filter.set(s) }).keyed("filter"))
     rows.add(gapV(t.gap(1.0)))
     val needle = filter.get().toLower()
     var i = 0
@@ -198,7 +189,7 @@ func terminalPanel(): View {
     for (l in log.get()) {
         lines.add(label(l).font(textMono(11.5)).color(t.textSecondary))
     }
-    val entry = field(commandLine.get(), "une commande", { s -> setCommand(s) })
+    val entry = field(commandLine.get(), "une commande", { s -> commandLine.set(s) })
     entry.keyed("cmd")
     entry.grows()
     entry.onTap = { -> submitCommand() }
@@ -215,13 +206,13 @@ func propertiesPanel(): View {
     return scroll([
         heading("Affichage"),
         toggle("Retour à la ligne", wrapLines.get(), { b -> setWrap(b) }),
-        checkbox("Rechargement à chaud", liveReload.get(), { b -> setLive(b) }),
+        checkbox("Rechargement à chaud", liveReload.get(), { b -> liveReload.set(b) }),
         gapV(t.gap(1.5)),
         row([
             label("Taille du texte").color(t.textSecondary).grows(),
             badge((fontScale.get() * 100.0).round().toString() + " %")
         ]).aligned(mainStart, crossCenter),
-        slider(fontScale.get(), 0.7, 2.0, { v -> setFontScale(v) }),
+        slider(fontScale.get(), 0.7, 2.0, { v -> fontScale.set(v) }),
         gapV(t.gap(2.0)),
         divider(),
         gapV(t.gap(2.0)),
@@ -339,11 +330,9 @@ func shell(): View {
     ]).grows()
 }
 
-func dragFeedback(): View { return dockOverlay(dock, t) }
-
 app.theme = t
 app.onStart = { -> registerPanels() }
 app.build = { -> shell() }
-app.overlay = { -> dragFeedback() }
+app.overlay = { -> dockOverlay(dock, t) }
 
 run(app)

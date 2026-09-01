@@ -86,8 +86,7 @@ public proc run(var app: App) {
         if (argv[i0] == "--window-id") { writeFile(argv[i0 + 1], kvWindowId().toString()) }
         i0++
     }
-    val started = app.onStart
-    started()
+    app.onStart()
 
     var running = true
     var lastRev = -1
@@ -113,12 +112,7 @@ public proc run(var app: App) {
         canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
         val area = canvas.bounds()
 
-        val make = app.build
-        val paintOver = app.overlay
-        val layers: List<View> = []
-        layers.add(make())
-        layers.add(paintOver())
-        var root = stack(layers)
+        var root = stack([app.build(), app.overlay()])
         layout(ui, root, area)
         var i = 0
         while (i < events.size) {
@@ -126,10 +120,7 @@ public proc run(var app: App) {
             i++
         }
         if (revision() != lastRev) {
-            val again: List<View> = []
-            again.add(make())
-            again.add(paintOver())
-            root = stack(again)
+            root = stack([app.build(), app.overlay()])
             layout(ui, root, area)
             lastRev = revision()
         }
@@ -147,8 +138,7 @@ public proc run(var app: App) {
             if (ui.animating) { kvWait(60) } else { kvWait(-1) }
         }
     }
-    val stopped = app.onStop
-    stopped()
+    app.onStop()
     kvClose()
 }
 
@@ -183,7 +173,7 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         // A press has not yet become a drag. Which of the two it turns out to
         // be decides whether letting go is a click or a drop.
         ui.setMemo(mixId(h.id, 9), 0.0)
-        if (h.draggable) { val g = h.onGrab; g(e.x, e.y) }
+        if (h.draggable) { h.onGrab(e.x, e.y) }
         ui.hot = h.id
         // Only a text field keeps the keyboard after a click. A button that
         // took focus on click would leave a ring behind it, which is what
@@ -205,8 +195,7 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         val n = nodeById(root, id)
         if (n == null) { return }
         if (ui.memoOf(mixId(id, 9), 0.0) > 0.5) {
-            val drop = n.onDragEnd
-            drop(e.x, e.y)
+            n.onDragEnd(e.x, e.y)
             ui.setMemo(mixId(id, 9), 0.0)
             return
         }
@@ -232,8 +221,7 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         // application that has one usually wants the character to go there.
         val f = focusedField(ui, root)
         if (f == null) {
-            val hk = app.onKey
-            hk(e)
+            app.onKey(e)
             return
         }
         insert(ui, f, e.text)
@@ -241,8 +229,7 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
     }
 
     if (k == evKeyDown()) {
-        val hk = app.onKey
-        if (hk(e)) { return }
+        if (app.onKey(e)) { return }
         keyDown(ui, root, e)
         return
     }
@@ -250,17 +237,14 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
     if ((k == evBlur()) or (k == evResize())) { invalidate() }
 }
 
-/// What a click on a finished press means, per kind.
-///
-/// The handlers are copied into a local before being called. That is not
-/// style: `keal build` panics on a call whose callee is a field access with
-/// arguments, and a local is the way round it until the backend is fixed.
-/// Reported upstream; every `val h = ...` below is that same workaround.
+/// What a click on a finished press means, per kind. A checkbox and a toggle
+/// report the value they *would* become, not the one they have: the view is
+/// rebuilt from the application's state, so the control never flips itself.
 proc fire(var n: View) {
-    if (n.clickable) { val h = n.onTap; h(); return }
-    if (n.kind == kButton) { val h = n.onTap; h(); return }
-    if (n.kind == kCheck) { val h = n.onBool; h(not n.on); return }
-    if (n.kind == kToggle) { val h = n.onBool; h(not n.on); return }
+    if (n.clickable) { n.onTap(); return }
+    if (n.kind == kButton) { n.onTap(); return }
+    if (n.kind == kCheck) { n.onBool(not n.on); return }
+    if (n.kind == kToggle) { n.onBool(not n.on); return }
 }
 
 proc drag(var ui: Ui, var root: View, e: Event) {
@@ -277,8 +261,7 @@ proc drag(var ui: Ui, var root: View, e: Event) {
             if ((dx * dx + dy * dy).sqrt() < 3.0) { return }
             ui.setMemo(mixId(a.id, 9), 1.0)
         }
-        val move = a.onDrag
-        move(e.x, e.y)
+        a.onDrag(e.x, e.y)
         invalidate()
         return
     }
@@ -310,7 +293,7 @@ proc sliderToPointer(var ui: Ui, var v: View, x: Float) {
     var value = v.lo + (v.hi - v.lo) * f
     if (v.step > 0.0) { value = v.lo + ((value - v.lo) / v.step).round().toFloat() * v.step }
     value = clampF(value, v.lo.min(v.hi), v.lo.max(v.hi))
-    if (value != v.value) { val h = v.onFloat; h(value) }
+    if (value != v.value) { v.onFloat(value) }
 }
 
 proc tabAt(var ui: Ui, var v: View, x: Float) {
@@ -322,7 +305,7 @@ proc tabAt(var ui: Ui, var v: View, x: Float) {
     while (i < v.options.size) {
         val w = ui.fonts.width(v.options[i], st, sc) + t.gap(5.0)
         if ((x >= cx) and (x < cx + w)) {
-            if (i != v.index) { val h = v.onIndex; h(i) }
+            if (i != v.index) { v.onIndex(i) }
             return
         }
         cx = cx + w
@@ -364,9 +347,7 @@ proc insert(var ui: Ui, var v: View, s: String) {
     val sel = selOf(ui, v)
     val a = sel.x.toInt()
     val b = sel.y.toInt()
-    val text = v.label.take(a) + s + v.label.drop(b)
-    val h = v.onString
-    h(text)
+    v.onString(v.label.take(a) + s + v.label.drop(b))
     ui.setCaret(v.id, a + s.length)
     ui.setAnchor(v.id, a + s.length)
     invalidate()
@@ -380,8 +361,7 @@ proc deleteSel(var ui: Ui, var v: View, backwards: Bool) {
         if (backwards) { a = (a - 1).max(0) } else { b = (b + 1).min(v.label.length) }
     }
     if (a == b) { return }
-    val h = v.onString
-    h(v.label.take(a) + v.label.drop(b))
+    v.onString(v.label.take(a) + v.label.drop(b))
     ui.setCaret(v.id, a)
     ui.setAnchor(v.id, a)
     invalidate()
@@ -440,7 +420,7 @@ proc keyDown(var ui: Ui, var root: View, e: Event) {
     if (key == keyHome()) { moveCaret(ui, f, 0, e.shift()); return }
     if (key == keyEnd()) { moveCaret(ui, f, n, e.shift()); return }
     if (key == keyEscape()) { ui.focus = 0; invalidate(); return }
-    if (key == keyEnter()) { val h = f.onTap; h(); invalidate(); return }
+    if (key == keyEnter()) { f.onTap(); invalidate(); return }
 }
 
 proc moveFocus(var ui: Ui, var root: View, forward: Bool) {
@@ -473,19 +453,12 @@ public proc snapshot(var app: App, w: Int, h: Int, scale: Float, path: String) {
     val fonts = systemFonts()
     val canvas = canvasOffscreen(w, h, scale)
     val ui = Ui(canvas, fonts, app.theme)
-    val started = app.onStart
-    started()
-    val make = app.build
-    val paintOver = app.overlay
-    val layers: List<View> = []
-    layers.add(make())
-    layers.add(paintOver())
-    val root = stack(layers)
+    app.onStart()
+    val root = stack([app.build(), app.overlay()])
     val area = canvas.bounds()
     layout(ui, root, area)
     canvas.clear(app.theme.bg)
     paint(ui, root)
     if (kvSaveBmp(path) == 0) { println("keal-view: could not write ${path}") }
-    val stopped = app.onStop
-    stopped()
+    app.onStop()
 }
