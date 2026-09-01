@@ -33,4 +33,4 @@ c.push(Rect(240.0, 140.0, 60.0, 40.0))
 c.fillRound(Rect(230.0, 130.0, 120.0, 90.0), 10.0, web("#f472b6"))
 c.pop()
 
-println(kvSaveBmp("out/shapes.bmp"))
+println(kvSaveBmp("shapes.bmp"))

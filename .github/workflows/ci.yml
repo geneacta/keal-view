@@ -1,0 +1,79 @@
+name: ci
+
+# Two questions, asked separately.
+#
+# `runtime` asks whether each platform's backend still compiles on that
+# platform. It needs no Keal and takes seconds, so it is the one that catches a
+# Windows or X11 mistake the same hour it is made — which matters, because
+# keal-view is developed on a Mac and those two backends are otherwise written
+# blind.
+#
+# `suite` asks whether the framework itself still works: it builds the Keal
+# compiler from source, runs the headless checks, and draws every example to a
+# file. No display is involved anywhere.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  runtime:
+    name: backend on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            file: runtime/kv_cocoa.m
+          - os: ubuntu-latest
+            file: runtime/kv_x11.c
+          - os: windows-latest
+            file: runtime/kv_win32.c
+    steps:
+      - uses: actions/checkout@v4
+      - name: X11 headers
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev
+      - name: compile the backend
+        shell: bash
+        run: |
+          cc -c -O2 -Wall -Wextra -Iruntime -o /tmp/kv.o "${{ matrix.file }}"
+          echo "compiled ${{ matrix.file }}"
+
+  suite:
+    name: suite on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: keal-view
+      - name: fetch the compiler
+        uses: actions/checkout@v4
+        with:
+          repository: geneacta/keal
+          path: keal
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: keal
+      - name: X11 headers and a font
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev fonts-dejavu-core
+      - name: build the compiler
+        run: cargo build --release --manifest-path keal/Cargo.toml
+      - name: run the suite
+        run: keal-view/tools/test.sh
+      - name: keep the frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frames-${{ matrix.os }}
+          path: keal-view/build/*.bmp
+          if-no-files-found: ignore

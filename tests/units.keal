@@ -1,0 +1,302 @@
+import "../src/app.keal"
+import "../src/dock.keal"
+
+/// What can be checked without a screen.
+///
+/// Everything here runs headless: the colour arithmetic, the geometry, the
+/// layout engine's distribution of space, the docking tree's surgery, and the
+/// font engine on whatever face the machine happens to have. A failure prints
+/// what was expected and what happened, and the program exits non-zero.
+
+var passed = 0
+var failed = 0
+
+proc ok(name: String, cond: Bool) {
+    if (cond) { passed = passed + 1 } else {
+        failed = failed + 1
+        println("FAIL  " + name)
+    }
+}
+
+proc eqI(name: String, got: Int, want: Int) {
+    if (got == want) { passed = passed + 1 } else {
+        failed = failed + 1
+        println("FAIL  " + name + ": got " + got.toString() + ", wanted " + want.toString())
+    }
+}
+
+proc eqF(name: String, got: Float, want: Float) {
+    if ((got - want).abs() < 0.01) { passed = passed + 1 } else {
+        failed = failed + 1
+        println("FAIL  " + name + ": got " + got.toString() + ", wanted " + want.toString())
+    }
+}
+
+// ------------------------------------------------------------------- colour
+
+proc colourTests() {
+    eqI("rgb packs", rgb(18, 52, 86), 255 * 16777216 + 18 * 65536 + 52 * 256 + 86)
+    eqI("red channel", redOf(rgb(18, 52, 86)), 18)
+    eqI("green channel", greenOf(rgb(18, 52, 86)), 52)
+    eqI("blue channel", blueOf(rgb(18, 52, 86)), 86)
+    eqI("alpha channel", alphaOf(rgba(1, 2, 3, 128)), 128)
+    eqI("six hex digits", web("#123456"), rgb(18, 52, 86))
+    eqI("three hex digits", web("#abc"), rgb(170, 187, 204))
+    eqI("hex without a hash", web("ff0000"), rgb(255, 0, 0))
+    eqI("eight hex digits keep alpha", alphaOf(web("#11223380")), 128)
+    eqI("a bad colour is loud, not silent", web("nonsense"), rgb(255, 0, 255))
+    eqI("channels are clamped, not wrapped", redOf(rgb(300, 0, 0)), 255)
+    eqI("and clamped below", redOf(rgb(0 - 40, 0, 0)), 0)
+    eqI("mixing halfway", redOf(mix(rgb(0, 0, 0), rgb(100, 0, 0), 0.5)), 50)
+    eqI("opaque source wins outright", over(rgb(0, 0, 0), rgb(9, 9, 9), 255), rgb(9, 9, 9))
+    eqI("no coverage changes nothing", over(rgb(4, 4, 4), rgb(9, 9, 9), 0), rgb(4, 4, 4))
+    eqI("half coverage lands halfway", redOf(over(rgb(0, 0, 0), rgb(200, 0, 0), 128)), 100)
+    ok("white reads bright", luma(rgb(255, 255, 255)) > 0.99)
+    eqI("dark text on a light ground", contrasting(rgb(250, 250, 250)), rgb(16, 18, 22))
+}
+
+// ----------------------------------------------------------------- geometry
+
+proc geometryTests() {
+    val r = Rect(10.0, 20.0, 100.0, 50.0)
+    eqF("right edge", right(r), 110.0)
+    eqF("bottom edge", bottom(r), 70.0)
+    ok("a point inside is inside", holds(r, 15.0, 25.0))
+    ok("the left edge belongs to the rectangle", holds(r, 10.0, 20.0))
+    ok("the right edge does not", not holds(r, 110.0, 25.0))
+    val i = inset(r, all(5.0))
+    eqF("inset moves the corner", i.x, 15.0)
+    eqF("inset takes from both sides", i.w, 90.0)
+    val x = intersect(r, Rect(60.0, 0.0, 100.0, 100.0))
+    eqF("intersection starts at the later edge", x.x, 60.0)
+    eqF("and ends at the earlier one", x.w, 50.0)
+    ok("disjoint rectangles meet in nothing", isEmpty(intersect(r, Rect(500.0, 0.0, 10.0, 10.0))))
+    val u = union(Rect(0.0, 0.0, 10.0, 10.0), Rect(20.0, 20.0, 10.0, 10.0))
+    eqF("union spans both", u.w, 30.0)
+    eqF("a whole cell is covered", cover(0.0, 10.0, 3), 1.0)
+    eqF("half a cell is half covered", cover(0.0, 3.5, 3), 0.5)
+    eqF("a cell outside is not", cover(0.0, 2.0, 3), 0.0)
+    val piece = cut(r, 0, 30.0)
+    eqF("cutting the left takes 30", piece.w, 30.0)
+    eqF("and leaves 70", cutRest(r, 0, 30.0).w, 70.0)
+    eqF("cutting more than there is takes it all", cut(r, 0, 500.0).w, 100.0)
+}
+
+// ------------------------------------------------------------------- layout
+
+func testUi(): Ui {
+    val c = canvasOffscreen(400, 300, 1.0)
+    return Ui(c, systemFonts(), darkTheme())
+}
+
+proc layoutTests() {
+    val ui = testUi()
+
+    // Three growing children split the room in three.
+    val a = label("a").grows()
+    val b = label("b").grows()
+    val cc = label("c").grows()
+    val col = column([a, b, cc])
+    layout(ui, col, Rect(0.0, 0.0, 300.0, 300.0))
+    eqF("an even share, first", a.frame.h, 100.0)
+    eqF("an even share, second", b.frame.y, 100.0)
+    eqF("an even share, third", cc.frame.y, 200.0)
+    eqF("and the full width across", a.frame.w, 300.0)
+
+    // A fixed child is taken off the top before the rest is shared.
+    val fixed = label("f").h(60.0)
+    val rest = label("r").grows()
+    val col2 = column([fixed, rest])
+    layout(ui, col2, Rect(0.0, 0.0, 200.0, 200.0))
+    eqF("the fixed child keeps its size", fixed.frame.h, 60.0)
+    eqF("the rest takes what is left", rest.frame.h, 140.0)
+
+    // Gaps come out of the room, not out of the children.
+    val g1 = label("1").grows()
+    val g2 = label("2").grows()
+    val col3 = column([g1, g2]).gaps(20.0)
+    layout(ui, col3, Rect(0.0, 0.0, 100.0, 100.0))
+    eqF("a gap is taken from the room", g1.frame.h, 40.0)
+    eqF("and the second child starts after it", g2.frame.y, 60.0)
+
+    // Padding shrinks the box the children live in.
+    val p1 = label("p").grows()
+    val padded = column([p1]).padAll(10.0)
+    layout(ui, padded, Rect(0.0, 0.0, 100.0, 100.0))
+    eqF("padding moves the child in", p1.frame.x, 10.0)
+    eqF("and takes from both sides", p1.frame.w, 80.0)
+
+    // `shares()` divides exactly, which is what a splitter needs.
+    val s1 = label("1").growsBy(0.25)
+    val s2 = label("2").growsBy(0.75)
+    val split = row([s1, s2]).shares()
+    layout(ui, split, Rect(0.0, 0.0, 400.0, 100.0))
+    eqF("a quarter is a quarter", s1.frame.w, 100.0)
+    eqF("and three quarters are the rest", s2.frame.w, 300.0)
+
+    // A stack lays its children one on another.
+    val l1 = label("under").grows()
+    val l2 = label("over").grows()
+    val st = stack([l1, l2])
+    layout(ui, st, Rect(0.0, 0.0, 100.0, 100.0))
+    eqF("both layers get the whole rectangle", l1.frame.h, 100.0)
+    eqF("including the top one", l2.frame.h, 100.0)
+    eqF("and they sit at the same place", l2.frame.y, l1.frame.y)
+
+    // A placed child sits where it was told.
+    val pinned = label("x").at(30.0, 40.0)
+    layout(ui, stack([pinned]), Rect(0.0, 0.0, 100.0, 100.0))
+    eqF("a placed child keeps its x", pinned.frame.x, 30.0)
+    eqF("and its y", pinned.frame.y, 40.0)
+
+    // A view that grows does not inflate its parent's own idea of its size.
+    val big = column([label("one"), label("two"), label("three")])
+    val small = column([big.grows()])
+    layout(ui, small, Rect(0.0, 0.0, 100.0, 40.0))
+    eqF("a growing child is bounded by the room", big.frame.h, 40.0)
+
+    // Hit testing finds the topmost interactive node and nothing else.
+    var tapped = 0
+    val btn = button("press", { -> }).sized(80.0, 30.0)
+    val tree = column([label("not a target"), btn])
+    layout(ui, tree, Rect(0.0, 0.0, 200.0, 200.0))
+    val onIt = hit(tree, btn.frame.x + 4.0, btn.frame.y + 4.0)
+    ok("a click on a button finds it", onIt != null)
+    if (onIt != null) { eqI("and finds that one", onIt.id, btn.id) }
+    ok("a click on a label finds nothing", hit(tree, 4.0, 4.0) == null)
+    ok("a click outside finds nothing", hit(tree, 900.0, 900.0) == null)
+
+    // Identity is the path, so the same tree twice gives the same identities.
+    val again = column([label("not a target"), button("press", { -> }).sized(80.0, 30.0)])
+    layout(ui, again, Rect(0.0, 0.0, 200.0, 200.0))
+    eqI("the same tree gives the same identity", again.kids[1].id, btn.id)
+
+    // A key overrides the path, so a node keeps its identity when it moves.
+    val k1 = column([label("x").keyed("mine")])
+    val k2 = column([label("a"), label("b"), label("x").keyed("mine")])
+    layout(ui, k1, Rect(0.0, 0.0, 100.0, 100.0))
+    layout(ui, k2, Rect(0.0, 0.0, 100.0, 100.0))
+    eqI("a key survives being moved", k2.kids[2].id, k1.kids[0].id)
+}
+
+// -------------------------------------------------------------------- dock
+
+proc dockTests() {
+    val d = Dock(beside(leaf(["a", "b"]), leaf(["c"]), 0.4))
+    d.add(panelOf("a", "A", { -> label("a") }))
+    d.add(panelOf("b", "B", { -> label("b") }))
+    d.add(panelOf("c", "C", { -> label("c") }))
+
+    val ls: List<Node> = []
+    leaves(d.root, ls)
+    eqI("two groups to start", ls.size, 2)
+    ok("a panel knows where it lives", d.holder("b") != null)
+    ok("an unknown panel lives nowhere", d.holder("zz") == null)
+
+    d.reveal("b")
+    val hb = d.holder("b")
+    if (hb != null) { eqI("revealing selects the tab", hb.active, 1) }
+
+    // Taking the last tab out of a group removes the group and the split.
+    d.detach("c")
+    val ls2: List<Node> = []
+    leaves(d.root, ls2)
+    eqI("an empty group is pruned away", ls2.size, 1)
+    ok("and the split with it", not d.root.split)
+    ok("the panel itself is still registered", d.panel("c") != null)
+    ok("but it is docked nowhere", d.holder("c") == null)
+
+    // Dropping into the middle of a group adds a tab.
+    d.dropInto(d.root.nid, zoneCentre, "c")
+    eqI("dropping in the middle adds a tab", d.root.tabs.size, 3)
+
+    // Dropping on an edge splits.
+    val target = d.root.nid
+    d.dropInto(target, zoneLeft, "c")
+    ok("dropping on an edge makes a split", d.root.split)
+    ok("and a horizontal one for a left edge", not d.root.vertical)
+    val ls3: List<Node> = []
+    leaves(d.root, ls3)
+    eqI("leaving two groups", ls3.size, 2)
+    val first = d.root.a
+    if (first != null) { ok("with the newcomer on the left", first.tabs.contains("c")) }
+
+    // The zones are read off the rectangle a group was drawn in.
+    val n = leaf(["z"])
+    n.area = Rect(0.0, 0.0, 100.0, 100.0)
+    val d2 = Dock(n)
+    eqI("the left edge is the left zone", zoneAt(d2, 5.0, 50.0), zoneLeft)
+    eqI("the right edge is the right zone", zoneAt(d2, 95.0, 50.0), zoneRight)
+    eqI("the top edge is the top zone", zoneAt(d2, 50.0, 5.0), zoneTop)
+    eqI("the bottom edge is the bottom zone", zoneAt(d2, 50.0, 95.0), zoneBottom)
+    eqI("the middle is the middle", zoneAt(d2, 50.0, 50.0), zoneCentre)
+    eqI("outside is nothing at all", zoneAt(d2, 500.0, 500.0), zoneNone)
+    eqF("a left drop takes a third", zoneRect(n.area, zoneLeft).w, 32.0)
+    eqF("a middle drop takes it all", zoneRect(n.area, zoneCentre).w, 100.0)
+}
+
+// -------------------------------------------------------------------- text
+
+proc textTests() {
+    val f = systemFonts()
+    val face = f.sans
+    if (face == null) {
+        println("note  no system font on this machine — the text tests are skipped")
+        return
+    }
+    val st = text(16.0)
+    ok("a glyph is wider than nothing", f.width("m", st, 2.0) > 1.0)
+    ok("two letters are wider than one", f.width("mm", st, 2.0) > f.width("m", st, 2.0))
+    eqF("the empty string has no width", f.width("", st, 2.0), 0.0)
+    ok("a line is taller than the letters", f.lineHeight(st, 2.0) > 16.0)
+    ok("the ascent is less than the line", f.ascent(st, 2.0) < f.lineHeight(st, 2.0))
+    ok("text that fits is left alone", f.ellipsize("hi", 1000.0, st, 2.0) == "hi")
+    ok("text that does not is cut", f.ellipsize("a very long line indeed", 40.0, st, 2.0).endsWith("…"))
+    val lines = f.wrap("one two three four five six seven eight", 60.0, st, 2.0)
+    ok("wrapping makes more than one line", lines.size > 1)
+    ok("newlines are kept", f.wrap("a\nb", 1000.0, st, 2.0).size == 2)
+    eqI("a click before the first letter is index 0", f.indexAt("hello", 0.0, st, 2.0), 0)
+    eqI("a click past the end is the end", f.indexAt("hello", 9999.0, st, 2.0), 5)
+
+    val g = face.glyphOf("A".code(), 32.0)
+    ok("a letter has ink", g.mask != 0)
+    ok("and a width", g.advance > 1.0)
+    ok("and a height", g.h > 4)
+    val sp = face.glyphOf(" ".code(), 32.0)
+    ok("a space has no ink", sp.mask == 0)
+    ok("but it still advances", sp.advance > 1.0)
+    ok("an accented letter resolves", face.glyphId("é".code()) != 0)
+    ok("the same glyph twice is the same object", face.glyphOf("A".code(), 32.0).w == g.w)
+}
+
+// -------------------------------------------------------------------- state
+
+proc stateTests() {
+    val n = state(0)
+    val before = revision()
+    n.set(5)
+    eqI("a cell holds what it was given", n.get(), 5)
+    ok("and writing it moves the revision", revision() > before)
+    n.update({ v -> v * 3 })
+    eqI("update reads and writes in one go", n.get(), 15)
+    val s = state("a")
+    s.set("b")
+    ok("a cell of strings works the same", s.get() == "b")
+}
+
+// --------------------------------------------------------------------- run
+
+colourTests()
+geometryTests()
+layoutTests()
+dockTests()
+textTests()
+stateTests()
+
+println("")
+if (failed == 0) {
+    println("all " + passed.toString() + " checks passed")
+} else {
+    println(passed.toString() + " passed, " + failed.toString() + " FAILED")
+    exit(1)
+}
