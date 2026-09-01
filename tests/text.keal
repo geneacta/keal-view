@@ -1,0 +1,33 @@
+import "../src/canvas.keal"
+import "../src/color.keal"
+import "../src/geom.keal"
+import "../src/font.keal"
+import "../src/ffi.keal"
+
+val f = systemFont(0)
+if (f == null) { println("no font"); exit(1) }
+println("upem=${f.upem} glyphs=${f.numGlyphs} cmapFmt=${f.cmapFmt} loca=${f.locaLong}")
+
+val c = canvasOffscreen(560, 240, 2.0)
+c.clear(web("#0f1115"))
+
+proc draw(c: Canvas, f: Font, s: String, x: Float, baseline: Float, px: Float, col: Int) {
+    var pen = x * c.scale
+    val by = (baseline * c.scale).round()
+    for (ch in s.chars()) {
+        val g = f.glyphOf(ch.code(), px * c.scale)
+        if (g.mask != 0) {
+            c.mask(g.mask, g.w, g.h, pen.round() + g.left, by - g.top, col)
+        }
+        pen = pen + g.advance
+    }
+}
+
+draw(c, f, "Bonjour, keal-view", 24.0, 48.0, 30.0, web("#e6e9ef"))
+draw(c, f, "Le rendu de texte est ecrit en Keal.", 24.0, 84.0, 17.0, web("#9aa4b2"))
+draw(c, f, "Accents: aeiou ceaou — 0123456789", 24.0, 116.0, 17.0, web("#9aa4b2"))
+draw(c, f, "abcdefghijklmnopqrstuvwxyz", 24.0, 148.0, 14.0, web("#5eead4"))
+draw(c, f, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 24.0, 172.0, 14.0, web("#93c5fd"))
+draw(c, f, "small 9px text for a status bar", 24.0, 196.0, 9.0, web("#7c8798"))
+draw(c, f, "Big 44", 24.0, 232.0, 44.0, web("#f59e0b"))
+println(kvSaveBmp("out/text.bmp"))

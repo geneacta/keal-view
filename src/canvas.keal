@@ -1,0 +1,429 @@
+import "./ffi.keal"
+import "./color.keal"
+import "./geom.keal"
+
+/// The rasteriser: every pixel keal-view puts on a screen goes through here.
+///
+/// It is written in Keal, not in C, and that is the point of the project. It
+/// can be, because `kvPxSet` and `kvSpan` are `static inline` C in the same
+/// translation unit — a store and a run of stores — so a loop over pixels here
+/// compiles to the loop over pixels a C rasteriser would have been.
+///
+/// **Coordinates are logical points.** Every public method multiplies by
+/// `scale` on the way in, and nothing above this file ever mentions a pixel.
+/// That is what makes one layout correct on a Retina display and a projector.
+///
+/// **Anti-aliasing is analytic, not sampled.** A straight edge's coverage is
+/// the exact overlap of the edge with the pixel cell (`cover` in geom.keal); a
+/// curved edge's is the distance from the pixel centre to the curve, which is
+/// exact to within the curvature over one pixel. Nothing is supersampled, so
+/// there is no quality dial and no frame that is quietly cheaper than the last.
+public class Canvas {
+    /// Device pixels per logical point.
+    public var scale: Float = 1.0
+    /// The clip, in device pixels, half-open: x0..x1 and y0..y1.
+    public var cx0: Int = 0
+    public var cy0: Int = 0
+    public var cx1: Int = 0
+    public var cy1: Int = 0
+    /// Saved clips, four `Int` per entry. A list of records would allocate
+    /// once per push, and a canvas pushes on every panel of every frame.
+    public var stack: List<Int> = []
+
+    /// Start a frame: `w` by `h` device pixels at `scale`, no clip.
+    public proc begin(w: Int, h: Int, scale: Float) {
+        this.scale = if (scale < 0.1) { 1.0 } else { scale }
+        this.cx0 = 0
+        this.cy0 = 0
+        this.cx1 = w
+        this.cy1 = h
+        this.stack.clear()
+    }
+
+    /// The whole surface, in logical points.
+    public func bounds(): Rect {
+        return Rect(0.0, 0.0, this.cx1.toFloat() / this.scale, this.cy1.toFloat() / this.scale)
+    }
+
+    /// The clip in force, in logical points.
+    public func clip(): Rect {
+        val s = this.scale
+        return Rect(this.cx0.toFloat() / s, this.cy0.toFloat() / s,
+                    (this.cx1 - this.cx0).toFloat() / s, (this.cy1 - this.cy0).toFloat() / s)
+    }
+
+    /// Narrow the clip to the part of it that is also `r`, and remember what
+    /// it was. A clip never widens: a panel cannot draw outside its parent by
+    /// asking to.
+    public proc push(r: Rect) {
+        this.stack.add(this.cx0)
+        this.stack.add(this.cy0)
+        this.stack.add(this.cx1)
+        this.stack.add(this.cy1)
+        val s = this.scale
+        val nx0 = floorI(r.x * s).max(this.cx0)
+        val ny0 = floorI(r.y * s).max(this.cy0)
+        val nx1 = ceilI((r.x + r.w) * s).min(this.cx1)
+        val ny1 = ceilI((r.y + r.h) * s).min(this.cy1)
+        this.cx0 = nx0
+        this.cy0 = ny0
+        this.cx1 = nx1.max(nx0)
+        this.cy1 = ny1.max(ny0)
+    }
+
+    /// Put back the clip the matching `push` replaced.
+    public proc pop() {
+        val n = this.stack.size
+        if (n < 4) { return }
+        this.cy1 = this.stack[n - 1]
+        this.cx1 = this.stack[n - 2]
+        this.cy0 = this.stack[n - 3]
+        this.cx0 = this.stack[n - 4]
+        this.stack.removeAt(n - 1)
+        this.stack.removeAt(n - 2)
+        this.stack.removeAt(n - 3)
+        this.stack.removeAt(n - 4)
+    }
+
+    /// Nothing to draw into — a panel scrolled off the edge. Callers skip
+    /// their whole subtree on this rather than emitting invisible work.
+    public func clipped(): Bool {
+        return (this.cx1 <= this.cx0) or (this.cy1 <= this.cy0)
+    }
+
+    // ------------------------------------------------------------- pixels
+
+    /// One pixel, composited, clipped, with coverage in 0..255.
+    public proc plot(x: Int, y: Int, col: Int, cov: Int) {
+        if (cov <= 0) { return }
+        if ((x < this.cx0) or (x >= this.cx1)) { return }
+        if ((y < this.cy0) or (y >= this.cy1)) { return }
+        if ((cov >= 255) and (alphaOf(col) == 255)) {
+            kvPxSet(x, y, col)
+            return
+        }
+        kvPxSet(x, y, over(kvPxGet(x, y), col, cov))
+    }
+
+    /// A horizontal run, composited, clipped.
+    public proc run(x: Int, y: Int, n: Int, col: Int, cov: Int) {
+        if ((n <= 0) or (cov <= 0)) { return }
+        if ((y < this.cy0) or (y >= this.cy1)) { return }
+        var x0 = x.max(this.cx0)
+        val x1 = (x + n).min(this.cx1)
+        if (x1 <= x0) { return }
+        if ((cov >= 255) and (alphaOf(col) == 255)) {
+            kvSpan(x0, y, x1 - x0, col)
+            return
+        }
+        while (x0 < x1) {
+            kvPxSet(x0, y, over(kvPxGet(x0, y), col, cov))
+            x0++
+        }
+    }
+
+    // ------------------------------------------------------------ filling
+
+    /// Paint the whole clip one colour, ignoring what was under it.
+    public proc clear(col: Int) {
+        var y = this.cy0
+        while (y < this.cy1) {
+            kvSpan(this.cx0, y, this.cx1 - this.cx0, col)
+            y++
+        }
+    }
+
+    /// A rectangle, with anti-aliased edges wherever it does not land on a
+    /// pixel boundary.
+    public proc fillRect(r: Rect, col: Int) {
+        val s = this.scale
+        this.deviceRect(r.x * s, r.y * s, r.w * s, r.h * s, col)
+    }
+
+    /// The same, in device pixels, which is where all the work happens.
+    public proc deviceRect(fx: Float, fy: Float, fw: Float, fh: Float, col: Int) {
+        if ((fw <= 0.0) or (fh <= 0.0)) { return }
+        if (alphaOf(col) == 0) { return }
+        val x0 = fx
+        val y0 = fy
+        val x1 = fx + fw
+        val y1 = fy + fh
+        val px0 = floorI(x0).max(this.cx0)
+        val px1 = ceilI(x1).min(this.cx1)
+        if (px1 <= px0) { return }
+        var py = floorI(y0).max(this.cy0)
+        val pyEnd = ceilI(y1).min(this.cy1)
+        // The columns wholly inside the rectangle: one run, not a loop.
+        val ix0 = ceilI(x0).max(px0)
+        val ix1 = floorI(x1).min(px1)
+        while (py < pyEnd) {
+            val rc = cover(y0, y1, py)
+            if (rc > 0.0) {
+                val rcov = (rc * 255.0).round()
+                if (ix1 > ix0) {
+                    this.run(ix0, py, ix1 - ix0, col, rcov)
+                    var x = px0
+                    while (x < ix0) {
+                        this.plot(x, py, col, (rc * cover(x0, x1, x) * 255.0).round())
+                        x++
+                    }
+                    x = ix1
+                    while (x < px1) {
+                        this.plot(x, py, col, (rc * cover(x0, x1, x) * 255.0).round())
+                        x++
+                    }
+                } else {
+                    var x = px0
+                    while (x < px1) {
+                        this.plot(x, py, col, (rc * cover(x0, x1, x) * 255.0).round())
+                        x++
+                    }
+                }
+            }
+            py++
+        }
+    }
+
+    /// A rectangle with rounded corners: three straight bands and four arcs.
+    /// Splitting it this way keeps the expensive part — the distance function
+    /// — inside four boxes of `radius` square, however large the rectangle is.
+    public proc fillRound(r: Rect, radius: Float, col: Int) {
+        val s = this.scale
+        val x = r.x * s
+        val y = r.y * s
+        val w = r.w * s
+        val h = r.h * s
+        if ((w <= 0.0) or (h <= 0.0)) { return }
+        var rad = (radius * s).min(w / 2.0).min(h / 2.0)
+        if (rad < 0.4) { this.deviceRect(x, y, w, h, col); return }
+        this.deviceRect(x, y + rad, w, h - 2.0 * rad, col)
+        this.deviceRect(x + rad, y, w - 2.0 * rad, rad, col)
+        this.deviceRect(x + rad, y + h - rad, w - 2.0 * rad, rad, col)
+        this.arc(x + rad, y + rad, rad, -1.0, -1.0, col)
+        this.arc(x + w - rad, y + rad, rad, 1.0, -1.0, col)
+        this.arc(x + rad, y + h - rad, rad, -1.0, 1.0, col)
+        this.arc(x + w - rad, y + h - rad, rad, 1.0, 1.0, col)
+    }
+
+    /// One quarter of a disc, filling the `rad` by `rad` box that runs from
+    /// the centre in the direction (`sx`, `sy`).
+    public proc arc(cx: Float, cy: Float, rad: Float, sx: Float, sy: Float, col: Int) {
+        val ax = cx.min(cx + sx * rad)
+        val bx = cx.max(cx + sx * rad)
+        val ay = cy.min(cy + sy * rad)
+        val by = cy.max(cy + sy * rad)
+        val x0 = floorI(ax).max(this.cx0)
+        val x1 = ceilI(bx).min(this.cx1)
+        var y = floorI(ay).max(this.cy0)
+        val y1 = ceilI(by).min(this.cy1)
+        while (y < y1) {
+            val dy = y.toFloat() + 0.5 - cy
+            var x = x0
+            while (x < x1) {
+                val dx = x.toFloat() + 0.5 - cx
+                val d = (dx * dx + dy * dy).sqrt()
+                val cov = clampF(rad - d + 0.5, 0.0, 1.0)
+                this.plot(x, y, col, (cov * 255.0).round())
+                x++
+            }
+            y++
+        }
+    }
+
+    /// A circle, centred, in logical points.
+    public proc fillCircle(cx: Float, cy: Float, rad: Float, col: Int) {
+        val s = this.scale
+        val r = rad * s
+        this.arc(cx * s, cy * s, r, -1.0, -1.0, col)
+        this.arc(cx * s, cy * s, r, 1.0, -1.0, col)
+        this.arc(cx * s, cy * s, r, -1.0, 1.0, col)
+        this.arc(cx * s, cy * s, r, 1.0, 1.0, col)
+    }
+
+    // ------------------------------------------------------------ stroking
+
+    /// The outline of a rounded rectangle, `width` points thick, drawn inside
+    /// the rectangle so that a bordered box occupies exactly the space it was
+    /// given. The straight sides are four fills; only the corners run the
+    /// distance function.
+    public proc strokeRound(r: Rect, radius: Float, width: Float, col: Int) {
+        val s = this.scale
+        val lw = (width * s).max(0.5)
+        val x = r.x * s
+        val y = r.y * s
+        val w = r.w * s
+        val h = r.h * s
+        if ((w <= 0.0) or (h <= 0.0)) { return }
+        var rad = (radius * s).min(w / 2.0).min(h / 2.0)
+        if (rad < lw) { rad = lw }
+        if (rad * 2.0 > w) { rad = w / 2.0 }
+        if (rad * 2.0 > h) { rad = h / 2.0 }
+        // The four straight runs, between the corner boxes.
+        this.deviceRect(x + rad, y, w - 2.0 * rad, lw, col)
+        this.deviceRect(x + rad, y + h - lw, w - 2.0 * rad, lw, col)
+        this.deviceRect(x, y + rad, lw, h - 2.0 * rad, col)
+        this.deviceRect(x + w - lw, y + rad, lw, h - 2.0 * rad, col)
+        this.arcRing(x + rad, y + rad, rad, lw, -1.0, -1.0, col)
+        this.arcRing(x + w - rad, y + rad, rad, lw, 1.0, -1.0, col)
+        this.arcRing(x + rad, y + h - rad, rad, lw, -1.0, 1.0, col)
+        this.arcRing(x + w - rad, y + h - rad, rad, lw, 1.0, 1.0, col)
+    }
+
+    /// A quarter of an annulus: the corner of a border.
+    public proc arcRing(cx: Float, cy: Float, rad: Float, lw: Float, sx: Float, sy: Float, col: Int) {
+        val ax = cx.min(cx + sx * rad)
+        val bx = cx.max(cx + sx * rad)
+        val ay = cy.min(cy + sy * rad)
+        val by = cy.max(cy + sy * rad)
+        val x0 = floorI(ax).max(this.cx0)
+        val x1 = ceilI(bx).min(this.cx1)
+        var y = floorI(ay).max(this.cy0)
+        val y1 = ceilI(by).min(this.cy1)
+        val inner = rad - lw
+        while (y < y1) {
+            val dy = y.toFloat() + 0.5 - cy
+            var x = x0
+            while (x < x1) {
+                val dx = x.toFloat() + 0.5 - cx
+                val d = (dx * dx + dy * dy).sqrt()
+                val outside = clampF(rad - d + 0.5, 0.0, 1.0)
+                val insideHole = clampF(inner - d + 0.5, 0.0, 1.0)
+                val cov = outside - insideHole
+                if (cov > 0.0) { this.plot(x, y, col, (cov * 255.0).round()) }
+                x++
+            }
+            y++
+        }
+    }
+
+    /// A straight line of any angle, `width` points thick, with round ends —
+    /// the distance from a pixel to the segment, thresholded. Separators and
+    /// axis-aligned rules should use `fillRect`, which is cheaper; this is for
+    /// the ones that are not axis-aligned.
+    public proc line(ax: Float, ay: Float, bx: Float, by: Float, width: Float, col: Int) {
+        val s = this.scale
+        val x0f = ax * s
+        val y0f = ay * s
+        val x1f = bx * s
+        val y1f = by * s
+        val hw = (width * s / 2.0).max(0.35)
+        val bx0 = floorI(x0f.min(x1f) - hw - 1.0).max(this.cx0)
+        val bx1 = ceilI(x0f.max(x1f) + hw + 1.0).min(this.cx1)
+        var y = floorI(y0f.min(y1f) - hw - 1.0).max(this.cy0)
+        val by1 = ceilI(y0f.max(y1f) + hw + 1.0).min(this.cy1)
+        val vx = x1f - x0f
+        val vy = y1f - y0f
+        val len2 = (vx * vx + vy * vy).max(0.000001)
+        while (y < by1) {
+            val py = y.toFloat() + 0.5
+            var x = bx0
+            while (x < bx1) {
+                val px = x.toFloat() + 0.5
+                var t = ((px - x0f) * vx + (py - y0f) * vy) / len2
+                t = clampF(t, 0.0, 1.0)
+                val dx = px - (x0f + vx * t)
+                val dy = py - (y0f + vy * t)
+                val d = (dx * dx + dy * dy).sqrt()
+                val cov = clampF(hw - d + 0.5, 0.0, 1.0)
+                if (cov > 0.0) { this.plot(x, y, col, (cov * 255.0).round()) }
+                x++
+            }
+            y++
+        }
+    }
+
+    // ------------------------------------------------------------ effects
+
+    /// A vertical or horizontal two-colour ramp. One band per device row, so
+    /// the cost is the rectangle's, not the ramp's.
+    public proc gradient(r: Rect, from: Int, to: Int, vertical: Bool) {
+        val s = this.scale
+        if (vertical) {
+            val y0 = r.y * s
+            val h = r.h * s
+            if (h <= 0.0) { return }
+            var i = floorI(y0).max(this.cy0)
+            val end = ceilI(y0 + h).min(this.cy1)
+            while (i < end) {
+                val t = clampF((i.toFloat() + 0.5 - y0) / h, 0.0, 1.0)
+                this.deviceRect(r.x * s, i.toFloat(), r.w * s, 1.0, mix(from, to, t))
+                i++
+            }
+        } else {
+            val x0 = r.x * s
+            val w = r.w * s
+            if (w <= 0.0) { return }
+            var i = floorI(x0).max(this.cx0)
+            val end = ceilI(x0 + w).min(this.cx1)
+            while (i < end) {
+                val t = clampF((i.toFloat() + 0.5 - x0) / w, 0.0, 1.0)
+                this.deviceRect(i.toFloat(), r.y * s, 1.0, r.h * s, mix(from, to, t))
+                i++
+            }
+        }
+    }
+
+    /// A soft shadow under a rounded rectangle: concentric outlines, each one
+    /// pixel further out and fainter than the last, with a quadratic falloff.
+    /// It is not a Gaussian and does not pretend to be — at the sizes a card
+    /// or a menu uses, the difference is invisible and the cost is a fraction.
+    public proc shadow(r: Rect, radius: Float, blur: Float, dy: Float, col: Int) {
+        val s = this.scale
+        val steps = ceilI(blur * s).min(48)
+        if (steps <= 0) { return }
+        val a0 = alphaOf(col)
+        var i = steps
+        while (i >= 1) {
+            val t = i.toFloat() / steps.toFloat()
+            val fall = (1.0 - t) * (1.0 - t)
+            val a = (a0.toFloat() * fall * 0.55).round()
+            if (a > 0) {
+                val g = i.toFloat() / s
+                this.fillRound(Rect(r.x - g, r.y - g + dy, r.w + 2.0 * g, r.h + 2.0 * g),
+                               radius + g, withAlpha(col, a))
+            }
+            i--
+        }
+    }
+
+    // -------------------------------------------------------------- masks
+
+    /// Composite an 8-bit coverage mask — a glyph, an icon, anything the font
+    /// engine or an image decoder produced — in one colour. `mx`/`my` are in
+    /// device pixels, because a glyph is positioned on the pixel grid or it
+    /// blurs.
+    public proc mask(blob: Int, mw: Int, mh: Int, mx: Int, my: Int, col: Int) {
+        if ((mw <= 0) or (mh <= 0)) { return }
+        var j = 0
+        while (j < mh) {
+            val y = my + j
+            if ((y >= this.cy0) and (y < this.cy1)) {
+                val row = j * mw
+                var i = 0
+                while (i < mw) {
+                    val a = kvBlobGet(blob, row + i)
+                    if (a > 0) { this.plot(mx + i, y, col, a) }
+                    i++
+                }
+            }
+            j++
+        }
+    }
+}
+
+/// A canvas over the window's current surface, ready for a frame.
+public func canvasForWindow(): Canvas {
+    val c = Canvas()
+    kvSurface(kvWidth(), kvHeight())
+    c.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
+    return c
+}
+
+/// A canvas over a surface of its own, with no window — for rendering a frame
+/// to a file, which is how keal-view is tested where there is no display.
+public func canvasOffscreen(w: Int, h: Int, scale: Float): Canvas {
+    val c = Canvas()
+    kvSurface((w.toFloat() * scale).round(), (h.toFloat() * scale).round())
+    c.begin(kvSurfaceW(), kvSurfaceH(), scale)
+    return c
+}

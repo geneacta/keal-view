@@ -1,0 +1,132 @@
+/// Colour, packed into an `Int`.
+///
+/// A colour is `0xAARRGGBB` in a single `Int`, not a record, and the reason is
+/// the inner loop: a record in Keal is a shared reference, so a per-pixel
+/// blend over a record would allocate and count. An `Int` is a register.
+///
+/// The unpacking below is written with `/` and `%` rather than shifts because
+/// Keal has no bitwise operators yet. It costs nothing: every divisor is a
+/// literal power of two, and the C compiler turns each one into a shift.
+
+/// Fully opaque, from three channels in 0..255.
+public func rgb(r: Int, g: Int, b: Int): Int {
+    return 255 * 16777216 + clamp255(r) * 65536 + clamp255(g) * 256 + clamp255(b)
+}
+
+/// With an alpha of its own, also 0..255.
+public func rgba(r: Int, g: Int, b: Int, a: Int): Int {
+    return clamp255(a) * 16777216 + clamp255(r) * 65536 + clamp255(g) * 256 + clamp255(b)
+}
+
+/// One level of grey.
+public func gray(v: Int): Int { return rgb(v, v, v) }
+
+/// A colour written the way a designer writes it: `web("#1f6feb")`, with or
+/// without the `#`, three digits or six, and eight where alpha is meant.
+/// An unreadable string answers opaque magenta, which is easier to see on
+/// screen than it is to miss in a log.
+public func web(s: String): Int {
+    var t = s.trim()
+    if (t.startsWith("#")) { t = t.drop(1) }
+    if (t.length == 3) {
+        val r = hexDigit(t[0]); val g = hexDigit(t[1]); val b = hexDigit(t[2])
+        if ((r < 0) or ((g < 0) or (b < 0))) { return rgb(255, 0, 255) }
+        return rgb(r * 17, g * 17, b * 17)
+    }
+    if ((t.length == 6) or (t.length == 8)) {
+        var v = [0, 0, 0, 255]
+        var i = 0
+        while (i < t.length / 2) {
+            val hi = hexDigit(t[i * 2])
+            val lo = hexDigit(t[i * 2 + 1])
+            if ((hi < 0) or (lo < 0)) { return rgb(255, 0, 255) }
+            v[i] = hi * 16 + lo
+            i++
+        }
+        return rgba(v[0], v[1], v[2], v[3])
+    }
+    return rgb(255, 0, 255)
+}
+
+/// The channels, taken back out.
+public func alphaOf(c: Int): Int { return (c / 16777216) % 256 }
+public func redOf(c: Int): Int   { return (c / 65536) % 256 }
+public func greenOf(c: Int): Int { return (c / 256) % 256 }
+public func blueOf(c: Int): Int  { return c % 256 }
+
+/// The same colour at a different opacity, `a` in 0..255.
+public func withAlpha(c: Int, a: Int): Int {
+    return clamp255(a) * 16777216 + (c % 16777216)
+}
+
+/// The same colour with its opacity scaled, `f` in 0.0..1.0 — what a
+/// disabled control and a fading animation both want.
+public func fade(c: Int, f: Float): Int {
+    return withAlpha(c, (alphaOf(c).toFloat() * f).toInt())
+}
+
+/// `t` of the way from `a` to `b`, channel by channel, alpha included.
+public func mix(a: Int, b: Int, t: Float): Int {
+    val u = if (t < 0.0) { 0.0 } else { if (t > 1.0) { 1.0 } else { t } }
+    return rgba(
+        lerp255(redOf(a), redOf(b), u),
+        lerp255(greenOf(a), greenOf(b), u),
+        lerp255(blueOf(a), blueOf(b), u),
+        lerp255(alphaOf(a), alphaOf(b), u))
+}
+
+/// Towards white, `f` in 0.0..1.0.
+public func lighten(c: Int, f: Float): Int { return mix(c, withAlpha(rgb(255, 255, 255), alphaOf(c)), f) }
+/// Towards black.
+public func darken(c: Int, f: Float): Int { return mix(c, withAlpha(rgb(0, 0, 0), alphaOf(c)), f) }
+
+/// How bright a colour reads, 0.0..1.0 — the sRGB luma weights. What a theme
+/// asks before deciding whether text on this colour should be black or white.
+public func luma(c: Int): Float {
+    return (redOf(c).toFloat() * 0.2126 + greenOf(c).toFloat() * 0.7152
+          + blueOf(c).toFloat() * 0.0722) / 255.0
+}
+
+/// Black or white, whichever can be read on top of `c`.
+public func contrasting(c: Int): Int {
+    return if (luma(c) > 0.55) { rgb(16, 18, 22) } else { rgb(255, 255, 255) }
+}
+
+/// `src` composited over `dst`, both opaque-backed — the one operation the
+/// rasteriser performs per pixel. `cov` is coverage in 0..255 and is folded
+/// into the source alpha, so a half-covered pixel of a half-transparent
+/// colour lands at a quarter, which is what it should.
+public func over(dst: Int, src: Int, cov: Int): Int {
+    val a = (alphaOf(src) * cov) / 255
+    if (a <= 0) { return dst }
+    if (a >= 255) { return src }
+    val ia = 255 - a
+    val r = (redOf(src) * a + redOf(dst) * ia) / 255
+    val g = (greenOf(src) * a + greenOf(dst) * ia) / 255
+    val b = (blueOf(src) * a + blueOf(dst) * ia) / 255
+    return 255 * 16777216 + r * 65536 + g * 256 + b
+}
+
+// ------------------------------------------------------------- the small parts
+
+func clamp255(v: Int): Int {
+    if (v < 0) { return 0 }
+    if (v > 255) { return 255 }
+    return v
+}
+
+func lerp255(a: Int, b: Int, t: Float): Int {
+    return (a.toFloat() + (b - a).toFloat() * t).toInt()
+}
+
+func hexDigit(ch: String): Int {
+    val c = ch.toLower()
+    if ((c >= "0") and (c <= "9")) { return c.toInt() ?: -1 }
+    if (c == "a") { return 10 }
+    if (c == "b") { return 11 }
+    if (c == "c") { return 12 }
+    if (c == "d") { return 13 }
+    if (c == "e") { return 14 }
+    if (c == "f") { return 15 }
+    return -1
+}

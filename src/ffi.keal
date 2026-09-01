@@ -1,0 +1,99 @@
+/// The C boundary, and the only file in keal-view that contains any C.
+///
+/// Everything below binds a `static inline` function from `runtime/kv.h`,
+/// which the C compiler pastes into this very translation unit — so a call
+/// to `pxSet` is a store, not a call. That is what lets the rasteriser, the
+/// font engine and the compositor above be written in Keal rather than in C.
+///
+/// Nothing else in keal-view declares `native` or `extern`. If a platform
+/// needs something new, it is added here and to `runtime/kv.h`, in one place.
+
+native """
+#include "kv.h"
+"""
+
+// ---------------------------------------------------------------- window
+
+/// Open the window. Answers 1 when it is on screen.
+public extern func kvOpen(title: borrow String, w: Int, h: Int): Int = "kvp_open"
+/// Take it down. Nothing may be drawn afterwards.
+public extern func kvClose(): Int = "kvp_close_"
+/// 1 until `kvClose`.
+public extern func kvAlive(): Int = "kvp_alive"
+/// The width of the surface, in device pixels — already multiplied by `kvScale`.
+public extern func kvWidth(): Int = "kvp_width"
+/// The height of the surface, in device pixels.
+public extern func kvHeight(): Int = "kvp_height"
+/// Device pixels per logical point: 1.0 on an ordinary screen, 2.0 on a Retina one.
+public extern func kvScale(): Float = "kvp_scale"
+/// Rename the window's title bar.
+public extern func kvSetTitle(t: borrow String): Int = "kvp_set_title_"
+/// Ask for a pointer shape: 0 arrow, 1 hand, 2 I-beam, 3 ↔, 4 ↕.
+public extern func kvSetCursor(shape: Int): Int = "kvp_set_cursor_"
+
+// ----------------------------------------------------------------- events
+
+/// Take the next event off the queue, or 0 when there is none. The fields of
+/// what it took are read with the `kvEv*` functions below, and stay readable
+/// until the next call.
+public extern func kvPoll(): Int = "kvp_poll"
+/// Sleep until an event arrives or `ms` have passed. A negative `ms` waits
+/// for ever. This is what keeps an idle window off the processor.
+public extern func kvWait(ms: Int): Int = "kvp_wait_"
+/// Wake a `kvWait` from elsewhere — an actor with news, a timer that fired.
+public extern func kvWake(): Int = "kvp_wake_"
+
+public extern func kvEvKind(): Int = "kv_ev_kind"
+public extern func kvEvX(): Int = "kv_ev_x"
+public extern func kvEvY(): Int = "kv_ev_y"
+public extern func kvEvButton(): Int = "kv_ev_button"
+public extern func kvEvKey(): Int = "kv_ev_key"
+public extern func kvEvMods(): Int = "kv_ev_mods"
+public extern func kvEvClicks(): Int = "kv_ev_clicks"
+public extern func kvEvDx(): Float = "kv_ev_dx"
+public extern func kvEvDy(): Float = "kv_ev_dy"
+public extern func kvEvText(): own String = "kv_ev_text"
+
+// --------------------------------------------------------------- surface
+
+/// Make the drawing surface `w` by `h` pixels, keeping it if it already is.
+public extern func kvSurface(w: Int, h: Int): Int = "kv_surface"
+public extern func kvSurfaceW(): Int = "kv_surface_w"
+public extern func kvSurfaceH(): Int = "kv_surface_h"
+/// Write one pixel, as 0xAARRGGBB. Out of bounds is a no-op, never a crash:
+/// the clip is the rasteriser's job, and this is the net beneath it.
+public extern func kvPxSet(x: Int, y: Int, argb: Int): Int = "kv_set"
+/// Read one pixel back. Out of bounds answers 0.
+public extern func kvPxGet(x: Int, y: Int): Int = "kv_get"
+/// Fill `n` pixels of row `y` from `x` with one colour, clipped to the
+/// surface. The single drawing primitive that is not written in Keal, because
+/// a run of identical stores is the one thing a C loop does better.
+public extern func kvSpan(x: Int, y: Int, n: Int, argb: Int): Int = "kv_span"
+/// Hand the finished frame to the screen.
+public extern func kvFlush(): Int = "kv_flush"
+
+// ------------------------------------------------------------------ blob
+
+/// A byte array outside Keal's heap — how a font file gets read, since
+/// `readFile` answers a String and a font is not text.
+public extern func kvBlobRead(path: borrow String): Int = "kv_blob_read"
+public extern func kvBlobNew(size: Int): Int = "kv_blob_new"
+public extern func kvBlobSize(h: Int): Int = "kv_blob_size"
+/// One byte, or -1 past the end. Inlined, so this is a load.
+public extern func kvBlobGet(h: Int, i: Int): Int = "kv_blob_get"
+public extern func kvBlobSet(h: Int, i: Int, v: Int): Int = "kv_blob_set"
+public extern func kvBlobFree(h: Int): Int = "kv_blob_free"
+
+// ------------------------------------------------------------------ host
+
+/// Milliseconds on a monotonic clock — for animation, never for the date.
+public extern func kvNow(): Float = "kvp_now_ms"
+public extern func kvClipboardGet(): own String = "kvp_clipboard_get"
+public extern func kvClipboardSet(s: borrow String): Int = "kvp_clipboard_set_"
+/// A path to a font the system already has: 0 sans, 1 sans bold, 2 monospace.
+/// Empty when the platform could offer none.
+public extern func kvFontPath(which: Int): own String = "kvp_font_path"
+/// Write the surface to a BMP file. The window need never have opened: this
+/// is how keal-view is tested where there is no display, and how a frame is
+/// compared against one that was checked in.
+public extern func kvSaveBmp(path: borrow String): Int = "kv_save_bmp"

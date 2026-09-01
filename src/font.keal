@@ -1,0 +1,696 @@
+import "./ffi.keal"
+import "./geom.keal"
+
+/// TrueType, read and rasterised in Keal.
+///
+/// A font file arrives as a blob — bytes outside Keal's heap, because `readFile`
+/// answers a String and a font is not text — and everything from there is
+/// ordinary Keal: the table directory, `cmap`, `loca`, the quadratic contours in
+/// `glyf`, and the scanline fill that turns them into coverage.
+///
+/// The fill is the signed-area method: every edge accumulates its contribution
+/// to the cells it crosses, and one running sum over the buffer at the end turns
+/// those into coverage. It anti-aliases exactly, in one pass, with no
+/// supersampling — the same reason the shape rasteriser next door does not
+/// sample either.
+///
+/// What is here: `glyf` outlines, simple and composite; `cmap` formats 4, 6, 12
+/// and 0; `hmtx` advances; TrueType Collections. What is not: hinting (modern
+/// rendering does not want it), and `CFF ` outlines, which are cubic and a
+/// different table — a font with those loads and reports that it has none.
+
+// ------------------------------------------------------------ reading bytes
+
+func u8(b: Int, o: Int): Int {
+    val v = kvBlobGet(b, o)
+    if (v < 0) { return 0 }
+    return v
+}
+
+func u16(b: Int, o: Int): Int { return u8(b, o) * 256 + u8(b, o + 1) }
+
+func i16(b: Int, o: Int): Int {
+    val v = u16(b, o)
+    if (v >= 32768) { return v - 65536 }
+    return v
+}
+
+func u32(b: Int, o: Int): Int { return u16(b, o) * 65536 + u16(b, o + 2) }
+
+/// A four-character table tag as the big-endian number it is on disk.
+func tag(s: String): Int {
+    if (s.length != 4) { return 0 }
+    return ((s[0].code() * 256 + s[1].code()) * 256 + s[2].code()) * 256 + s[3].code()
+}
+
+// ------------------------------------------------------------------ glyphs
+
+/// One rasterised glyph: a coverage mask and where to put it.
+public class Glyph(
+    /// A blob of `w * h` coverage bytes, or 0 for a glyph with no ink.
+    public val mask: Int,
+    public val w: Int,
+    public val h: Int,
+    /// Device pixels from the pen to the mask's left edge.
+    public val left: Int,
+    /// Device pixels from the baseline up to the mask's top edge.
+    public val top: Int,
+    /// Device pixels the pen moves after drawing it.
+    public val advance: Float
+)
+
+// ------------------------------------------------------------------- fonts
+
+public class Font(public val blob: Int, public val base: Int) {
+    public var upem: Float = 1000.0
+    public var ascentU: Float = 800.0
+    public var descentU: Float = -200.0
+    public var lineGapU: Float = 0.0
+    public var numGlyphs: Int = 0
+    public var locaOff: Int = 0
+    public var locaLong: Bool = false
+    public var glyfOff: Int = 0
+    public var hmtxOff: Int = 0
+    public var numHMetrics: Int = 0
+    public var cmapOff: Int = 0
+    public var cmapFmt: Int = 0
+    public var ok: Bool = false
+    var glyphs: Map<Int, Glyph> = {}
+    var gids: Map<Int, Int> = {}
+
+    /// The offset of a table, or 0 when the font has none.
+    public func table(name: String): Int {
+        val b = this.blob
+        val want = tag(name)
+        val n = u16(b, this.base + 4)
+        var i = 0
+        while (i < n) {
+            val rec = this.base + 12 + i * 16
+            if (u32(b, rec) == want) { return u32(b, rec + 8) }
+            i++
+        }
+        return 0
+    }
+
+    /// Ascent above the baseline, in device pixels, at `px`.
+    public func ascent(px: Float): Float { return this.ascentU * px / this.upem }
+    /// Descent below the baseline — a positive number of pixels.
+    public func descent(px: Float): Float { return (0.0 - this.descentU) * px / this.upem }
+    /// Baseline to baseline.
+    public func lineHeight(px: Float): Float {
+        return (this.ascentU - this.descentU + this.lineGapU) * px / this.upem
+    }
+
+    /// The glyph a codepoint maps to, or 0 — which is the font's own notdef box.
+    public func glyphId(cp: Int): Int {
+        val hit = this.gids[cp]
+        if (hit != null) { return hit }
+        val g = this.lookup(cp)
+        this.gids[cp] = g
+        return g
+    }
+
+    func lookup(cp: Int): Int {
+        val b = this.blob
+        val o = this.cmapOff
+        if (o == 0) { return 0 }
+        if (this.cmapFmt == 4) { return this.lookup4(b, o, cp) }
+        if (this.cmapFmt == 12) { return this.lookup12(b, o, cp) }
+        if (this.cmapFmt == 6) {
+            val first = u16(b, o + 6)
+            val count = u16(b, o + 8)
+            if ((cp < first) or (cp >= first + count)) { return 0 }
+            return u16(b, o + 10 + (cp - first) * 2)
+        }
+        if (this.cmapFmt == 0) {
+            if ((cp < 0) or (cp > 255)) { return 0 }
+            return u8(b, o + 6 + cp)
+        }
+        return 0
+    }
+
+    func lookup4(b: Int, o: Int, cp: Int): Int {
+        if (cp > 65535) { return 0 }
+        val segX2 = u16(b, o + 6)
+        val ends = o + 14
+        val starts = ends + segX2 + 2
+        val deltas = starts + segX2
+        val ranges = deltas + segX2
+        // Binary search over the segments, which the format guarantees sorted.
+        var lo = 0
+        var hi = segX2 / 2 - 1
+        while (lo < hi) {
+            val mid = (lo + hi) / 2
+            if (u16(b, ends + mid * 2) < cp) { lo = mid + 1 } else { hi = mid }
+        }
+        val i = lo
+        if (u16(b, ends + i * 2) < cp) { return 0 }
+        val start = u16(b, starts + i * 2)
+        if (cp < start) { return 0 }
+        val ro = u16(b, ranges + i * 2)
+        if (ro == 0) { return (cp + i16(b, deltas + i * 2) + 65536) % 65536 }
+        val gi = u16(b, ranges + i * 2 + ro + (cp - start) * 2)
+        if (gi == 0) { return 0 }
+        return (gi + i16(b, deltas + i * 2) + 65536) % 65536
+    }
+
+    func lookup12(b: Int, o: Int, cp: Int): Int {
+        val n = u32(b, o + 12)
+        var lo = 0
+        var hi = n - 1
+        while (lo <= hi) {
+            val mid = (lo + hi) / 2
+            val g = o + 16 + mid * 12
+            val s = u32(b, g)
+            val e = u32(b, g + 4)
+            if (cp < s) { hi = mid - 1 }
+            else { if (cp > e) { lo = mid + 1 } else { return u32(b, g + 8) + (cp - s) } }
+        }
+        return 0
+    }
+
+    /// The horizontal advance of a glyph, in font units.
+    public func advanceUnits(gid: Int): Int {
+        if (this.numHMetrics == 0) { return (this.upem / 2.0).round() }
+        val i = gid.min(this.numHMetrics - 1)
+        return u16(this.blob, this.hmtxOff + i * 4)
+    }
+
+    /// Where the outline of glyph `gid` starts and ends in `glyf`. An empty
+    /// range — a space — answers a start equal to its end.
+    func glyfRange(gid: Int): Int {
+        if ((gid < 0) or (gid >= this.numGlyphs)) { return -1 }
+        if (this.locaLong) { return u32(this.blob, this.locaOff + gid * 4) }
+        return u16(this.blob, this.locaOff + gid * 2) * 2
+    }
+
+    func glyfEnd(gid: Int): Int {
+        if (this.locaLong) { return u32(this.blob, this.locaOff + gid * 4 + 4) }
+        return u16(this.blob, this.locaOff + gid * 2 + 2) * 2
+    }
+
+    /// A rasterised glyph, cached by identity and size. `px` is a size in
+    /// **device** pixels: the caller has already multiplied by the display's
+    /// scale, which is why a Retina screen gets a Retina glyph and not a
+    /// stretched one.
+    public func glyph(gid: Int, px: Float): Glyph {
+        val key = gid * 100000 + (px * 64.0).round()
+        val hit = this.glyphs[key]
+        if (hit != null) { return hit }
+        val g = this.render(gid, px)
+        this.glyphs[key] = g
+        return g
+    }
+
+    /// The glyph for a codepoint, ready to draw.
+    public func glyphOf(cp: Int, px: Float): Glyph { return this.glyph(this.glyphId(cp), px) }
+
+    func render(gid: Int, px: Float): Glyph {
+        val scale = px / this.upem
+        val adv = this.advanceUnits(gid).toFloat() * scale
+        val start = this.glyfRange(gid)
+        if (start < 0) { return Glyph(0, 0, 0, 0, 0, adv) }
+        val end = this.glyfEnd(gid)
+        if (end <= start) { return Glyph(0, 0, 0, 0, 0, adv) }
+
+        val pts = Outline()
+        this.collect(gid, pts, 0.0, 0.0, 1.0, 1.0, 0)
+        if (pts.xs.size < 2) { return Glyph(0, 0, 0, 0, 0, adv) }
+
+        // The mask's box, in device pixels, with a pixel of margin so that a
+        // curve leaning on the edge still has somewhere to put its coverage.
+        val left = floorI(pts.minX * scale) - 1
+        val topU = ceilI(pts.maxY * scale) + 1
+        val right = ceilI(pts.maxX * scale) + 1
+        val botU = floorI(pts.minY * scale) - 1
+        val w = right - left
+        val h = topU - botU
+        if ((w <= 0) or (h <= 0)) { return Glyph(0, 0, 0, 0, 0, adv) }
+        if ((w > 4096) or (h > 4096)) { return Glyph(0, 0, 0, 0, 0, adv) }
+
+        val r = Raster(w, h)
+        pts.flatten(r, scale, left.toFloat(), topU.toFloat())
+        val mask = r.resolve()
+        return Glyph(mask, w, h, left, topU, adv)
+    }
+
+    /// Walk one glyph's contours into `out`, following composite references.
+    /// `depth` stops a font that points a glyph at itself.
+    proc collect(gid: Int, out: Outline, dx: Float, dy: Float, sx: Float, sy: Float, depth: Int) {
+        if (depth > 5) { return }
+        val start = this.glyfRange(gid)
+        if (start < 0) { return }
+        if (this.glyfEnd(gid) <= start) { return }
+        val b = this.blob
+        val g = this.glyfOff + start
+        val nc = i16(b, g)
+        if (nc >= 0) { this.simple(b, g, nc, out, dx, dy, sx, sy); return }
+
+        // A composite: a list of other glyphs, each with an offset.
+        var p = g + 10
+        var more = true
+        while (more) {
+            val flags = u16(b, p)
+            val idx = u16(b, p + 2)
+            p = p + 4
+            var a1 = 0
+            var a2 = 0
+            if ((flags / 1) % 2 == 1) { a1 = i16(b, p); a2 = i16(b, p + 2); p = p + 4 }
+            else { a1 = u8(b, p); a2 = u8(b, p + 1); p = p + 2 }
+            var csx = 1.0
+            var csy = 1.0
+            if ((flags / 8) % 2 == 1) {
+                csx = f2dot14(b, p); csy = csx; p = p + 2
+            } else {
+                if ((flags / 64) % 2 == 1) { csx = f2dot14(b, p); csy = f2dot14(b, p + 2); p = p + 4 }
+                else { if ((flags / 128) % 2 == 1) { csx = f2dot14(b, p); csy = f2dot14(b, p + 6); p = p + 8 } }
+            }
+            // ARGS_ARE_XY_VALUES: anything else is point matching, which no
+            // text font in practice uses.
+            var ox = dx
+            var oy = dy
+            if ((flags / 2) % 2 == 1) {
+                ox = dx + a1.toFloat() * sx
+                oy = dy + a2.toFloat() * sy
+            }
+            this.collect(idx, out, ox, oy, sx * csx, sy * csy, depth + 1)
+            more = (flags / 32) % 2 == 1
+        }
+    }
+
+    proc simple(b: Int, g: Int, nc: Int, out: Outline, dx: Float, dy: Float, sx: Float, sy: Float) {
+        if (nc == 0) { return }
+        val endsAt = g + 10
+        val nPts = u16(b, endsAt + (nc - 1) * 2) + 1
+        if ((nPts <= 0) or (nPts > 10000)) { return }
+        val insLen = u16(b, endsAt + nc * 2)
+        var p = endsAt + nc * 2 + 2 + insLen
+
+        // Flags, run-length encoded.
+        val flags: List<Int> = []
+        while (flags.size < nPts) {
+            val f = u8(b, p)
+            p++
+            flags.add(f)
+            if ((f / 8) % 2 == 1) {
+                var rep = u8(b, p)
+                p++
+                while ((rep > 0) and (flags.size < nPts)) { flags.add(f); rep-- }
+            }
+        }
+
+        // x then y, each a delta from the last, in one of three encodings.
+        val xs: List<Int> = []
+        var v = 0
+        var i = 0
+        while (i < nPts) {
+            val f = flags[i]
+            if ((f / 2) % 2 == 1) {
+                val d = u8(b, p)
+                p++
+                if ((f / 16) % 2 == 1) { v = v + d } else { v = v - d }
+            } else {
+                if ((f / 16) % 2 == 0) { v = v + i16(b, p); p = p + 2 }
+            }
+            xs.add(v)
+            i++
+        }
+        val ys: List<Int> = []
+        v = 0
+        i = 0
+        while (i < nPts) {
+            val f = flags[i]
+            if ((f / 4) % 2 == 1) {
+                val d = u8(b, p)
+                p++
+                if ((f / 32) % 2 == 1) { v = v + d } else { v = v - d }
+            } else {
+                if ((f / 32) % 2 == 0) { v = v + i16(b, p); p = p + 2 }
+            }
+            ys.add(v)
+            i++
+        }
+
+        var c = 0
+        var first = 0
+        while (c < nc) {
+            val last = u16(b, endsAt + c * 2)
+            if (last >= first) {
+                out.begin()
+                var k = first
+                while (k <= last) {
+                    out.point(dx + xs[k].toFloat() * sx, dy + ys[k].toFloat() * sy,
+                              flags[k] % 2 == 1)
+                    k++
+                }
+                out.end()
+            }
+            first = last + 1
+            c++
+        }
+    }
+}
+
+func f2dot14(b: Int, o: Int): Float { return i16(b, o).toFloat() / 16384.0 }
+
+// ------------------------------------------------------------------ loading
+
+/// Read a font from a file. Answers null when the file is missing or is not a
+/// TrueType outline font.
+public func loadFont(path: String): Font? {
+    if (path == "") { return null }
+    val b = kvBlobRead(path)
+    if (b == 0) { return null }
+    var base = 0
+    // A TrueType Collection is a header and a list of offsets; take the first.
+    if (u32(b, 0) == tag("ttcf")) {
+        if (u32(b, 8) < 1) { kvBlobFree(b); return null }
+        base = u32(b, 12)
+    }
+    val v = u32(b, base)
+    // 0x00010000 is TrueType; 'true' is the old Apple spelling. 'OTTO' is CFF
+    // outlines, which this reader does not have.
+    if ((v != 65536) and (v != tag("true"))) { kvBlobFree(b); return null }
+
+    val f = Font(b, base)
+    val head = f.table("head")
+    val maxp = f.table("maxp")
+    val hhea = f.table("hhea")
+    f.glyfOff = f.table("glyf")
+    f.locaOff = f.table("loca")
+    f.hmtxOff = f.table("hmtx")
+    if ((head == 0) or (maxp == 0) or (f.glyfOff == 0) or (f.locaOff == 0)) {
+        kvBlobFree(b)
+        return null
+    }
+    f.upem = u16(b, head + 18).toFloat()
+    if (f.upem < 16.0) { f.upem = 1000.0 }
+    f.locaLong = i16(b, head + 50) == 1
+    f.numGlyphs = u16(b, maxp + 4)
+    if (hhea != 0) {
+        f.ascentU = i16(b, hhea + 4).toFloat()
+        f.descentU = i16(b, hhea + 6).toFloat()
+        f.lineGapU = i16(b, hhea + 8).toFloat()
+        f.numHMetrics = u16(b, hhea + 34)
+    }
+    // An OS/2 table's typographic metrics are the ones a designer set, where
+    // hhea's are often the ones a hinting tool computed. Prefer them when the
+    // font says they are meaningful.
+    val os2 = f.table("OS/2")
+    if (os2 != 0) {
+        if (u16(b, os2) >= 4) {
+            val a = i16(b, os2 + 68)
+            val d = i16(b, os2 + 70)
+            if ((a > 0) and (d < 0)) {
+                f.ascentU = a.toFloat()
+                f.descentU = d.toFloat()
+                f.lineGapU = i16(b, os2 + 72).toFloat()
+            }
+        }
+    }
+    chooseCmap(f)
+    f.ok = true
+    return f
+}
+
+/// A font the system already has: 0 sans, 1 sans bold, 2 monospace.
+public func systemFont(which: Int): Font? { return loadFont(kvFontPath(which)) }
+
+proc chooseCmap(var f: Font) {
+    val b = f.blob
+    val cm = f.table("cmap")
+    if (cm == 0) { return }
+    val n = u16(b, cm + 2)
+    var best = 0
+    var bestOff = 0
+    var bestFmt = 0
+    var i = 0
+    while (i < n) {
+        val rec = cm + 4 + i * 8
+        val plat = u16(b, rec)
+        val enc = u16(b, rec + 2)
+        val off = cm + u32(b, rec + 4)
+        val fmt = u16(b, off)
+        // Higher is better: full Unicode beats the basic plane, which beats
+        // a symbol table, which beats a byte table.
+        var rank = 0
+        if ((plat == 3) and (enc == 10)) { rank = 100 }
+        if ((plat == 0) and (enc >= 4)) { rank = 95 }
+        if ((plat == 3) and (enc == 1)) { rank = 80 }
+        if ((plat == 0) and (enc < 4)) { rank = 75 }
+        if ((plat == 3) and (enc == 0)) { rank = 40 }
+        if (plat == 1) { rank = 20 }
+        if ((fmt != 4) and ((fmt != 12) and ((fmt != 6) and (fmt != 0)))) { rank = 0 }
+        if (rank > best) { best = rank; bestOff = off; bestFmt = fmt }
+        i++
+    }
+    f.cmapOff = bestOff
+    f.cmapFmt = bestFmt
+}
+
+// -------------------------------------------------------------- the outline
+
+/// A glyph's contours, gathered in font units before anything is scaled — so
+/// that a composite glyph's parts land in the same space as its own.
+public class Outline {
+    public var xs: List<Float> = []
+    public var ys: List<Float> = []
+    public var on: List<Bool> = []
+    public var starts: List<Int> = []
+    public var minX: Float = 100000.0
+    public var minY: Float = 100000.0
+    public var maxX: Float = -100000.0
+    public var maxY: Float = -100000.0
+
+    public proc begin() { this.starts.add(this.xs.size) }
+
+    public proc point(x: Float, y: Float, onCurve: Bool) {
+        this.xs.add(x)
+        this.ys.add(y)
+        this.on.add(onCurve)
+        if (x < this.minX) { this.minX = x }
+        if (y < this.minY) { this.minY = y }
+        if (x > this.maxX) { this.maxX = x }
+        if (y > this.maxY) { this.maxY = y }
+    }
+
+    public proc end() {}
+
+    /// Turn every contour into straight edges in the mask's pixel space and
+    /// hand them to the rasteriser. `ox` is the mask's left edge in device
+    /// pixels and `oyTop` its top, above the baseline — so the flip from a
+    /// font's y-up to a screen's y-down happens exactly here, once.
+    public proc flatten(r: Raster, scale: Float, ox: Float, oyTop: Float) {
+        var c = 0
+        while (c < this.starts.size) {
+            val from = this.starts[c]
+            val to = if (c + 1 < this.starts.size) { this.starts[c + 1] } else { this.xs.size }
+            this.contour(r, scale, ox, oyTop, from, to)
+            c++
+        }
+    }
+
+    proc contour(r: Raster, scale: Float, ox: Float, oyTop: Float, from: Int, to: Int) {
+        val n = to - from
+        if (n < 2) { return }
+        // Find a point to start on. A contour may open on a control point, in
+        // which case the start is the midpoint the format implies.
+        var sxv = 0.0
+        var syv = 0.0
+        var i0 = 0
+        if (this.on[from]) {
+            sxv = this.xs[from]
+            syv = this.ys[from]
+            i0 = 1
+        } else {
+            if (this.on[to - 1]) {
+                sxv = this.xs[to - 1]
+                syv = this.ys[to - 1]
+                i0 = 0
+            } else {
+                sxv = (this.xs[from] + this.xs[to - 1]) / 2.0
+                syv = (this.ys[from] + this.ys[to - 1]) / 2.0
+                i0 = 0
+            }
+        }
+        val startX = sxv * scale - ox
+        val startY = oyTop - syv * scale
+        var curX = startX
+        var curY = startY
+        var haveCtrl = false
+        var ctrlX = 0.0
+        var ctrlY = 0.0
+        var k = 0
+        while (k < n) {
+            val idx = from + (i0 + k) % n
+            val px = this.xs[idx] * scale - ox
+            val py = oyTop - this.ys[idx] * scale
+            if (this.on[idx]) {
+                if (haveCtrl) { quad(r, curX, curY, ctrlX, ctrlY, px, py) }
+                else { r.edge(curX, curY, px, py) }
+                curX = px
+                curY = py
+                haveCtrl = false
+            } else {
+                if (haveCtrl) {
+                    // Two controls in a row imply an on-curve point between them.
+                    val mx = (ctrlX + px) / 2.0
+                    val my = (ctrlY + py) / 2.0
+                    quad(r, curX, curY, ctrlX, ctrlY, mx, my)
+                    curX = mx
+                    curY = my
+                }
+                ctrlX = px
+                ctrlY = py
+                haveCtrl = true
+            }
+            k++
+        }
+        if (haveCtrl) { quad(r, curX, curY, ctrlX, ctrlY, startX, startY) }
+        else { r.edge(curX, curY, startX, startY) }
+    }
+}
+
+/// A quadratic, cut into as many straight pieces as its own size asks for and
+/// no more. The count comes from how far the control point strays from the
+/// chord, which is what decides whether the eye could tell.
+proc quad(r: Raster, x0: Float, y0: Float, cx: Float, cy: Float, x1: Float, y1: Float) {
+    val dx = (x0 + x1) / 2.0 - cx
+    val dy = (y0 + y1) / 2.0 - cy
+    val devi = (dx * dx + dy * dy).sqrt()
+    var n = ceilI((devi * 3.0).sqrt()) + 1
+    if (n < 1) { n = 1 }
+    if (n > 32) { n = 32 }
+    var i = 1
+    var px = x0
+    var py = y0
+    while (i <= n) {
+        val t = i.toFloat() / n.toFloat()
+        val u = 1.0 - t
+        val qx = u * u * x0 + 2.0 * u * t * cx + t * t * x1
+        val qy = u * u * y0 + 2.0 * u * t * cy + t * t * y1
+        r.edge(px, py, qx, qy)
+        px = qx
+        py = qy
+        i++
+    }
+}
+
+// ----------------------------------------------------------- the scan filler
+
+/// The signed-area rasteriser.
+///
+/// Each edge adds, to the cells it passes through, the signed area it sweeps.
+/// Summing the buffer from the start then gives the winding at every pixel,
+/// and its magnitude — clamped — is the coverage. One pass, exact
+/// anti-aliasing, and nothing is sampled.
+public class Raster(public val w: Int, public val h: Int) {
+    public var a: List<Float> = []
+
+    public proc init() {
+        val n = (this.w + 2) * this.h
+        var i = 0
+        while (i < n) { this.a.add(0.0); i++ }
+    }
+
+    public proc edge(x0: Float, y0: Float, x1: Float, y1: Float) {
+        if (this.a.size == 0) { this.init() }
+        if (y0 == y1) { return }
+        var dir = 1.0
+        var ax = x0
+        var ay = y0
+        var bx = x1
+        var by = y1
+        if (y0 > y1) {
+            dir = -1.0
+            ax = x1
+            ay = y1
+            bx = x0
+            by = y0
+        }
+        val dxdy = (bx - ax) / (by - ay)
+        var x = ax
+        if (ay < 0.0) { x = x - ay * dxdy }
+        var y = floorI(ay).max(0)
+        val yEnd = ceilI(by).min(this.h)
+        val stride = this.w + 2
+        while (y < yEnd) {
+            val rowStart = y * stride
+            val dy = (y.toFloat() + 1.0).min(by) - y.toFloat().max(ay)
+            if (dy > 0.0) {
+                val xnext = x + dxdy * dy
+                val d = dy * dir
+                var xa = x
+                var xb = xnext
+                if (xb < xa) { xa = xnext; xb = x }
+                val xaFloor = xa.floor()
+                val xbCeil = xb.ceil()
+                var i0 = xaFloor
+                var i1 = xbCeil
+                if (i0 < 0) { i0 = 0 }
+                if (i1 > this.w + 1) { i1 = this.w + 1 }
+                if (i1 <= i0 + 1) {
+                    // The whole step is inside one cell: split it between that
+                    // cell and the next by where its midpoint fell.
+                    val mid = 0.5 * (x + xnext) - xaFloor.toFloat()
+                    this.bump(rowStart + i0, d - d * mid)
+                    this.bump(rowStart + i0 + 1, d * mid)
+                } else {
+                    val s = 1.0 / (xb - xa)
+                    val xaF = xa - xaFloor.toFloat()
+                    val a0 = 0.5 * s * (1.0 - xaF) * (1.0 - xaF)
+                    val xbF = xb - xbCeil.toFloat() + 1.0
+                    val am = 0.5 * s * xbF * xbF
+                    this.bump(rowStart + i0, d * a0)
+                    if (i1 == i0 + 2) {
+                        this.bump(rowStart + i0 + 1, d * (1.0 - a0 - am))
+                    } else {
+                        val a1 = s * (1.5 - xaF)
+                        this.bump(rowStart + i0 + 1, d * (a1 - a0))
+                        var xi = i0 + 2
+                        while (xi < i1 - 1) {
+                            this.bump(rowStart + xi, d * s)
+                            xi++
+                        }
+                        val a2 = a1 + (i1 - i0 - 3).toFloat() * s
+                        this.bump(rowStart + i1 - 1, d * (1.0 - a2 - am))
+                    }
+                    this.bump(rowStart + i1, d * am)
+                }
+                x = xnext
+            }
+            y++
+        }
+    }
+
+    proc bump(i: Int, v: Float) {
+        if ((i < 0) or (i >= this.a.size)) { return }
+        this.a[i] = this.a[i] + v
+    }
+
+    /// Sum the accumulator into a blob of coverage bytes, `w * h` of them.
+    public func resolve(): Int {
+        if (this.a.size == 0) { return 0 }
+        val blob = kvBlobNew(this.w * this.h)
+        if (blob == 0) { return 0 }
+        val stride = this.w + 2
+        var y = 0
+        var any = false
+        while (y < this.h) {
+            var acc = 0.0
+            var x = 0
+            while (x < this.w) {
+                acc = acc + this.a[y * stride + x]
+                var c = acc.abs()
+                if (c > 1.0) { c = 1.0 }
+                val v = (c * 255.0).round()
+                if (v > 0) { any = true }
+                kvBlobSet(blob, y * this.w + x, v)
+                x++
+            }
+            y++
+        }
+        if (not any) { kvBlobFree(blob); return 0 }
+        return blob
+    }
+}

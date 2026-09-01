@@ -1,0 +1,141 @@
+/// Rectangles, and the arithmetic a layout does on them.
+///
+/// Everything above the rasteriser measures in **logical points** and stores
+/// them as `Float`; the rasteriser is the only place that thinks in pixels.
+/// That is what makes one layout look the same on a Retina screen and a
+/// projector: the numbers never change, the scale does.
+
+/// A point.
+public record Pt(val x: Float, val y: Float)
+
+/// A width and a height.
+public record Size(val w: Float, val h: Float)
+
+/// Space taken off the four edges of something — padding, margin, a border.
+public record Insets(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+/// The same on all four sides.
+public func all(v: Float): Insets { return Insets(v, v, v, v) }
+/// One value across, another down.
+public func axes(h: Float, v: Float): Insets { return Insets(h, v, h, v) }
+
+/// A rectangle, by its top-left corner and its size. Never by two corners:
+/// a negative size is then representable and every consumer has to defend
+/// against it.
+public record Rect(val x: Float, val y: Float, val w: Float, val h: Float)
+
+public func rectOf(x: Float, y: Float, w: Float, h: Float): Rect { return Rect(x, y, w, h) }
+public func rectAt(p: Pt, s: Size): Rect { return Rect(p.x, p.y, s.w, s.h) }
+/// The empty rectangle at the origin — what a layout answers for nothing.
+public func noRect(): Rect { return Rect(0.0, 0.0, 0.0, 0.0) }
+
+public func right(r: Rect): Float { return r.x + r.w }
+public func bottom(r: Rect): Float { return r.y + r.h }
+public func centerX(r: Rect): Float { return r.x + r.w / 2.0 }
+public func centerY(r: Rect): Float { return r.y + r.h / 2.0 }
+public func center(r: Rect): Pt { return Pt(centerX(r), centerY(r)) }
+public func sizeOf(r: Rect): Size { return Size(r.w, r.h) }
+public func isEmpty(r: Rect): Bool { return (r.w <= 0.0) or (r.h <= 0.0) }
+
+/// Is the point inside? The left and top edges belong to the rectangle and
+/// the right and bottom edges do not, so two rectangles that share an edge
+/// never both claim the same click.
+public func holds(r: Rect, x: Float, y: Float): Bool {
+    return ((x >= r.x) and (x < r.x + r.w)) and ((y >= r.y) and (y < r.y + r.h))
+}
+
+/// Shrink by `i` on each side. Negative insets grow it, which is how a focus
+/// ring is drawn outside the thing it rings.
+public func inset(r: Rect, i: Insets): Rect {
+    return Rect(r.x + i.left, r.y + i.top,
+                r.w - i.left - i.right, r.h - i.top - i.bottom)
+}
+
+/// Shrink by the same amount on every side.
+public func shrink(r: Rect, v: Float): Rect { return inset(r, all(v)) }
+/// Grow by the same amount on every side.
+public func grow(r: Rect, v: Float): Rect { return inset(r, all(0.0 - v)) }
+
+public func offset(r: Rect, dx: Float, dy: Float): Rect {
+    return Rect(r.x + dx, r.y + dy, r.w, r.h)
+}
+
+/// The part of `a` that is also in `b`. Empty when they do not meet — and
+/// empty means zero, not negative, so it can be drawn without checking.
+public func intersect(a: Rect, b: Rect): Rect {
+    val x0 = a.x.max(b.x)
+    val y0 = a.y.max(b.y)
+    val x1 = (a.x + a.w).min(b.x + b.w)
+    val y1 = (a.y + a.h).min(b.y + b.h)
+    if ((x1 <= x0) or (y1 <= y0)) { return noRect() }
+    return Rect(x0, y0, x1 - x0, y1 - y0)
+}
+
+/// The smallest rectangle holding both.
+public func union(a: Rect, b: Rect): Rect {
+    if (isEmpty(a)) { return b }
+    if (isEmpty(b)) { return a }
+    val x0 = a.x.min(b.x)
+    val y0 = a.y.min(b.y)
+    val x1 = (a.x + a.w).max(b.x + b.w)
+    val y1 = (a.y + a.h).max(b.y + b.h)
+    return Rect(x0, y0, x1 - x0, y1 - y0)
+}
+
+public func overlaps(a: Rect, b: Rect): Bool { return not isEmpty(intersect(a, b)) }
+
+/// A rectangle of `s`, centred inside `outer`.
+public func centered(outer: Rect, s: Size): Rect {
+    return Rect(outer.x + (outer.w - s.w) / 2.0, outer.y + (outer.h - s.h) / 2.0, s.w, s.h)
+}
+
+/// Cut `amount` off an edge and answer the piece taken. The remainder is
+/// `cutRest`, computed the same way — two calls rather than a tuple, because
+/// a layout usually wants only one of the two and Keal would allocate for the
+/// pair. Edges: 0 left, 1 top, 2 right, 3 bottom.
+public func cut(r: Rect, edge: Int, amount: Float): Rect {
+    val a = amount.max(0.0)
+    if (edge == 0) { return Rect(r.x, r.y, a.min(r.w), r.h) }
+    if (edge == 1) { return Rect(r.x, r.y, r.w, a.min(r.h)) }
+    if (edge == 2) { val t = a.min(r.w); return Rect(r.x + r.w - t, r.y, t, r.h) }
+    val t = a.min(r.h)
+    return Rect(r.x, r.y + r.h - t, r.w, t)
+}
+
+/// What is left of `r` after `cut(r, edge, amount)` took its piece.
+public func cutRest(r: Rect, edge: Int, amount: Float): Rect {
+    val a = amount.max(0.0)
+    if (edge == 0) { val t = a.min(r.w); return Rect(r.x + t, r.y, r.w - t, r.h) }
+    if (edge == 1) { val t = a.min(r.h); return Rect(r.x, r.y + t, r.w, r.h - t) }
+    if (edge == 2) { return Rect(r.x, r.y, r.w - a.min(r.w), r.h) }
+    return Rect(r.x, r.y, r.w, r.h - a.min(r.h))
+}
+
+// --------------------------------------------------------- small arithmetic
+
+public func clampF(v: Float, lo: Float, hi: Float): Float {
+    if (v < lo) { return lo }
+    if (v > hi) { return hi }
+    return v
+}
+
+public func clampI(v: Int, lo: Int, hi: Int): Int {
+    if (v < lo) { return lo }
+    if (v > hi) { return hi }
+    return v
+}
+
+public func lerpF(a: Float, b: Float, t: Float): Float { return a + (b - a) * t }
+
+public func floorI(v: Float): Int { return v.floor() }
+public func ceilI(v: Float): Int { return v.ceil() }
+public func roundI(v: Float): Int { return v.round() }
+
+/// How much of the unit cell starting at `i` the interval `a..b` covers,
+/// in 0.0..1.0. Every anti-aliased edge in the rasteriser is this function.
+public func cover(a: Float, b: Float, i: Int): Float {
+    val lo = a.max(i.toFloat())
+    val hi = b.min(i.toFloat() + 1.0)
+    if (hi <= lo) { return 0.0 }
+    return hi - lo
+}

@@ -1,0 +1,36 @@
+import "../src/canvas.keal"
+import "../src/color.keal"
+import "../src/geom.keal"
+import "../src/ffi.keal"
+
+val c = canvasOffscreen(420, 260, 2.0)
+c.clear(web("#14161c"))
+
+// a card with a shadow, a border and a heading bar
+c.shadow(Rect(24.0, 24.0, 180.0, 120.0), 12.0, 14.0, 4.0, rgba(0, 0, 0, 200))
+c.fillRound(Rect(24.0, 24.0, 180.0, 120.0), 12.0, web("#1e2129"))
+c.strokeRound(Rect(24.0, 24.0, 180.0, 120.0), 12.0, 1.0, web("#333845"))
+c.gradient(Rect(36.0, 36.0, 156.0, 28.0), web("#3b82f6"), web("#8b5cf6"), false)
+
+// pills at several radii, to see the arcs
+var i = 0
+while (i < 4) {
+    val x = 232.0 + (i % 2).toFloat() * 92.0
+    val y = 30.0 + (i / 2).toFloat() * 48.0
+    c.fillRound(Rect(x, y, 80.0, 34.0), 4.0 + i.toFloat() * 5.0, web("#2a2f3a"))
+    c.strokeRound(Rect(x, y, 80.0, 34.0), 4.0 + i.toFloat() * 5.0, 1.5, web("#4f9cf9"))
+    i++
+}
+
+// circles and a diagonal, for the distance function
+c.fillCircle(60.0, 190.0, 26.0, web("#22c55e"))
+c.fillCircle(120.0, 190.0, 18.0, rgba(239, 68, 68, 160))
+c.line(160.0, 220.0, 390.0, 160.0, 3.0, web("#fbbf24"))
+c.line(160.0, 160.0, 390.0, 220.0, 1.0, web("#94a3b8"))
+
+// a clipped fill, to prove the clip stack
+c.push(Rect(240.0, 140.0, 60.0, 40.0))
+c.fillRound(Rect(230.0, 130.0, 120.0, 90.0), 10.0, web("#f472b6"))
+c.pop()
+
+println(kvSaveBmp("out/shapes.bmp"))
