@@ -1,0 +1,136 @@
+import "./color.keal"
+import "./geom.keal"
+import "./text.keal"
+
+/// What an application looks like, in one object.
+///
+/// Nothing in the widgets hard-codes a colour or a corner radius; they read
+/// them from here. That is what makes a theme a value an application can swap
+/// at run time, and what makes it possible to say that keal-view has *a* look
+/// rather than that each control has one.
+///
+/// The palettes are built from a small number of decisions rather than from a
+/// list of hex codes: one surface ramp, one accent, three status hues, and a
+/// text ramp of three weights. Adding a colour to a theme should be rare, and
+/// should have to justify itself.
+public class Theme {
+    /// Behind everything.
+    public var bg: Int = 0
+    /// A panel, a card, a menu — one step up from the background.
+    public var surface: Int = 0
+    /// A row that is hovered, a field, an inset well — one step further.
+    public var surfaceHi: Int = 0
+    /// A pressed control.
+    public var surfaceDown: Int = 0
+    /// Hairlines between regions.
+    public var border: Int = 0
+    /// A border that has to be seen: a focused field, a selected tab.
+    public var borderStrong: Int = 0
+
+    /// Body text and headings.
+    public var textPrimary: Int = 0
+    /// Labels, secondary rows.
+    public var textSecondary: Int = 0
+    /// Placeholders, disabled things, watermarks.
+    public var textMuted: Int = 0
+    /// Text on top of `accent`.
+    public var textOnAccent: Int = 0
+
+    /// The one colour the application is about.
+    public var accent: Int = 0
+    public var accentHover: Int = 0
+    public var accentDown: Int = 0
+    /// The accent at low opacity — a selected row, a focus halo.
+    public var accentSoft: Int = 0
+
+    public var success: Int = 0
+    public var warning: Int = 0
+    public var danger: Int = 0
+
+    /// What a shadow is made of. Darker and more opaque on a light theme,
+    /// because a shadow on a dark surface reads as an absence, not a mark.
+    public var shadow: Int = 0
+
+    public var radiusSm: Float = 4.0
+    public var radiusMd: Float = 8.0
+    public var radiusLg: Float = 14.0
+    /// Large enough that any control becomes a capsule.
+    public var radiusPill: Float = 999.0
+
+    /// The spacing grid. Every gap and padding in the widgets is a multiple.
+    public var unit: Float = 4.0
+    /// One hairline, in points. Not 1.0 device pixels — a hairline should be
+    /// the same *thickness* on every display, and the rasteriser will put it
+    /// on two physical pixels at 2× where that is what a point is.
+    public var hairline: Float = 1.0
+
+    public var fontSm: Float = 11.0
+    public var fontBase: Float = 13.0
+    public var fontLg: Float = 16.0
+    public var fontTitle: Float = 22.0
+
+    /// The height a button, a field or a menu row occupies.
+    public var control: Float = 30.0
+    /// The height of a docking tab strip and a title bar.
+    public var strip: Float = 32.0
+    public var dark: Bool = true
+
+    public func gap(n: Float): Float { return this.unit * n }
+    public func body(): TextStyle { return text(this.fontBase) }
+    public func small(): TextStyle { return text(this.fontSm) }
+    public func heading(): TextStyle { return textBold(this.fontLg) }
+    public func title(): TextStyle { return textBold(this.fontTitle) }
+}
+
+/// The dark palette: a near-neutral slate ramp with a blue accent, tuned so
+/// that `textSecondary` on `surface` clears 4.5:1 and `textMuted` clears 3:1.
+public func darkTheme(): Theme {
+    val t = Theme()
+    t.dark = true
+    t.bg = web("#0e1014")
+    t.surface = web("#171a21")
+    t.surfaceHi = web("#1f232c")
+    t.surfaceDown = web("#282d38")
+    t.border = web("#2a2f3a")
+    t.borderStrong = web("#3d4451")
+    t.textPrimary = web("#e8ebf0")
+    t.textSecondary = web("#a4adbd")
+    t.textMuted = web("#6d7686")
+    t.textOnAccent = web("#ffffff")
+    t.accent = web("#3b82f6")
+    t.accentHover = web("#5c99f8")
+    t.accentDown = web("#2f6fd8")
+    t.accentSoft = rgba(59, 130, 246, 46)
+    t.success = web("#34d399")
+    t.warning = web("#fbbf24")
+    t.danger = web("#f87171")
+    t.shadow = rgba(0, 0, 0, 190)
+    return t
+}
+
+/// The light palette. Not the dark one inverted: a light interface needs a
+/// darker accent to stay legible on white and a much lighter shadow to stop
+/// looking like dirt.
+public func lightTheme(): Theme {
+    val t = Theme()
+    t.dark = false
+    t.bg = web("#f4f5f7")
+    t.surface = web("#ffffff")
+    t.surfaceHi = web("#eef0f4")
+    t.surfaceDown = web("#e2e6ec")
+    t.border = web("#dfe3e9")
+    t.borderStrong = web("#b9c0cb")
+    t.textPrimary = web("#14171d")
+    t.textSecondary = web("#4d5563")
+    t.textMuted = web("#858d9b")
+    t.textOnAccent = web("#ffffff")
+    t.accent = web("#2563eb")
+    t.accentHover = web("#3b82f6")
+    t.accentDown = web("#1d4ed8")
+    t.accentSoft = rgba(37, 99, 235, 34)
+    t.success = web("#059669")
+    t.warning = web("#d97706")
+    t.danger = web("#dc2626")
+    t.shadow = rgba(15, 23, 42, 60)
+    return t
+}

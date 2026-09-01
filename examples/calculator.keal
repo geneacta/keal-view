@@ -1,0 +1,199 @@
+import "../src/app.keal"
+
+/// A calculator.
+///
+/// This is what a keal-view application looks like end to end: some `Cell`s
+/// holding what the program knows, plain functions that change them, and one
+/// function from those cells to a tree of views. Nothing here says when to
+/// redraw — writing a cell is what says it.
+
+// ------------------------------------------------------------------- state
+
+val entry = state("0")
+val acc = state(0.0)
+val pending = state("")
+val restart = state(true)
+val memory = state("")
+
+// -------------------------------------------------------------- arithmetic
+
+/// A number as a person writes it: no trailing zeros, no `.0`, and a plain
+/// word rather than `NaN` when the arithmetic did not work out.
+func fmt(v: Float): String {
+    if (v.isNaN()) { return "erreur" }
+    val a = v.abs()
+    if (a >= 1000000000000.0) { return v.toString() }
+    val scaled = (v * 1000000.0).round()
+    if (scaled % 1000000 == 0) { return (scaled / 1000000).toString() }
+    var s = (scaled.toFloat() / 1000000.0).toString()
+    while (s.endsWith("0")) { s = s.take(s.length - 1) }
+    if (s.endsWith(".")) { s = s.take(s.length - 1) }
+    return s
+}
+
+func shown(): Float { return entry.get().toFloat() ?: 0.0 }
+
+proc typeDigit(d: String) {
+    if (restart.get()) {
+        entry.set(if (d == ".") { "0." } else { d })
+        restart.set(false)
+        return
+    }
+    if ((d == ".") and entry.get().contains(".")) { return }
+    if ((entry.get() == "0") and (d != ".")) { entry.set(d); return }
+    if (entry.get().length >= 14) { return }
+    entry.set(entry.get() + d)
+}
+
+func applyOp(op: String, a: Float, b: Float): Float {
+    if (op == "+") { return a + b }
+    if (op == "−") { return a - b }
+    if (op == "×") { return a * b }
+    if (op == "÷") {
+        if (b == 0.0) { return 0.0 / 0.0 }
+        return a / b
+    }
+    return b
+}
+
+proc chooseOp(op: String) {
+    val v = shown()
+    if ((pending.get() != "") and (not restart.get())) {
+        val r = applyOp(pending.get(), acc.get(), v)
+        acc.set(r)
+        entry.set(fmt(r))
+    } else {
+        acc.set(v)
+    }
+    pending.set(op)
+    restart.set(true)
+    memory.set(fmt(acc.get()) + " " + op)
+}
+
+proc equals() {
+    if (pending.get() == "") { memory.set(""); return }
+    val v = shown()
+    val r = applyOp(pending.get(), acc.get(), v)
+    memory.set(fmt(acc.get()) + " " + pending.get() + " " + fmt(v) + " =")
+    acc.set(r)
+    entry.set(fmt(r))
+    pending.set("")
+    restart.set(true)
+}
+
+proc clearAll() {
+    entry.set("0")
+    acc.set(0.0)
+    pending.set("")
+    restart.set(true)
+    memory.set("")
+}
+
+proc backspace() {
+    if (restart.get()) { return }
+    val s = entry.get()
+    if (s.length <= 1) { entry.set("0"); restart.set(true); return }
+    entry.set(s.take(s.length - 1))
+}
+
+proc negate() {
+    val s = entry.get()
+    if (s == "0") { return }
+    if (s.startsWith("-")) { entry.set(s.drop(1)) } else { entry.set("-" + s) }
+}
+
+proc percent() {
+    entry.set(fmt(shown() / 100.0))
+    restart.set(true)
+}
+
+// --------------------------------------------------------------- the keypad
+
+val t = darkTheme()
+
+/// One key. Digits are quiet, operators carry the accent, and the two on the
+/// left that undo something are marked as such.
+func key(labelText: String, variant: Int, tap: () -> Unit): View {
+    return button(labelText, tap).kindOf(variant).grows().fontSize(19.0).rounded(14.0)
+}
+
+func digitKey(d: String): View {
+    return key(d, plain, { -> typeDigit(d) }).bg(t.surfaceHi)
+}
+
+/// The three keys that are neither a digit nor an operator sit a shade
+/// lighter, so the keypad reads as three families at a glance rather than as
+/// twenty identical squares.
+func funcKey(labelText: String, tap: () -> Unit): View {
+    return key(labelText, plain, tap).bg(t.surfaceDown).color(t.textSecondary)
+}
+
+func opKey(o: String): View { return key(o, primary, { -> chooseOp(o) }) }
+
+func keypad(): View {
+    return column([
+        row([
+            funcKey("C", { -> clearAll() }).color(t.danger),
+            funcKey("±", { -> negate() }),
+            funcKey("%", { -> percent() }),
+            opKey("÷")
+        ]).grows().gaps(t.gap(2.0)),
+        row([digitKey("7"), digitKey("8"), digitKey("9"), opKey("×")]).grows().gaps(t.gap(2.0)),
+        row([digitKey("4"), digitKey("5"), digitKey("6"), opKey("−")]).grows().gaps(t.gap(2.0)),
+        row([digitKey("1"), digitKey("2"), digitKey("3"), opKey("+")]).grows().gaps(t.gap(2.0)),
+        row([
+            digitKey("0").growsBy(2.0),
+            digitKey("."),
+            key("=", primary, { -> equals() })
+        ]).grows().gaps(t.gap(2.0))
+    ]).gaps(t.gap(2.0)).padAll(t.gap(4.0)).grows()
+}
+
+func screen(): View {
+    return column([
+        row([
+            spacer(),
+            iconButton("backspace", { -> backspace() }).sized(40.0, 30.0)
+        ]),
+        spacer(),
+        label(memory.get()).color(t.textMuted).fontSize(14.0).trailing(),
+        label(entry.get()).color(t.textPrimary).fontSize(46.0).bold().trailing()
+    ]).gaps(t.gap(1.0)).padXY(t.gap(5.0), t.gap(3.0)).h(142.0)
+}
+
+// ------------------------------------------------------------------ the app
+
+val app = App("Calculatrice", 320, 470)
+app.theme = t
+
+app.build = { ->
+    column([
+        screen(),
+        keypad()
+    ]).grows()
+}
+
+/// The keyboard works too, and it is the same six functions the keys call.
+app.onKey = { e ->
+    if (e.kind == evText()) {
+        val ch = e.text
+        if ((ch >= "0") and (ch <= "9")) { typeDigit(ch); true }
+        else { if (ch == ".") { typeDigit("."); true }
+        else { if (ch == ",") { typeDigit("."); true }
+        else { if (ch == "+") { chooseOp("+"); true }
+        else { if (ch == "-") { chooseOp("−"); true }
+        else { if ((ch == "*") or (ch == "x")) { chooseOp("×"); true }
+        else { if (ch == "/") { chooseOp("÷"); true }
+        else { if (ch == "=") { equals(); true }
+        else { if (ch == "%") { percent(); true }
+        else { if ((ch == "c") or (ch == "C")) { clearAll(); true }
+        else { false } } } } } } } } } }
+    } else {
+        if (e.key == keyEnter()) { equals(); true }
+        else { if (e.key == keyBackspace()) { backspace(); true }
+        else { if (e.key == keyEscape()) { clearAll(); true }
+        else { false } } }
+    }
+}
+
+run(app)

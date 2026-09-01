@@ -1,0 +1,103 @@
+import "./canvas.keal"
+import "./event.keal"
+import "./geom.keal"
+import "./text.keal"
+import "./theme.keal"
+import "./view.keal"
+
+/// Everything a frame needs that is not the view tree: where to draw, what
+/// with, what the pointer is doing, and the small amount of state that has to
+/// outlive a tree which is thrown away every frame.
+///
+/// That last part is the whole reason this class exists. A view is rebuilt
+/// from the application's state each time something changes, so a scroll
+/// position or a text caret cannot live in the view — it would be reset by the
+/// next keystroke. It lives here instead, in a map keyed by the identity
+/// `layout` derives from each node's place in the tree, so a widget finds its
+/// own state again on the next frame without the application having to hold it.
+public class Ui(public var canvas: Canvas, public var fonts: Fonts, public var theme: Theme) {
+    public var pointer: Pointer = Pointer()
+
+    /// The node under the pointer.
+    public var hot: Int = 0
+    /// The node the pointer went down on and has not let go of.
+    public var active: Int = 0
+    /// The node that keyboard input goes to.
+    public var focus: Int = 0
+    /// True while the focus was reached by Tab rather than by a click — a
+    /// focus ring is drawn for one and not the other, which is what everyone
+    /// means by "only show it when I am using the keyboard".
+    public var focusVisible: Bool = false
+
+    /// Retained per-widget state, keyed by node identity.
+    var scrollY: Map<Int, Float> = {}
+    var caret: Map<Int, Int> = {}
+    var anchor: Map<Int, Int> = {}
+    var scratch: Map<Int, Float> = {}
+
+    /// The pointer shape this frame asked for.
+    public var cursor: Int = 0
+    /// Milliseconds since the application started — for animation and for the
+    /// caret's blink.
+    public var time: Float = 0.0
+    /// Set when something wants another frame without an event to prompt it:
+    /// an animation in flight, a caret that has to blink.
+    public var animating: Bool = false
+
+    // ------------------------------------------------------- retained state
+
+    public func scrollOf(id: Int): Float { return this.scrollY[id] ?: 0.0 }
+    public proc setScroll(id: Int, v: Float) { this.scrollY[id] = v }
+
+    public func caretOf(id: Int, fallback: Int): Int { return this.caret[id] ?: fallback }
+    public proc setCaret(id: Int, v: Int) { this.caret[id] = v }
+
+    public func anchorOf(id: Int, fallback: Int): Int { return this.anchor[id] ?: fallback }
+    public proc setAnchor(id: Int, v: Int) { this.anchor[id] = v }
+
+    /// One number a widget wants to keep — where a drag started, how far an
+    /// animation has run.
+    public func memoOf(id: Int, fallback: Float): Float { return this.scratch[id] ?: fallback }
+    public proc setMemo(id: Int, v: Float) { this.scratch[id] = v }
+
+    // ------------------------------------------------------------- helpers
+
+    public func isHot(v: View): Bool { return (v.id == this.hot) and v.enabled }
+    public func isActive(v: View): Bool { return (v.id == this.active) and v.enabled }
+    public func isFocused(v: View): Bool { return v.id == this.focus }
+
+    /// Ask for a pointer shape. The last ask of the frame wins, so a widget
+    /// nearer the top of the tree overrides the container under it.
+    public proc wantCursor(c: Int) { this.cursor = c }
+
+    /// Say that the next frame should be drawn even if nothing was clicked.
+    public proc animate() { this.animating = true }
+
+    /// The colour text should be, for a view in a given state.
+    public func inkFor(v: View): Int {
+        if (v.fg != 0) {
+            if (v.enabled) { return v.fg }
+            return fade(v.fg, 0.45)
+        }
+        val t = this.theme
+        var c = t.textPrimary
+        if (v.variant == 1) { c = t.textSecondary }
+        if (v.variant == 3) { c = t.textPrimary }
+        if (not v.enabled) { return t.textMuted }
+        return c
+    }
+
+    /// The style a view should be drawn in, taking the theme's sizes where the
+    /// view did not name one of its own.
+    public func styleFor(v: View): TextStyle {
+        if (v.styled) { return v.style }
+        val t = this.theme
+        if (v.kind == kLabel) {
+            if (v.variant == 1) { return t.small() }
+            if (v.variant == 2) { return t.heading() }
+            if (v.variant == 3) { return t.title() }
+        }
+        if (v.kind == kBadge) { return t.small() }
+        return t.body()
+    }
+}

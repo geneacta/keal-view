@@ -108,6 +108,8 @@ double  kvp_now_ms(void);
 char   *kvp_clipboard_get(void);
 void    kvp_clipboard_set(const char *s);
 char   *kvp_font_path(int64_t which);
+int64_t kvp_window_id(void);
+void    kvp_set_dark(int64_t dark);
 
 #ifdef __cplusplus
 }
@@ -125,6 +127,7 @@ static inline int64_t kvp_wake_(void)                   { kvp_wake(); return 0; 
 static inline int64_t kvp_set_title_(const char *t)     { kvp_set_title(t); return 0; }
 static inline int64_t kvp_set_cursor_(int64_t s)        { kvp_set_cursor(s); return 0; }
 static inline int64_t kvp_clipboard_set_(const char *s) { kvp_clipboard_set(s); return 0; }
+static inline int64_t kvp_set_dark_(int64_t d)          { kvp_set_dark(d); return 0; }
 
 /* ----------------------------------------------------------- the surface */
 

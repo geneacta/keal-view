@@ -1,0 +1,47 @@
+/// Reactive state.
+///
+/// A `Cell` holds a value and remembers that the world changed when it is
+/// written. The application loop compares the revision before and after it
+/// handles a batch of events, and rebuilds and redraws only when it moved.
+///
+/// That is a deliberately coarse reaction: there is no dependency graph and no
+/// diff, so a `set` anywhere rebuilds the whole view tree. It is the right
+/// trade here and it is worth saying why. Building a tree of a few hundred
+/// nodes is a few thousand allocations, which is tens of microseconds; a
+/// dependency graph would cost more to maintain than it saves, and it would
+/// cost it on every frame rather than on the frames where something changed.
+/// What the coarse version buys is that a view function is a pure function of
+/// the state, with nothing to invalidate and nothing to forget to invalidate.
+
+var rev: Int = 1
+
+/// How many times any cell has been written. The loop watches this number.
+public func revision(): Int { return rev }
+
+/// Say that something changed without going through a cell — a timer fired,
+/// an actor delivered, a file finished loading.
+public proc invalidate() { rev = rev + 1 }
+
+/// One piece of application state.
+public class Cell<T>(var v: T) {
+    /// Read it.
+    public func get(): T { return this.v }
+
+    /// Write it, and mark the frame stale. Writing the same value again still
+    /// counts as a change: knowing whether it is one would need `==` on `T`,
+    /// which would put an `Eq` bound on every cell in the program, and a
+    /// redundant repaint costs a millisecond nobody can see.
+    public proc set(nv: T) {
+        this.v = nv
+        rev = rev + 1
+    }
+
+    /// Write a value computed from the one that is there.
+    public proc update(f: (T) -> T) {
+        this.v = f(this.v)
+        rev = rev + 1
+    }
+}
+
+/// A cell holding `initial`.
+public func state<T>(initial: T): Cell<T> { return Cell(initial) }

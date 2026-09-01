@@ -1,0 +1,404 @@
+import "./canvas.keal"
+import "./color.keal"
+import "./geom.keal"
+import "./text.keal"
+
+/// The view tree: what an application says it wants on the screen.
+///
+/// A view is described, not built. An application writes a function from its
+/// state to a tree of these, keal-view lays the tree out, draws it, and routes
+/// what the user does back to the handlers hanging off it. Nothing in the tree
+/// survives a frame; the tree is thrown away and made again whenever a `Cell`
+/// changes, and the only things that persist are the cells the application
+/// holds and the small per-widget state keyed by identity in `Ui`.
+///
+/// There is one class here rather than a class per kind, and that is Keal's
+/// doing, honestly stated: a trait is not a type in Keal, so a `List<Widget>`
+/// of different implementations cannot exist. A tagged class is what the
+/// language offers, so a tagged class is what this is. The constructors below
+/// are the real interface — nothing outside this file sets `kind` by hand.
+
+public val kBox = 0
+public val kLabel = 1
+public val kButton = 2
+public val kSpacer = 3
+public val kDivider = 4
+public val kCheck = 5
+public val kSlider = 6
+public val kField = 7
+public val kScroll = 8
+public val kPanel = 9
+public val kCustom = 10
+public val kIcon = 11
+public val kToggle = 12
+public val kTabs = 13
+public val kProgress = 14
+public val kBadge = 15
+
+/// Where children sit along the axis they are stacked on.
+public val mainStart = 0
+public val mainCenter = 1
+public val mainEnd = 2
+public val mainBetween = 3
+
+/// How wide (or tall) a child is across that axis.
+public val crossStart = 0
+public val crossCenter = 1
+public val crossEnd = 2
+public val crossStretch = 3
+
+/// A button that is the main action, one that is not, and one that destroys.
+public val plain = 0
+public val primary = 1
+public val quiet = 2
+public val danger = 3
+
+public class View {
+    public var kind: Int = 0
+    public var vertical: Bool = false
+    public var label: String = ""
+    public var kids: List<View> = []
+
+    /// Given by the application to keep a widget's own state — a scroll
+    /// position, a caret — attached to it when the list around it changes.
+    public var key: String = ""
+    /// Filled in during layout: the identity this node's retained state hangs
+    /// on. Derived from the path down the tree, and from `key` where there is
+    /// one.
+    public var id: Int = 0
+
+    // ------------------------------------------------------------ box model
+    public var pad: Insets = all(0.0)
+    public var space: Float = 0.0
+    /// A fixed size, or -1 to take whatever the content needs.
+    public var wantW: Float = -1.0
+    public var wantH: Float = -1.0
+    public var minW: Float = 0.0
+    public var minH: Float = 0.0
+    /// Share of the space left over on the main axis. 0 takes none.
+    public var weight: Float = 0.0
+    public var mainAlign: Int = 0
+    public var crossAlign: Int = 3
+
+    // ---------------------------------------------------------- appearance
+    /// A background, or 0 for none. Widgets that draw themselves read the
+    /// theme instead and leave this alone.
+    public var fill: Int = 0
+    public var stroke: Int = 0
+    public var strokeW: Float = 0.0
+    public var radius: Float = 0.0
+    /// Text colour, or 0 to take the theme's.
+    public var fg: Int = 0
+    public var style: TextStyle = text(13.0)
+    public var styled: Bool = false
+    public var align: Int = 0
+    /// A drop shadow this many points across, or 0 for none.
+    public var elevate: Float = 0.0
+    /// Wrap the label over several lines instead of cutting it with an
+    /// ellipsis.
+    public var wraps: Bool = false
+
+    // ------------------------------------------------------------ behaviour
+    public var enabled: Bool = true
+    public var on: Bool = false
+    public var value: Float = 0.0
+    public var lo: Float = 0.0
+    public var hi: Float = 1.0
+    public var step: Float = 0.0
+    public var hint: String = ""
+    public var variant: Int = 0
+    public var icon: String = ""
+    /// Selected index, for tabs.
+    public var index: Int = 0
+    public var options: List<String> = []
+    public var password: Bool = false
+
+    public var onTap: () -> Unit = { -> }
+    public var onBool: (Bool) -> Unit = { b -> }
+    public var onFloat: (Float) -> Unit = { v -> }
+    public var onString: (String) -> Unit = { s -> }
+    public var onIndex: (Int) -> Unit = { i -> }
+    /// A view that paints itself. It is handed a canvas already clipped to
+    /// its own rectangle, and the rectangle, in points.
+    public var onDraw: (Canvas, Rect) -> Unit = { c, r -> }
+
+    /// Where layout put it, in points, in window coordinates.
+    public var frame: Rect = noRect()
+    /// What `measure` last decided it wants to be, so `arrange` need not ask
+    /// again — measuring a label means walking its characters, and a frame
+    /// would otherwise do that twice for every one of them.
+    public var mw: Float = 0.0
+    public var mh: Float = 0.0
+    /// For a scrolling region: how tall its content turned out to be.
+    public var content: Float = 0.0
+
+    // ------------------------------------------------------------ modifiers
+    //
+    // Each answers the same view, so they chain. They mutate rather than copy
+    // because a view is built once and thrown away, and copying a node per
+    // modifier would allocate a tree per adjective.
+
+    /// A fixed width.
+    public func w(v: Float): View { this.wantW = v; return this }
+    /// A fixed height.
+    public func h(v: Float): View { this.wantH = v; return this }
+    /// Both.
+    public func sized(a: Float, b: Float): View { this.wantW = a; this.wantH = b; return this }
+    /// A floor under the size, leaving the content free to ask for more.
+    public func least(a: Float, b: Float): View { this.minW = a; this.minH = b; return this }
+    /// Take a share of what is left over. Two views with `grows()` split it.
+    public func grows(): View { this.weight = 1.0; return this }
+    /// Take a named share of it.
+    public func growsBy(f: Float): View { this.weight = f; return this }
+
+    public func pads(i: Insets): View { this.pad = i; return this }
+    /// The same padding on all four sides.
+    public func padAll(v: Float): View { this.pad = all(v); return this }
+    /// One padding across, another down.
+    public func padXY(hx: Float, vy: Float): View { this.pad = axes(hx, vy); return this }
+    /// Space between children.
+    public func gaps(v: Float): View { this.space = v; return this }
+
+    public func bg(c: Int): View { this.fill = c; return this }
+    public func outline(c: Int, wd: Float): View { this.stroke = c; this.strokeW = wd; return this }
+    public func rounded(r: Float): View { this.radius = r; return this }
+    public func color(c: Int): View { this.fg = c; return this }
+    public func font(st: TextStyle): View { this.style = st; this.styled = true; return this }
+    /// The same face at another size.
+    public func fontSize(v: Float): View {
+        this.style = TextStyle(v, this.style.bold, this.style.mono)
+        this.styled = true
+        return this
+    }
+    public func bold(): View {
+        this.style = TextStyle(this.style.size, true, this.style.mono)
+        this.styled = true
+        return this
+    }
+    public func mono(): View {
+        this.style = TextStyle(this.style.size, this.style.bold, true)
+        this.styled = true
+        return this
+    }
+    public func centered(): View { this.align = 1; return this }
+    public func trailing(): View { this.align = 2; return this }
+    public func wrapping(): View { this.wraps = true; return this }
+    /// Lift it off the surface with a shadow `blur` points across.
+    public func raised(blur: Float): View { this.elevate = blur; return this }
+
+    /// Give it a name of its own, so its retained state follows it when the
+    /// list it sits in is reordered.
+    public func keyed(k: String): View { this.key = k; return this }
+    /// Grey it out and stop it responding.
+    public func off(): View { this.enabled = false; return this }
+    /// Grey it out when `c` holds.
+    public func offWhen(c: Bool): View { this.enabled = not c; return this }
+    /// How children sit along and across the stacking axis.
+    public func aligned(mainA: Int, crossA: Int): View {
+        this.mainAlign = mainA
+        this.crossAlign = crossA
+        return this
+    }
+    /// A style for a button: `plain`, `primary`, `quiet` or `danger`.
+    public func kindOf(v: Int): View { this.variant = v; return this }
+    /// An icon before the label — see `icon()` for the names.
+    public func withIcon(name: String): View { this.icon = name; return this }
+}
+
+func mk(kind: Int): View {
+    val v = View()
+    v.kind = kind
+    return v
+}
+
+// ------------------------------------------------------------- containers
+
+/// Children stacked downwards.
+public func column(kids: List<View>): View {
+    val v = mk(kBox)
+    v.vertical = true
+    v.kids = kids
+    return v
+}
+
+/// Children stacked across.
+public func row(kids: List<View>): View {
+    val v = mk(kBox)
+    v.vertical = false
+    v.kids = kids
+    return v
+}
+
+/// One child in a box of its own — somewhere to hang a background, a padding
+/// or a shadow that the child should not carry itself.
+public func box(kid: View): View { return column([kid]) }
+
+/// A titled surface: a heading strip, a hairline, and the content below.
+public func panel(title: String, kids: List<View>): View {
+    val v = mk(kPanel)
+    v.label = title
+    v.vertical = true
+    v.kids = kids
+    return v
+}
+
+/// A region that scrolls vertically when its content is taller than it is.
+public func scroll(kids: List<View>): View {
+    val v = mk(kScroll)
+    v.vertical = true
+    v.kids = kids
+    return v
+}
+
+/// Empty space that takes whatever is left over. Two of them centre what is
+/// between them.
+public func spacer(): View {
+    val v = mk(kSpacer)
+    v.weight = 1.0
+    return v
+}
+
+/// Empty space of exactly this size.
+public func gapV(hh: Float): View { return mk(kSpacer).h(hh) }
+public func gapH(ww: Float): View { return mk(kSpacer).w(ww) }
+
+/// A hairline across the container it sits in.
+public func divider(): View { return mk(kDivider) }
+
+// ---------------------------------------------------------------- content
+
+/// A line of text.
+public func label(s: String): View {
+    val v = mk(kLabel)
+    v.label = s
+    return v
+}
+
+/// A line of text that carries less weight than the body.
+public func caption(s: String): View {
+    val v = label(s)
+    v.variant = 1
+    return v
+}
+
+/// A heading.
+public func heading(s: String): View {
+    val v = label(s)
+    v.variant = 2
+    return v
+}
+
+/// A title.
+public func title(s: String): View {
+    val v = label(s)
+    v.variant = 3
+    return v
+}
+
+/// A paragraph, wrapped to the width it is given.
+public func paragraph(s: String): View { return label(s).wrapping() }
+
+/// A small pill of text — a count, a status, a tag.
+public func badge(s: String): View {
+    val v = mk(kBadge)
+    v.label = s
+    return v
+}
+
+/// A shape drawn from a name rather than a font, so that an application has
+/// icons without carrying a file: `check` `close` `plus` `minus` `chevron-down`
+/// `chevron-right` `chevron-left` `chevron-up` `search` `menu` `dot` `gear`
+/// `folder` `file` `play` `pause` `trash` `warning`.
+public func icon(name: String): View {
+    val v = mk(kIcon)
+    v.icon = name
+    return v
+}
+
+// --------------------------------------------------------------- controls
+
+/// A button. Give it `.kindOf(primary)` to make it the main action.
+public func button(s: String, on: () -> Unit): View {
+    val v = mk(kButton)
+    v.label = s
+    v.onTap = on
+    return v
+}
+
+/// A button that is only an icon — a toolbar, a close box.
+public func iconButton(name: String, on: () -> Unit): View {
+    val v = mk(kButton)
+    v.icon = name
+    v.variant = quiet
+    v.onTap = on
+    return v
+}
+
+/// A box that is ticked or not.
+public func checkbox(s: String, on: Bool, changed: (Bool) -> Unit): View {
+    val v = mk(kCheck)
+    v.label = s
+    v.on = on
+    v.onBool = changed
+    return v
+}
+
+/// The same choice as a switch.
+public func toggle(s: String, on: Bool, changed: (Bool) -> Unit): View {
+    val v = mk(kToggle)
+    v.label = s
+    v.on = on
+    v.onBool = changed
+    return v
+}
+
+/// A value chosen by dragging, between `lo` and `hi`. A non-zero `step`
+/// snaps it.
+public func slider(value: Float, lo: Float, hi: Float, changed: (Float) -> Unit): View {
+    val v = mk(kSlider)
+    v.value = value
+    v.lo = lo
+    v.hi = hi
+    v.onFloat = changed
+    return v
+}
+
+/// A bar that shows a fraction, 0.0 to 1.0, and takes no input.
+public func progress(value: Float): View {
+    val v = mk(kProgress)
+    v.value = value
+    return v
+}
+
+/// A line of text the user types. `hint` is shown when it is empty.
+public func field(value: String, hint: String, changed: (String) -> Unit): View {
+    val v = mk(kField)
+    v.label = value
+    v.hint = hint
+    v.onString = changed
+    return v
+}
+
+/// The same, showing dots.
+public func secretField(value: String, hint: String, changed: (String) -> Unit): View {
+    val v = field(value, hint, changed)
+    v.password = true
+    return v
+}
+
+/// A strip of tabs, one of them selected.
+public func tabs(titles: List<String>, selected: Int, chose: (Int) -> Unit): View {
+    val v = mk(kTabs)
+    v.options = titles
+    v.index = selected
+    v.onIndex = chose
+    return v
+}
+
+/// A view that paints itself: a chart, a canvas, a game board. It is handed a
+/// canvas clipped to its own rectangle, and that rectangle in points.
+public func custom(draw: (Canvas, Rect) -> Unit): View {
+    val v = mk(kCustom)
+    v.onDraw = draw
+    return v
+}

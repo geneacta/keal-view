@@ -90,6 +90,11 @@ public extern func kvBlobFree(h: Int): Int = "kv_blob_free"
 public extern func kvNow(): Float = "kvp_now_ms"
 public extern func kvClipboardGet(): own String = "kvp_clipboard_get"
 public extern func kvClipboardSet(s: borrow String): Int = "kvp_clipboard_set_"
+/// Tell the system's own chrome — the title bar, the traffic lights — which
+/// way the application's theme goes.
+public extern func kvSetDark(dark: Bool): Int = "kvp_set_dark_"
+/// The window's number as the system knows it — what `screencapture -l` takes.
+public extern func kvWindowId(): Int = "kvp_window_id"
 /// A path to a font the system already has: 0 sans, 1 sans bold, 2 monospace.
 /// Empty when the platform could offer none.
 public extern func kvFontPath(which: Int): own String = "kvp_font_path"

@@ -308,6 +308,21 @@ void kvp_present(const uint32_t *fb, int64_t w, int64_t h) {
     }
 }
 
+/* The system's own number for this window. `screencapture -l <n>` captures
+ * exactly it, which is how the pictures in the README are made and how a
+ * window can be looked at from outside the process that owns it. */
+/* The title bar belongs to the system, not to the framebuffer, so a dark
+ * application has to say so or it gets a white strip above a black window. */
+void kvp_set_dark(int64_t dark) {
+    if (!win) return;
+    @autoreleasepool {
+        [win setAppearance:[NSAppearance appearanceNamed:
+            dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua]];
+    }
+}
+
+int64_t kvp_window_id(void) { return win ? (int64_t)[win windowNumber] : 0; }
+
 int64_t kvp_width(void)  { return pxw; }
 int64_t kvp_height(void) { return pxh; }
 double  kvp_scale(void)  { return scale; }

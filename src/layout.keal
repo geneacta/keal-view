@@ -1,0 +1,337 @@
+import "./geom.keal"
+import "./text.keal"
+import "./theme.keal"
+import "./ui.keal"
+import "./view.keal"
+
+/// Measuring a tree and giving every node a rectangle.
+///
+/// The model is one axis of flexbox and no more: children stack along the
+/// container's axis at the size they ask for, whatever is left over is shared
+/// among those that said `grows()`, and across the other axis a child either
+/// stretches to fill or sits at the size it wanted. There is no shrinking —
+/// content that does not fit is clipped rather than squeezed, because a layout
+/// that silently compresses is one whose bugs appear only on small windows.
+///
+/// Two passes, top down: `measure` asks every node how big it would like to
+/// be, given how much room there is; `arrange` hands each one its rectangle.
+/// Both are ordinary recursion over the tree — there is no constraint solver
+/// here and there is not meant to be one.
+
+// -------------------------------------------------------------- identity
+
+/// Give every node the identity its retained state hangs on.
+///
+/// The identity is the path from the root: a node is *where it is*, unless it
+/// was given a `key`, in which case it is what it was called. That is what
+/// makes a text field in a list keep its caret when a row above it is deleted
+/// — and what makes it lose it when the list is rebuilt with no keys, which is
+/// the honest answer to an application that did not say which row was which.
+public proc identify(var v: View, parent: Int, index: Int) {
+    var h = 0
+    if (v.key == "") { h = mixId(mixId(parent, index + 1), v.kind + 101) }
+    else { h = mixId(parent, hashOf(v.key)) }
+    v.id = h
+    var i = 0
+    while (i < v.kids.size) {
+        identify(v.kids[i], h, i)
+        i++
+    }
+}
+
+/// A hash step that cannot overflow: Keal's integer arithmetic is checked, so
+/// a hash that wrapped in C would panic here. The modulus is a prime just
+/// under 2^31, which leaves the product inside 2^62.
+public func mixId(a: Int, b: Int): Int { return (a * 1000003 + b * 97 + 12289) % 2147483647 }
+
+public func hashOf(s: String): Int {
+    var h = 2166136261
+    for (ch in s.chars()) { h = (h * 131 + ch.code()) % 2147483647 }
+    return h
+}
+
+// -------------------------------------------------------------- measuring
+
+/// What a node would like to be, in points, given the room it has.
+public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
+    val t = ui.theme
+    val sc = ui.canvas.scale
+    val st = ui.styleFor(v)
+    var w = 0.0
+    var hh = 0.0
+
+    if (v.kind == kLabel) {
+        if (v.wraps) {
+            val cap = if (v.wantW > 0.0) { v.wantW } else { availW }
+            val lines = ui.fonts.wrap(v.label, cap.max(1.0), st, sc)
+            w = cap
+            hh = lines.size.toFloat() * ui.fonts.lineHeight(st, sc)
+        } else {
+            w = ui.fonts.width(v.label, st, sc)
+            hh = ui.fonts.lineHeight(st, sc)
+        }
+    } else { if (v.kind == kButton) {
+        hh = t.control
+        w = t.gap(3.0) * 2.0
+        if (v.icon != "") {
+            w = w + st.size + 2.0
+            if (v.label != "") { w = w + t.gap(1.5) }
+        }
+        if (v.label != "") { w = w + ui.fonts.width(v.label, st, sc) }
+        if ((v.label == "") and (v.icon != "")) { w = t.control }
+    } else { if (v.kind == kCheck) {
+        hh = t.control
+        w = checkSize(t) + t.gap(2.0) + ui.fonts.width(v.label, st, sc)
+    } else { if (v.kind == kToggle) {
+        hh = t.control
+        w = switchWidth(t) + t.gap(2.0) + ui.fonts.width(v.label, st, sc)
+    } else { if (v.kind == kSlider) {
+        hh = t.control
+        w = 140.0
+    } else { if (v.kind == kProgress) {
+        hh = t.gap(1.5)
+        w = 140.0
+    } else { if (v.kind == kField) {
+        hh = t.control
+        w = 180.0
+    } else { if (v.kind == kBadge) {
+        hh = ui.fonts.lineHeight(st, sc) + t.gap(1.0)
+        w = ui.fonts.width(v.label, st, sc) + t.gap(2.0)
+    } else { if (v.kind == kIcon) {
+        w = st.size + 2.0
+        hh = w
+    } else { if (v.kind == kDivider) {
+        w = availW
+        hh = t.hairline
+    } else { if (v.kind == kTabs) {
+        hh = t.strip
+        var acc = 0.0
+        for (o in v.options) { acc = acc + ui.fonts.width(o, st, sc) + t.gap(5.0) }
+        w = acc
+    } else { if (v.kind == kSpacer) {
+        w = 0.0
+        hh = 0.0
+    } else { if (v.kind == kCustom) {
+        w = availW
+        hh = availH
+    } else {
+        // A container: a box, a panel or a scroll. Its own size is what its
+        // children need, plus the strip a panel wears and the padding it has.
+        var stripH = 0.0
+        if (v.kind == kPanel) { stripH = t.strip }
+        val innerW = boxAvail(v, availW, true)
+        val innerH = boxAvail(v, availH - stripH, false)
+        var main = 0.0
+        var cross = 0.0
+        var n = 0
+        var i = 0
+        while (i < v.kids.size) {
+            val s = measure(ui, v.kids[i], innerW, innerH)
+            val km = if (v.vertical) { s.h } else { s.w }
+            val kc = if (v.vertical) { s.w } else { s.h }
+            main = main + km
+            if (kc > cross) { cross = kc }
+            n++
+            i++
+        }
+        if (n > 1) { main = main + v.space * (n - 1).toFloat() }
+        if (v.vertical) {
+            w = cross + v.pad.left + v.pad.right
+            hh = main + v.pad.top + v.pad.bottom + stripH
+        } else {
+            w = main + v.pad.left + v.pad.right
+            hh = cross + v.pad.top + v.pad.bottom + stripH
+        }
+        if (v.kind == kScroll) {
+            v.content = main + v.pad.top + v.pad.bottom
+            hh = availH
+        }
+    } } } } } } } } } } } } }
+
+    if (v.wantW >= 0.0) { w = v.wantW }
+    if (v.wantH >= 0.0) { hh = v.wantH }
+    if (w < v.minW) { w = v.minW }
+    if (hh < v.minH) { hh = v.minH }
+    v.mw = w
+    v.mh = hh
+    return Size(w, hh)
+}
+
+func boxAvail(v: View, avail: Float, horizontal: Bool): Float {
+    val pads = if (horizontal) { v.pad.left + v.pad.right } else { v.pad.top + v.pad.bottom }
+    val want = if (horizontal) { v.wantW } else { v.wantH }
+    val base = if (want >= 0.0) { want } else { avail }
+    return (base - pads).max(0.0)
+}
+
+/// The side of a checkbox's box, and the width of a switch — shared with the
+/// painter so that what is measured is what is drawn.
+public func checkSize(t: Theme): Float { return t.gap(4.0) }
+public func switchWidth(t: Theme): Float { return t.gap(9.0) }
+public func switchHeight(t: Theme): Float { return t.gap(5.0) }
+public func sliderTrack(t: Theme): Float { return t.gap(1.0) }
+public func sliderKnob(t: Theme): Float { return t.gap(3.5) }
+
+// -------------------------------------------------------------- arranging
+
+/// Give `v` the rectangle `r`, and every node under it a rectangle inside it.
+public proc arrange(ui: Ui, var v: View, r: Rect) {
+    v.frame = r
+    if (v.kids.size == 0) { return }
+    val t = ui.theme
+    var inner = r
+    if (v.kind == kPanel) { inner = Rect(r.x, r.y + t.strip, r.w, (r.h - t.strip).max(0.0)) }
+    inner = inset(inner, v.pad)
+
+    if (v.kind == kScroll) {
+        // Content is laid out at its natural height and slid up by however far
+        // the region is scrolled; the region's own rectangle is what stays put,
+        // and the painter clips to it.
+        var total = 0.0
+        var i = 0
+        while (i < v.kids.size) {
+            total = total + measure(ui, v.kids[i], inner.w, inner.h).h
+            i++
+        }
+        if (v.kids.size > 1) { total = total + v.space * (v.kids.size - 1).toFloat() }
+        v.content = total
+        val maxScroll = (total - inner.h).max(0.0)
+        var off = clampF(ui.scrollOf(v.id), 0.0, maxScroll)
+        ui.setScroll(v.id, off)
+        var y = inner.y - off
+        i = 0
+        while (i < v.kids.size) {
+            val k = v.kids[i]
+            arrange(ui, k, Rect(inner.x, y, inner.w, k.mh))
+            y = y + k.mh + v.space
+            i++
+        }
+        return
+    }
+
+    // Measure every child, then share out what is left over.
+    var used = 0.0
+    var weight = 0.0
+    var i = 0
+    while (i < v.kids.size) {
+        val k = v.kids[i]
+        measure(ui, k, inner.w, inner.h)
+        used = used + (if (v.vertical) { k.mh } else { k.mw })
+        weight = weight + k.weight
+        i++
+    }
+    val n = v.kids.size
+    if (n > 1) { used = used + v.space * (n - 1).toFloat() }
+    val room = if (v.vertical) { inner.h } else { inner.w }
+    val extra = (room - used).max(0.0)
+
+    // Where the block starts, when nothing grows and there is room to spare.
+    var cursor = if (v.vertical) { inner.y } else { inner.x }
+    var between = v.space
+    if (weight <= 0.0) {
+        if (v.mainAlign == mainCenter) { cursor = cursor + extra / 2.0 }
+        if (v.mainAlign == mainEnd) { cursor = cursor + extra }
+        if ((v.mainAlign == mainBetween) and (n > 1)) {
+            between = v.space + extra / (n - 1).toFloat()
+        }
+    }
+
+    i = 0
+    while (i < n) {
+        val k = v.kids[i]
+        var main = if (v.vertical) { k.mh } else { k.mw }
+        if ((weight > 0.0) and (k.weight > 0.0)) { main = main + extra * k.weight / weight }
+        var cross = if (v.vertical) { k.mw } else { k.mh }
+        val roomCross = if (v.vertical) { inner.w } else { inner.h }
+        val fixedCross = if (v.vertical) { k.wantW >= 0.0 } else { k.wantH >= 0.0 }
+        if ((v.crossAlign == crossStretch) and (not fixedCross)) { cross = roomCross }
+        var crossPos = if (v.vertical) { inner.x } else { inner.y }
+        if (v.crossAlign == crossCenter) { crossPos = crossPos + (roomCross - cross) / 2.0 }
+        if (v.crossAlign == crossEnd) { crossPos = crossPos + roomCross - cross }
+        val box = if (v.vertical) {
+            Rect(crossPos, cursor, cross, main)
+        } else {
+            Rect(cursor, crossPos, main, cross)
+        }
+        arrange(ui, k, box)
+        cursor = cursor + main + between
+        i++
+    }
+}
+
+/// Measure and place a whole tree inside `r`.
+public proc layout(ui: Ui, var root: View, r: Rect) {
+    identify(root, 7919, 0)
+    measure(ui, root, r.w, r.h)
+    arrange(ui, root, r)
+}
+
+// ------------------------------------------------------------ hit testing
+
+/// Does this kind of node answer the pointer at all?
+public func interactive(v: View): Bool {
+    if (not v.enabled) { return false }
+    if (v.kind == kButton) { return true }
+    if (v.kind == kCheck) { return true }
+    if (v.kind == kToggle) { return true }
+    if (v.kind == kSlider) { return true }
+    if (v.kind == kField) { return true }
+    if (v.kind == kTabs) { return true }
+    if (v.kind == kScroll) { return true }
+    return false
+}
+
+/// The deepest node under the point that wants the pointer, or null. Children
+/// are searched last first, so a node drawn on top of another is the one that
+/// answers.
+public func hit(v: View, x: Float, y: Float): View? {
+    if (not holds(v.frame, x, y)) { return null }
+    var i = v.kids.size - 1
+    while (i >= 0) {
+        val found = hit(v.kids[i], x, y)
+        if (found != null) { return found }
+        i--
+    }
+    if (interactive(v)) { return v }
+    return null
+}
+
+/// The node with this identity, anywhere in the tree.
+public func nodeById(v: View, id: Int): View? {
+    if (v.id == id) { return v }
+    var i = 0
+    while (i < v.kids.size) {
+        val f = nodeById(v.kids[i], id)
+        if (f != null) { return f }
+        i++
+    }
+    return null
+}
+
+/// The innermost scrolling region under the point — where a wheel event goes.
+public func scrollUnder(v: View, x: Float, y: Float): View? {
+    if (not holds(v.frame, x, y)) { return null }
+    var i = v.kids.size - 1
+    while (i >= 0) {
+        val f = scrollUnder(v.kids[i], x, y)
+        if (f != null) { return f }
+        i--
+    }
+    if (v.kind == kScroll) { return v }
+    return null
+}
+
+/// Every node that can take keyboard focus, in the order Tab should visit
+/// them — which is the order they were declared in.
+public proc focusables(v: View, var out: List<View>) {
+    if (v.enabled) {
+        if ((v.kind == kField) or ((v.kind == kButton) or ((v.kind == kCheck) or (v.kind == kToggle)))) {
+            out.add(v)
+        }
+    }
+    var i = 0
+    while (i < v.kids.size) {
+        focusables(v.kids[i], out)
+        i++
+    }
+}

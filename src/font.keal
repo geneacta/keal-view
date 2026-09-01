@@ -694,3 +694,11 @@ public class Raster(public val w: Int, public val h: Int) {
         return blob
     }
 }
+
+/// The advance of one codepoint at one device size, without rasterising it.
+/// Measuring a line of text should not draw it — a label that ends up clipped
+/// away has still been measured, and would otherwise have left a cache full of
+/// glyphs nobody asked to see.
+public func advanceOf(f: Font, cp: Int, px: Float): Float {
+    return f.advanceUnits(f.glyphId(cp)).toFloat() * px / f.upem
+}

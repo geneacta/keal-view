@@ -1,0 +1,134 @@
+import "./ffi.keal"
+import "./geom.keal"
+
+/// What happened, in logical points.
+///
+/// The C layer answers in device pixels because that is what a window reports;
+/// everything above measures in points, so the conversion happens here, once,
+/// at the boundary — and no widget ever has to know the display's scale.
+
+public func evNone(): Int { return 0 }
+public func evClose(): Int { return 1 }
+public func evResize(): Int { return 2 }
+public func evMove(): Int { return 3 }
+public func evDown(): Int { return 4 }
+public func evUp(): Int { return 5 }
+public func evScroll(): Int { return 6 }
+public func evKeyDown(): Int { return 7 }
+public func evKeyUp(): Int { return 8 }
+public func evText(): Int { return 9 }
+public func evFocus(): Int { return 10 }
+public func evBlur(): Int { return 11 }
+public func evExpose(): Int { return 12 }
+
+public func modShift(): Int { return 1 }
+public func modCtrl(): Int { return 2 }
+public func modAlt(): Int { return 4 }
+public func modSuper(): Int { return 8 }
+
+public func keyLeft(): Int { return 1 }
+public func keyRight(): Int { return 2 }
+public func keyUp(): Int { return 3 }
+public func keyDown(): Int { return 4 }
+public func keyEnter(): Int { return 5 }
+public func keyTab(): Int { return 6 }
+public func keyBackspace(): Int { return 7 }
+public func keyDelete(): Int { return 8 }
+public func keyEscape(): Int { return 9 }
+public func keyHome(): Int { return 10 }
+public func keyEnd(): Int { return 11 }
+public func keyPageUp(): Int { return 12 }
+public func keyPageDown(): Int { return 13 }
+public func keySpace(): Int { return 14 }
+
+public func cursorArrow(): Int { return 0 }
+public func cursorHand(): Int { return 1 }
+public func cursorText(): Int { return 2 }
+public func cursorResizeH(): Int { return 3 }
+public func cursorResizeV(): Int { return 4 }
+
+/// One event.
+public class Event(
+    public val kind: Int,
+    public val x: Float,
+    public val y: Float,
+    public val button: Int,
+    public val key: Int,
+    public val mods: Int,
+    public val clicks: Int,
+    public val dx: Float,
+    public val dy: Float,
+    public val text: String
+) {
+    public func at(): Pt { return Pt(this.x, this.y) }
+    public func has(m: Int): Bool { return (this.mods / m) % 2 == 1 }
+    /// The platform's own "with the modifier key" — Command on macOS, Control
+    /// elsewhere. An application that wants Ctrl+C to work everywhere asks
+    /// this rather than naming a key.
+    public func cmd(): Bool {
+        if (onMac()) { return this.has(modSuper()) }
+        return this.has(modCtrl())
+    }
+    public func shift(): Bool { return this.has(modShift()) }
+    public func alt(): Bool { return this.has(modAlt()) }
+}
+
+/// Take the next event, converted, or null when the queue is empty.
+public func nextEvent(scale: Float): Event? {
+    val k = kvPoll()
+    if (k == 0) { return null }
+    val s = if (scale < 0.1) { 1.0 } else { scale }
+    var txt = ""
+    if (k == 9) { txt = kvEvText() }
+    return Event(k, kvEvX().toFloat() / s, kvEvY().toFloat() / s,
+                 kvEvButton(), kvEvKey(), kvEvMods(), kvEvClicks(),
+                 kvEvDx() / s, kvEvDy() / s, txt)
+}
+
+/// Where the pointer is and what is held down — the part of the input that
+/// persists between events rather than arriving as one.
+public class Pointer {
+    public var x: Float = -1000.0
+    public var y: Float = -1000.0
+    /// Where the button went down, for a drag.
+    public var downX: Float = 0.0
+    public var downY: Float = 0.0
+    public var buttons: Int = 0
+    public var mods: Int = 0
+    public var inside: Bool = false
+
+    public func at(): Pt { return Pt(this.x, this.y) }
+    public func down(): Bool { return this.buttons != 0 }
+    /// How far the pointer has travelled since the button went down.
+    public func dragged(): Float {
+        val dx = this.x - this.downX
+        val dy = this.y - this.downY
+        return (dx * dx + dy * dy).sqrt()
+    }
+
+    public proc apply(e: Event) {
+        if ((e.kind == 3) or ((e.kind == 4) or ((e.kind == 5) or (e.kind == 6)))) {
+            this.x = e.x
+            this.y = e.y
+            this.inside = true
+        }
+        if (e.kind == 4) {
+            this.buttons = e.button
+            this.downX = e.x
+            this.downY = e.y
+        }
+        if (e.kind == 5) { this.buttons = 0 }
+        this.mods = e.mods
+    }
+}
+
+native """
+#if defined(__APPLE__)
+  static int64_t kv_on_mac(void) { return 1; }
+#else
+  static int64_t kv_on_mac(void) { return 0; }
+#endif
+"""
+/// True on macOS, where the modifier for a shortcut is Command rather than
+/// Control. The one thing above the C boundary that has to know the platform.
+public extern func onMac(): Bool = "kv_on_mac"

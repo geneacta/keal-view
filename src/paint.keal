@@ -1,0 +1,522 @@
+import "./canvas.keal"
+import "./color.keal"
+import "./geom.keal"
+import "./layout.keal"
+import "./text.keal"
+import "./theme.keal"
+import "./ui.keal"
+import "./view.keal"
+
+/// Drawing the tree.
+///
+/// Every widget's appearance is here and nowhere else, and every colour and
+/// corner it uses comes off the `Theme`. That is what makes the look one
+/// decision rather than forty: change the theme and every control changes with
+/// it, including ones written after the theme was.
+
+/// Draw a whole tree.
+public proc paint(var ui: Ui, v: View) {
+    if (isEmpty(v.frame)) { return }
+    val c = ui.canvas
+    if (not overlaps(v.frame, c.clip())) { return }
+    paintNode(ui, v)
+    if (v.kind == kScroll) {
+        c.push(v.frame)
+        paintKids(ui, v)
+        c.pop()
+        paintScrollbar(ui, v)
+        return
+    }
+    if (v.kind == kCustom) { return }
+    paintKids(ui, v)
+}
+
+proc paintKids(var ui: Ui, v: View) {
+    var i = 0
+    while (i < v.kids.size) {
+        paint(ui, v.kids[i])
+        i++
+    }
+}
+
+proc paintNode(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+
+    // Anything may carry a background, a border and a shadow of its own,
+    // whatever kind it is — that is what makes a plain `column` able to be a
+    // card without a card widget existing.
+    if (v.elevate > 0.0) { c.shadow(r, v.radius, v.elevate, v.elevate / 3.0, t.shadow) }
+    if (alphaOf(v.fill) > 0) { c.fillRound(r, v.radius, v.fill) }
+    if ((v.strokeW > 0.0) and (alphaOf(v.stroke) > 0)) {
+        c.strokeRound(r, v.radius, v.strokeW, v.stroke)
+    }
+
+    if (v.kind == kLabel) { paintLabel(ui, v); return }
+    if (v.kind == kButton) { paintButton(ui, v); return }
+    if (v.kind == kCheck) { paintCheck(ui, v); return }
+    if (v.kind == kToggle) { paintToggle(ui, v); return }
+    if (v.kind == kSlider) { paintSlider(ui, v); return }
+    if (v.kind == kProgress) { paintProgress(ui, v); return }
+    if (v.kind == kField) { paintField(ui, v); return }
+    if (v.kind == kBadge) { paintBadge(ui, v); return }
+    if (v.kind == kIcon) {
+        val ink = ui.inkFor(v)
+        drawIcon(c, v.icon, r, ink, t.hairline * 1.6)
+        return
+    }
+    if (v.kind == kDivider) {
+        c.fillRect(Rect(r.x, r.y + (r.h - t.hairline) / 2.0, r.w, t.hairline), t.border)
+        return
+    }
+    if (v.kind == kTabs) { paintTabs(ui, v); return }
+    if (v.kind == kPanel) { paintPanel(ui, v); return }
+    if (v.kind == kCustom) {
+        c.push(r)
+        val h = v.onDraw
+        h(c, r)
+        c.pop()
+        return
+    }
+}
+
+// ------------------------------------------------------------------ pieces
+
+proc paintLabel(var ui: Ui, v: View) {
+    val st = ui.styleFor(v)
+    val ink = ui.inkFor(v)
+    if (v.wraps) {
+        ui.fonts.drawWrapped(ui.canvas, v.label, v.frame, st, ink)
+        return
+    }
+    ui.fonts.drawIn(ui.canvas, v.label, v.frame, v.align, st, ink)
+}
+
+proc paintButton(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val hot = ui.isHot(v)
+    val down = ui.isActive(v) and hot
+    val rad = if (v.radius > 0.0) { v.radius } else { t.radiusMd }
+
+    var face = t.surfaceHi
+    var ink = t.textPrimary
+    var edge = t.border
+    if (v.variant == primary) {
+        face = t.accent
+        ink = t.textOnAccent
+        edge = t.accent
+        if (hot) { face = t.accentHover; edge = face }
+        if (down) { face = t.accentDown; edge = face }
+    } else { if (v.variant == quiet) {
+        face = rgba(0, 0, 0, 0)
+        ink = t.textSecondary
+        edge = rgba(0, 0, 0, 0)
+        if (hot) { face = t.surfaceHi; ink = t.textPrimary }
+        if (down) { face = t.surfaceDown }
+    } else { if (v.variant == danger) {
+        face = t.danger
+        ink = t.textOnAccent
+        edge = t.danger
+        if (hot) { face = lighten(t.danger, 0.12); edge = face }
+        if (down) { face = darken(t.danger, 0.12); edge = face }
+    } else {
+        // A button may be given a face of its own; hover and press are then
+        // derived from it rather than from the theme, so one keypad can have
+        // three families of key without three variants existing.
+        if (alphaOf(v.fill) > 0) { face = v.fill; edge = fade(v.fill, 0.0) }
+        if (hot) { face = lighten(face, 0.07) }
+        if (down) { face = darken(face, 0.10) }
+    } } }
+    // A colour named on the button itself wins over the variant's, so that
+    // one destructive key in a grid can be red without being a whole variant.
+    if (v.fg != 0) { ink = v.fg }
+    if (not v.enabled) {
+        face = fade(face, 0.4)
+        ink = t.textMuted
+        edge = fade(edge, 0.4)
+    }
+
+    if (alphaOf(face) > 0) { c.fillRound(r, rad, face) }
+    if (alphaOf(edge) > 0) { c.strokeRound(r, rad, t.hairline, edge) }
+    focusRing(ui, v, rad)
+
+    val st = ui.styleFor(v)
+    val sc = c.scale
+    val gap = t.gap(1.5)
+    val iconW = if (v.icon == "") { 0.0 } else { st.size + 2.0 }
+    val textW = if (v.label == "") { 0.0 } else { ui.fonts.width(v.label, st, sc) }
+    var total = iconW + textW
+    if ((iconW > 0.0) and (textW > 0.0)) { total = total + gap }
+    var x = r.x + (r.w - total) / 2.0
+    if (iconW > 0.0) {
+        drawIcon(c, v.icon, Rect(x, r.y + (r.h - iconW) / 2.0, iconW, iconW), ink, t.hairline * 1.6)
+        x = x + iconW
+        if (textW > 0.0) { x = x + gap }
+    }
+    if (textW > 0.0) {
+        ui.fonts.drawIn(c, v.label, Rect(x, r.y, textW, r.h), 0, st, ink)
+    }
+}
+
+proc paintCheck(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val side = checkSize(t)
+    val boxR = Rect(r.x, r.y + (r.h - side) / 2.0, side, side)
+    val hot = ui.isHot(v)
+    var face = t.surfaceHi
+    var edge = if (hot) { t.borderStrong } else { t.border }
+    if (v.on) { face = t.accent; edge = t.accent }
+    if (not v.enabled) { face = fade(face, 0.45); edge = fade(edge, 0.45) }
+    c.fillRound(boxR, t.radiusSm, face)
+    c.strokeRound(boxR, t.radiusSm, t.hairline, edge)
+    focusRing(ui, v, t.radiusSm)
+    if (v.on) {
+        drawIcon(c, "check", shrink(boxR, side * 0.22),
+                 if (v.enabled) { t.textOnAccent } else { fade(t.textOnAccent, 0.6) },
+                 t.hairline * 2.0)
+    }
+    if (v.label != "") {
+        val x = r.x + side + t.gap(2.0)
+        ui.fonts.drawIn(c, v.label, Rect(x, r.y, (r.w - side - t.gap(2.0)).max(0.0), r.h),
+                        0, ui.styleFor(v), ui.inkFor(v))
+    }
+}
+
+proc paintToggle(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val sw = switchWidth(t)
+    val sh = switchHeight(t)
+    val trackR = Rect(r.x, r.y + (r.h - sh) / 2.0, sw, sh)
+    var track = if (v.on) { t.accent } else { t.surfaceDown }
+    if (not v.enabled) { track = fade(track, 0.45) }
+    c.fillRound(trackR, sh / 2.0, track)
+    if (not v.on) { c.strokeRound(trackR, sh / 2.0, t.hairline, t.border) }
+    focusRing(ui, v, sh / 2.0)
+    val kr = sh / 2.0 - t.gap(0.5)
+    val kx = if (v.on) { trackR.x + sw - kr - t.gap(0.5) } else { trackR.x + kr + t.gap(0.5) }
+    val ky = trackR.y + sh / 2.0
+    c.shadow(Rect(kx - kr, ky - kr, kr * 2.0, kr * 2.0), kr, 3.0, 1.0, fade(t.shadow, 0.5))
+    c.fillCircle(kx, ky, kr, rgb(255, 255, 255))
+    if (v.label != "") {
+        val x = r.x + sw + t.gap(2.0)
+        ui.fonts.drawIn(c, v.label, Rect(x, r.y, (r.w - sw - t.gap(2.0)).max(0.0), r.h),
+                        0, ui.styleFor(v), ui.inkFor(v))
+    }
+}
+
+proc paintSlider(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val th = sliderTrack(t)
+    val kn = sliderKnob(t)
+    val y = r.y + r.h / 2.0
+    val x0 = r.x + kn
+    val x1 = r.x + r.w - kn
+    val span = (x1 - x0).max(1.0)
+    val frac = clampF((v.value - v.lo) / (v.hi - v.lo).max(0.000001), 0.0, 1.0)
+    val kx = x0 + span * frac
+    c.fillRound(Rect(x0, y - th / 2.0, span, th), th / 2.0,
+                if (v.enabled) { t.surfaceDown } else { fade(t.surfaceDown, 0.5) })
+    c.fillRound(Rect(x0, y - th / 2.0, span * frac, th), th / 2.0,
+                if (v.enabled) { t.accent } else { fade(t.accent, 0.45) })
+    if (ui.isHot(v) or ui.isActive(v)) {
+        c.fillCircle(kx, y, kn + t.gap(1.5), t.accentSoft)
+    }
+    c.shadow(Rect(kx - kn, y - kn, kn * 2.0, kn * 2.0), kn, 4.0, 1.0, fade(t.shadow, 0.6))
+    c.fillCircle(kx, y, kn, rgb(255, 255, 255))
+    c.strokeRound(Rect(kx - kn, y - kn, kn * 2.0, kn * 2.0), kn, t.hairline, fade(t.border, 0.8))
+}
+
+proc paintProgress(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val h = r.h.min(t.gap(1.5))
+    val bar = Rect(r.x, r.y + (r.h - h) / 2.0, r.w, h)
+    c.fillRound(bar, h / 2.0, t.surfaceDown)
+    val f = clampF(v.value, 0.0, 1.0)
+    if (f > 0.0) { c.fillRound(Rect(bar.x, bar.y, bar.w * f, h), h / 2.0, t.accent) }
+}
+
+proc paintBadge(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    var face = t.surfaceHi
+    var ink = t.textSecondary
+    if (v.variant == 1) { face = withAlpha(t.success, 40); ink = t.success }
+    if (v.variant == 2) { face = withAlpha(t.warning, 40); ink = t.warning }
+    if (v.variant == 3) { face = withAlpha(t.danger, 40); ink = t.danger }
+    c.fillRound(r, r.h / 2.0, face)
+    ui.fonts.drawIn(c, v.label, r, 1, ui.styleFor(v), ink)
+}
+
+proc paintField(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val focused = ui.isFocused(v)
+    val rad = t.radiusMd
+    c.fillRound(r, rad, if (v.enabled) { t.surfaceHi } else { fade(t.surfaceHi, 0.5) })
+    val edge = if (focused) { t.accent } else { if (ui.isHot(v)) { t.borderStrong } else { t.border } }
+    if (focused) { c.strokeRound(grow(r, 2.0), rad + 2.0, 2.0, t.accentSoft) }
+    c.strokeRound(r, rad, t.hairline, edge)
+
+    val st = ui.styleFor(v)
+    val sc = c.scale
+    val padX = t.gap(2.5)
+    val inner = Rect(r.x + padX, r.y, (r.w - padX * 2.0).max(0.0), r.h)
+    val shown = if (v.password) { "•".repeat(v.label.length) } else { v.label }
+    c.push(inner)
+    if (shown == "") {
+        ui.fonts.drawIn(c, v.hint, inner, 0, st, t.textMuted)
+    } else {
+        val caret = clampI(ui.caretOf(v.id, shown.length), 0, shown.length)
+        val anchor = clampI(ui.anchorOf(v.id, caret), 0, shown.length)
+        val asc = ui.fonts.ascent(st, sc)
+        val lh = ui.fonts.lineHeight(st, sc)
+        val baseline = inner.y + (inner.h - lh) / 2.0 + asc
+        // Keep the caret in sight by sliding the text under a fixed window.
+        val cx = ui.fonts.xOfIndex(shown, caret, st, sc)
+        var shift = ui.memoOf(mixId(v.id, 5), 0.0)
+        if (cx - shift > inner.w - 2.0) { shift = cx - inner.w + 2.0 }
+        if (cx - shift < 0.0) { shift = cx }
+        val fullW = ui.fonts.width(shown, st, sc)
+        if (fullW - shift < inner.w) { shift = (fullW - inner.w).max(0.0) }
+        ui.setMemo(mixId(v.id, 5), shift)
+        if (focused and (anchor != caret)) {
+            val a = ui.fonts.xOfIndex(shown, caret.min(anchor), st, sc)
+            val b = ui.fonts.xOfIndex(shown, caret.max(anchor), st, sc)
+            c.fillRect(Rect(inner.x + a - shift, inner.y + (inner.h - lh) / 2.0, b - a, lh),
+                       t.accentSoft)
+        }
+        ui.fonts.draw(c, shown, inner.x - shift, baseline, st, ui.inkFor(v))
+        if (focused) {
+            // A caret that blinks means a frame that has to be drawn without
+            // anything having happened, so the loop is told to expect one.
+            ui.animate()
+            val phase = (ui.time / 530.0).toInt() % 2
+            if (phase == 0) {
+                c.fillRect(Rect(inner.x + cx - shift, inner.y + (inner.h - lh) / 2.0 + 1.0,
+                                t.hairline * 1.4, lh - 2.0), t.accent)
+            }
+        }
+    }
+    c.pop()
+}
+
+proc paintTabs(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val st = ui.styleFor(v)
+    val sc = c.scale
+    c.fillRect(Rect(r.x, r.y + r.h - t.hairline, r.w, t.hairline), t.border)
+    var x = r.x
+    var i = 0
+    while (i < v.options.size) {
+        val label = v.options[i]
+        val w = ui.fonts.width(label, st, sc) + t.gap(5.0)
+        val tab = Rect(x, r.y, w, r.h)
+        val selected = i == v.index
+        val hot = ui.isHot(v) and holds(tab, ui.pointer.x, ui.pointer.y)
+        if (hot and (not selected)) { c.fillRect(tab, withAlpha(t.surfaceHi, 140)) }
+        val ink = if (selected) { t.textPrimary } else { t.textSecondary }
+        ui.fonts.drawIn(c, label, tab, 1, st, ink)
+        if (selected) {
+            c.fillRound(Rect(tab.x + t.gap(1.5), r.y + r.h - t.gap(0.5),
+                             w - t.gap(3.0), t.gap(0.5)), t.gap(0.25), t.accent)
+        }
+        x = x + w
+        i++
+    }
+}
+
+proc paintPanel(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val rad = if (v.radius > 0.0) { v.radius } else { t.radiusLg }
+    if (alphaOf(v.fill) == 0) { c.fillRound(r, rad, t.surface) }
+    if (v.strokeW <= 0.0) { c.strokeRound(r, rad, t.hairline, t.border) }
+    if (v.label != "") {
+        val strip = Rect(r.x, r.y, r.w, t.strip)
+        ui.fonts.drawIn(c, v.label, inset(strip, axes(t.gap(3.5), 0.0)), 0,
+                        textBold(t.fontBase), t.textSecondary)
+        c.fillRect(Rect(r.x + t.hairline, r.y + t.strip, r.w - t.hairline * 2.0, t.hairline),
+                   t.border)
+    }
+}
+
+proc paintScrollbar(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val total = v.content
+    if (total <= r.h + 0.5) { return }
+    val off = ui.scrollOf(v.id)
+    val w = t.gap(1.5)
+    val trackH = r.h - t.gap(2.0)
+    val thumbH = (trackH * r.h / total).max(t.gap(6.0))
+    val travel = trackH - thumbH
+    val frac = clampF(off / (total - r.h).max(1.0), 0.0, 1.0)
+    val x = r.x + r.w - w - t.gap(1.0)
+    val y = r.y + t.gap(1.0) + travel * frac
+    val hot = ui.isHot(v) or ui.isActive(v)
+    c.fillRound(Rect(x, y, w, thumbH), w / 2.0,
+                if (hot) { t.borderStrong } else { withAlpha(t.borderStrong, 130) })
+}
+
+/// The halo that says the keyboard is here. Drawn outside the control, so it
+/// never eats into what the control was given.
+proc focusRing(var ui: Ui, v: View, rad: Float) {
+    if (not ui.isFocused(v)) { return }
+    if (not ui.focusVisible) { return }
+    ui.canvas.strokeRound(grow(v.frame, 2.5), rad + 2.5, 2.0, ui.theme.accentSoft)
+}
+
+// ------------------------------------------------------------------- icons
+
+/// Icons drawn from strokes rather than loaded from a file, so that an
+/// application has a set without carrying an asset — and so that they take the
+/// colour and the weight they are drawn at, which a bitmap could not.
+public proc drawIcon(var c: Canvas, name: String, r: Rect, col: Int, wt: Float) {
+    if (isEmpty(r)) { return }
+    val x = r.x
+    val y = r.y
+    val w = r.w
+    val h = r.h
+    val cx = x + w / 2.0
+    val cy = y + h / 2.0
+    val u = w.min(h)
+    val q = u * 0.25
+
+    if (name == "check") {
+        c.line(cx - q * 1.5, cy, cx - q * 0.35, cy + q * 1.15, wt, col)
+        c.line(cx - q * 0.35, cy + q * 1.15, cx + q * 1.6, cy - q * 1.2, wt, col)
+        return
+    }
+    if (name == "close") {
+        c.line(cx - q, cy - q, cx + q, cy + q, wt, col)
+        c.line(cx + q, cy - q, cx - q, cy + q, wt, col)
+        return
+    }
+    if (name == "plus") {
+        c.line(cx - q * 1.2, cy, cx + q * 1.2, cy, wt, col)
+        c.line(cx, cy - q * 1.2, cx, cy + q * 1.2, wt, col)
+        return
+    }
+    if (name == "minus") {
+        c.line(cx - q * 1.2, cy, cx + q * 1.2, cy, wt, col)
+        return
+    }
+    if (name == "chevron-down") {
+        c.line(cx - q, cy - q * 0.5, cx, cy + q * 0.6, wt, col)
+        c.line(cx, cy + q * 0.6, cx + q, cy - q * 0.5, wt, col)
+        return
+    }
+    if (name == "chevron-up") {
+        c.line(cx - q, cy + q * 0.5, cx, cy - q * 0.6, wt, col)
+        c.line(cx, cy - q * 0.6, cx + q, cy + q * 0.5, wt, col)
+        return
+    }
+    if (name == "chevron-right") {
+        c.line(cx - q * 0.5, cy - q, cx + q * 0.6, cy, wt, col)
+        c.line(cx + q * 0.6, cy, cx - q * 0.5, cy + q, wt, col)
+        return
+    }
+    if (name == "chevron-left") {
+        c.line(cx + q * 0.5, cy - q, cx - q * 0.6, cy, wt, col)
+        c.line(cx - q * 0.6, cy, cx + q * 0.5, cy + q, wt, col)
+        return
+    }
+    if (name == "menu") {
+        c.fillRound(Rect(cx - q * 1.3, cy - q * 1.1, q * 2.6, wt), wt / 2.0, col)
+        c.fillRound(Rect(cx - q * 1.3, cy - wt / 2.0, q * 2.6, wt), wt / 2.0, col)
+        c.fillRound(Rect(cx - q * 1.3, cy + q * 1.1 - wt, q * 2.6, wt), wt / 2.0, col)
+        return
+    }
+    if (name == "dot") {
+        c.fillCircle(cx, cy, u * 0.16, col)
+        return
+    }
+    if (name == "search") {
+        ring(c, cx - q * 0.25, cy - q * 0.25, q * 0.95, wt, col)
+        c.line(cx + q * 0.45, cy + q * 0.45, cx + q * 1.35, cy + q * 1.35, wt, col)
+        return
+    }
+    if (name == "play") {
+        // A triangle, filled by three chords — enough at icon sizes.
+        var i = 0
+        val n = 14
+        while (i <= n) {
+            val f = i.toFloat() / n.toFloat()
+            val half = q * 1.1 * (1.0 - f)
+            c.line(cx - q * 0.8 + q * 2.0 * f, cy - half, cx - q * 0.8 + q * 2.0 * f, cy + half, wt * 0.9, col)
+            i++
+        }
+        return
+    }
+    if (name == "pause") {
+        c.fillRound(Rect(cx - q * 0.9, cy - q * 1.1, q * 0.6, q * 2.2), wt / 2.0, col)
+        c.fillRound(Rect(cx + q * 0.3, cy - q * 1.1, q * 0.6, q * 2.2), wt / 2.0, col)
+        return
+    }
+    if (name == "warning") {
+        c.line(cx, cy - q * 1.2, cx - q * 1.3, cy + q * 1.1, wt, col)
+        c.line(cx, cy - q * 1.2, cx + q * 1.3, cy + q * 1.1, wt, col)
+        c.line(cx - q * 1.3, cy + q * 1.1, cx + q * 1.3, cy + q * 1.1, wt, col)
+        c.fillCircle(cx, cy + q * 0.7, wt * 0.6, col)
+        c.fillRound(Rect(cx - wt * 0.5, cy - q * 0.5, wt, q * 0.9), wt / 2.0, col)
+        return
+    }
+    if (name == "folder") {
+        c.strokeRound(Rect(cx - q * 1.4, cy - q * 0.9, q * 2.8, q * 1.9), wt * 1.2, wt, col)
+        c.fillRound(Rect(cx - q * 1.4, cy - q * 1.3, q * 1.3, q * 0.6), wt, col)
+        return
+    }
+    if (name == "file") {
+        c.strokeRound(Rect(cx - q, cy - q * 1.3, q * 2.0, q * 2.6), wt * 1.2, wt, col)
+        c.line(cx - q * 0.45, cy - q * 0.35, cx + q * 0.45, cy - q * 0.35, wt * 0.8, col)
+        c.line(cx - q * 0.45, cy + q * 0.35, cx + q * 0.45, cy + q * 0.35, wt * 0.8, col)
+        return
+    }
+    if (name == "trash") {
+        c.line(cx - q * 1.2, cy - q * 0.8, cx + q * 1.2, cy - q * 0.8, wt, col)
+        c.strokeRound(Rect(cx - q * 0.9, cy - q * 0.8, q * 1.8, q * 2.1), wt, wt, col)
+        c.line(cx - q * 0.45, cy - q * 1.25, cx + q * 0.45, cy - q * 1.25, wt, col)
+        return
+    }
+    if (name == "backspace") {
+        // The tag shape everyone knows: a rectangle with a point on its left
+        // and a cross inside it.
+        c.line(cx - q * 1.5, cy, cx - q * 0.5, cy - q * 1.0, wt, col)
+        c.line(cx - q * 1.5, cy, cx - q * 0.5, cy + q * 1.0, wt, col)
+        c.line(cx - q * 0.5, cy - q * 1.0, cx + q * 1.5, cy - q * 1.0, wt, col)
+        c.line(cx - q * 0.5, cy + q * 1.0, cx + q * 1.5, cy + q * 1.0, wt, col)
+        c.line(cx + q * 1.5, cy - q * 1.0, cx + q * 1.5, cy + q * 1.0, wt, col)
+        c.line(cx - q * 0.05, cy - q * 0.45, cx + q * 0.95, cy + q * 0.45, wt * 0.85, col)
+        c.line(cx + q * 0.95, cy - q * 0.45, cx - q * 0.05, cy + q * 0.45, wt * 0.85, col)
+        return
+    }
+    if (name == "gear") {
+        ring(c, cx, cy, q * 1.15, wt, col)
+        c.fillCircle(cx, cy, q * 0.4, col)
+        return
+    }
+    // An unknown name draws a hollow square rather than nothing, so that a
+    // typo is visible instead of silent.
+    c.strokeRound(shrink(r, u * 0.2), u * 0.12, wt, col)
+}
+
+proc ring(var c: Canvas, cx: Float, cy: Float, rad: Float, wt: Float, col: Int) {
+    c.strokeRound(Rect(cx - rad, cy - rad, rad * 2.0, rad * 2.0), rad, wt, col)
+}

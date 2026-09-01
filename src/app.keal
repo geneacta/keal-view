@@ -1,0 +1,442 @@
+import "./canvas.keal"
+import "./color.keal"
+import "./event.keal"
+import "./ffi.keal"
+import "./font.keal"
+import "./geom.keal"
+import "./layout.keal"
+import "./paint.keal"
+import "./state.keal"
+import "./text.keal"
+import "./theme.keal"
+import "./ui.keal"
+import "./view.keal"
+
+/// The loop, and how what the user does gets back to the application.
+///
+/// A frame is: build the tree from the state, lay it out, hand it the events
+/// that arrived, and — if handling them changed any `Cell` — build and lay it
+/// out once more before drawing. Dispatching against a fresh layout rather
+/// than the last frame's is what keeps a click landing on what was under the
+/// pointer when it happened, even on the frame where the window was resized.
+///
+/// Between frames the loop is inside `kvWait`, which blocks until the system
+/// has something to say. An idle keal-view window uses no processor at all —
+/// not a low duty cycle, none — and that is worth more on a laptop than any
+/// amount of drawing speed.
+
+/// An application: a window, a look, and a function from state to a tree.
+public class App(public var title: String, public var width: Int, public var height: Int) {
+    public var theme: Theme = darkTheme()
+    /// Called to produce the interface. It is called again whenever a `Cell`
+    /// is written, so it must be a function of the state and nothing else —
+    /// no side effects, no counters, no reading the clock.
+    public var build: () -> View = { -> label("set app.build") }
+    /// A first look at the keyboard: every key press, and every typed
+    /// character that no text field claimed. Answer true to say it was
+    /// handled and stop it going further.
+    public var onKey: (Event) -> Bool = { e -> false }
+    /// Called once the window is open and the fonts are loaded, before the
+    /// first frame.
+    public var onStart: () -> Unit = { -> }
+    /// Called when the window is closed, before the process ends.
+    public var onStop: () -> Unit = { -> }
+}
+
+/// Open the window and run until it is closed.
+///
+/// Every keal-view program also understands `--snapshot <file.bmp> [scale]`
+/// on its command line, which draws one frame to a file and exits without
+/// opening anything. That is how the examples in the README are made and how
+/// the widgets are checked on a machine with no display — the same code path
+/// the window uses, minus the window.
+public proc run(var app: App) {
+    val argv = args()
+    if (argv.size >= 2) {
+        if (argv[0] == "--snapshot") {
+            var sc = 2.0
+            if (argv.size >= 3) { sc = argv[2].toFloat() ?: 2.0 }
+            snapshot(app, app.width, app.height, sc, argv[1])
+            return
+        }
+    }
+    if (kvOpen(app.title, app.width, app.height) == 0) {
+        println("keal-view: the platform would not open a window")
+        return
+    }
+    kvSetDark(app.theme.dark)
+    val fonts = systemFonts()
+    if (fonts.sans == null) {
+        println("keal-view: no system font could be read — text will not be drawn")
+    }
+    val canvas = Canvas()
+    val ui = Ui(canvas, fonts, app.theme)
+    val t0 = kvNow()
+    // `--window-id <file>` writes the system's number for this window into a
+    // file, so that a script outside the process can point `screencapture -l`
+    // at exactly this window. A file rather than stdout because stdout is
+    // block-buffered when it is not a terminal, and a reader would find it
+    // empty until the program ended.
+    var i0 = 0
+    while (i0 + 1 < argv.size) {
+        if (argv[i0] == "--window-id") { writeFile(argv[i0 + 1], kvWindowId().toString()) }
+        i0++
+    }
+    val started = app.onStart
+    started()
+
+    var running = true
+    var lastRev = -1
+    while (running) {
+        ui.time = kvNow() - t0
+        ui.theme = app.theme
+
+        // Everything the system has to say, taken in one go: a burst of mouse
+        // moves should cost one frame, not one frame each.
+        val events: List<Event> = []
+        var draining = true
+        while (draining) {
+            val e = nextEvent(kvScale())
+            if (e == null) {
+                draining = false
+            } else {
+                if (e.kind == evClose()) { running = false }
+                events.add(e)
+            }
+        }
+
+        kvSurface(kvWidth(), kvHeight())
+        canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
+        val area = canvas.bounds()
+
+        val make = app.build
+        var root = make()
+        layout(ui, root, area)
+        var i = 0
+        while (i < events.size) {
+            dispatch(ui, app, root, events[i])
+            i++
+        }
+        if (revision() != lastRev) {
+            root = make()
+            layout(ui, root, area)
+            lastRev = revision()
+        }
+
+        ui.animating = false
+        canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
+        canvas.clear(app.theme.bg)
+        paint(ui, root)
+        kvSetCursor(ui.cursor)
+        kvFlush()
+
+        if (running) {
+            // A blinking caret or an animation asks for the next frame on a
+            // clock; everything else waits for the user.
+            if (ui.animating) { kvWait(60) } else { kvWait(-1) }
+        }
+    }
+    val stopped = app.onStop
+    stopped()
+    kvClose()
+}
+
+// ---------------------------------------------------------------- dispatch
+
+/// Route one event into the tree.
+public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
+    ui.pointer.apply(e)
+    val k = e.kind
+
+    if (k == evMove()) {
+        val h = hit(root, e.x, e.y)
+        val newHot = if (h == null) { 0 } else { h.id }
+        if (newHot != ui.hot) {
+            ui.hot = newHot
+            invalidate()
+        }
+        if (ui.active != 0) { drag(ui, root, e) }
+        setCursor(ui, root, e)
+        return
+    }
+
+    if (k == evDown()) {
+        ui.focusVisible = false
+        val h = hit(root, e.x, e.y)
+        if (h == null) {
+            ui.active = 0
+            if (ui.focus != 0) { ui.focus = 0; invalidate() }
+            return
+        }
+        ui.active = h.id
+        ui.hot = h.id
+        // Only a text field keeps the keyboard after a click. A button that
+        // took focus on click would leave a ring behind it, which is what
+        // every toolkit that does this is criticised for.
+        val wantFocus = if (h.kind == kField) { h.id } else { 0 }
+        if (wantFocus != ui.focus) { ui.focus = wantFocus }
+        if (h.kind == kField) { caretToPointer(ui, h, e, false) }
+        if (h.kind == kSlider) { sliderToPointer(ui, h, e.x) }
+        if (h.kind == kTabs) { tabAt(ui, h, e.x) }
+        invalidate()
+        return
+    }
+
+    if (k == evUp()) {
+        val id = ui.active
+        ui.active = 0
+        if (id == 0) { return }
+        invalidate()
+        val n = nodeById(root, id)
+        if (n == null) { return }
+        if (not holds(n.frame, e.x, e.y)) { return }
+        fire(n)
+        return
+    }
+
+    if (k == evScroll()) {
+        val s = scrollUnder(root, e.x, e.y)
+        if (s == null) { return }
+        val room = (s.content - s.frame.h).max(0.0)
+        val was = ui.scrollOf(s.id)
+        val now = clampF(was - e.dy, 0.0, room)
+        if (now != was) { ui.setScroll(s.id, now); invalidate() }
+        return
+    }
+
+    if (k == evText()) {
+        // The application sees typing before the widgets do, so that a
+        // calculator can take a digit from the keyboard whether or not
+        // anything is focused — and a text field still wins, because an
+        // application that has one usually wants the character to go there.
+        val f = focusedField(ui, root)
+        if (f == null) {
+            val hk = app.onKey
+            hk(e)
+            return
+        }
+        insert(ui, f, e.text)
+        return
+    }
+
+    if (k == evKeyDown()) {
+        val hk = app.onKey
+        if (hk(e)) { return }
+        keyDown(ui, root, e)
+        return
+    }
+
+    if ((k == evBlur()) or (k == evResize())) { invalidate() }
+}
+
+/// What a click on a finished press means, per kind.
+///
+/// The handlers are copied into a local before being called. That is not
+/// style: `keal build` panics on a call whose callee is a field access with
+/// arguments, and a local is the way round it until the backend is fixed.
+/// Reported upstream; every `val h = ...` below is that same workaround.
+proc fire(var n: View) {
+    if (n.kind == kButton) { val h = n.onTap; h(); return }
+    if (n.kind == kCheck) { val h = n.onBool; h(not n.on); return }
+    if (n.kind == kToggle) { val h = n.onBool; h(not n.on); return }
+}
+
+proc drag(var ui: Ui, var root: View, e: Event) {
+    val a = nodeById(root, ui.active)
+    if (a == null) { return }
+    if (a.kind == kSlider) { sliderToPointer(ui, a, e.x); return }
+    if (a.kind == kField) { caretToPointer(ui, a, e, true); return }
+}
+
+proc setCursor(var ui: Ui, root: View, e: Event) {
+    val h = hit(root, e.x, e.y)
+    if (h == null) { ui.wantCursor(cursorArrow()); return }
+    if (h.kind == kField) { ui.wantCursor(cursorText()); return }
+    ui.wantCursor(cursorArrow())
+}
+
+// ------------------------------------------------------------- the widgets
+
+proc sliderToPointer(var ui: Ui, var v: View, x: Float) {
+    val kn = sliderKnob(ui.theme)
+    val x0 = v.frame.x + kn
+    val span = (v.frame.w - kn * 2.0).max(1.0)
+    var f = clampF((x - x0) / span, 0.0, 1.0)
+    var value = v.lo + (v.hi - v.lo) * f
+    if (v.step > 0.0) { value = v.lo + ((value - v.lo) / v.step).round().toFloat() * v.step }
+    value = clampF(value, v.lo.min(v.hi), v.lo.max(v.hi))
+    if (value != v.value) { val h = v.onFloat; h(value) }
+}
+
+proc tabAt(var ui: Ui, var v: View, x: Float) {
+    val t = ui.theme
+    val st = ui.styleFor(v)
+    val sc = ui.canvas.scale
+    var cx = v.frame.x
+    var i = 0
+    while (i < v.options.size) {
+        val w = ui.fonts.width(v.options[i], st, sc) + t.gap(5.0)
+        if ((x >= cx) and (x < cx + w)) {
+            if (i != v.index) { val h = v.onIndex; h(i) }
+            return
+        }
+        cx = cx + w
+        i++
+    }
+}
+
+func focusedField(ui: Ui, root: View): View? {
+    if (ui.focus == 0) { return null }
+    val n = nodeById(root, ui.focus)
+    if (n == null) { return null }
+    if (n.kind != kField) { return null }
+    if (not n.enabled) { return null }
+    return n
+}
+
+proc caretToPointer(var ui: Ui, var v: View, e: Event, extend: Bool) {
+    val st = ui.styleFor(v)
+    val sc = ui.canvas.scale
+    val padX = ui.theme.gap(2.5)
+    val shift = ui.memoOf(mixId(v.id, 5), 0.0)
+    val shown = if (v.password) { "•".repeat(v.label.length) } else { v.label }
+    val at = ui.fonts.indexAt(shown, e.x - v.frame.x - padX + shift, st, sc)
+    ui.setCaret(v.id, at)
+    if (not extend) { ui.setAnchor(v.id, at) }
+    invalidate()
+}
+
+/// The current selection, as an ordered pair of character offsets.
+func selOf(ui: Ui, v: View): Rect {
+    val n = v.label.length
+    val car = clampI(ui.caretOf(v.id, n), 0, n)
+    val anc = clampI(ui.anchorOf(v.id, car), 0, n)
+    return Rect(car.min(anc).toFloat(), car.max(anc).toFloat(), 0.0, 0.0)
+}
+
+proc insert(var ui: Ui, var v: View, s: String) {
+    if (s == "") { return }
+    val sel = selOf(ui, v)
+    val a = sel.x.toInt()
+    val b = sel.y.toInt()
+    val text = v.label.take(a) + s + v.label.drop(b)
+    val h = v.onString
+    h(text)
+    ui.setCaret(v.id, a + s.length)
+    ui.setAnchor(v.id, a + s.length)
+    invalidate()
+}
+
+proc deleteSel(var ui: Ui, var v: View, backwards: Bool) {
+    val sel = selOf(ui, v)
+    var a = sel.x.toInt()
+    var b = sel.y.toInt()
+    if (a == b) {
+        if (backwards) { a = (a - 1).max(0) } else { b = (b + 1).min(v.label.length) }
+    }
+    if (a == b) { return }
+    val h = v.onString
+    h(v.label.take(a) + v.label.drop(b))
+    ui.setCaret(v.id, a)
+    ui.setAnchor(v.id, a)
+    invalidate()
+}
+
+proc moveCaret(var ui: Ui, var v: View, to: Int, extend: Bool) {
+    val n = v.label.length
+    val at = clampI(to, 0, n)
+    ui.setCaret(v.id, at)
+    if (not extend) { ui.setAnchor(v.id, at) }
+    invalidate()
+}
+
+// ------------------------------------------------------------- the keyboard
+
+proc keyDown(var ui: Ui, var root: View, e: Event) {
+    val key = e.key
+
+    if (key == keyTab()) {
+        moveFocus(ui, root, not e.shift())
+        return
+    }
+
+    val f = focusedField(ui, root)
+    if (f == null) {
+        // With no field focused, Space and Return work the focused control,
+        // which is what makes the whole interface reachable from the keyboard.
+        if (ui.focus == 0) { return }
+        val n = nodeById(root, ui.focus)
+        if (n == null) { return }
+        if ((key == keyEnter()) or (key == keySpace())) { fire(n); invalidate() }
+        if (key == keyEscape()) { ui.focus = 0; invalidate() }
+        return
+    }
+
+    val n = f.label.length
+    val car = clampI(ui.caretOf(f.id, n), 0, n)
+    val sel = selOf(ui, f)
+
+    if (e.cmd()) {
+        if (e.text == "a") { ui.setAnchor(f.id, 0); ui.setCaret(f.id, n); invalidate(); return }
+        if ((e.text == "c") or (e.text == "x")) {
+            if (sel.x != sel.y) {
+                kvClipboardSet(f.label.substring(sel.x.toInt(), sel.y.toInt()))
+                if (e.text == "x") { deleteSel(ui, f, true) }
+            }
+            return
+        }
+        if (e.text == "v") { insert(ui, f, kvClipboardGet().replace("\n", " ")); return }
+    }
+
+    if (key == keyBackspace()) { deleteSel(ui, f, true); return }
+    if (key == keyDelete()) { deleteSel(ui, f, false); return }
+    if (key == keyLeft()) { moveCaret(ui, f, car - 1, e.shift()); return }
+    if (key == keyRight()) { moveCaret(ui, f, car + 1, e.shift()); return }
+    if (key == keyHome()) { moveCaret(ui, f, 0, e.shift()); return }
+    if (key == keyEnd()) { moveCaret(ui, f, n, e.shift()); return }
+    if (key == keyEscape()) { ui.focus = 0; invalidate(); return }
+    if (key == keyEnter()) { val h = f.onTap; h(); invalidate(); return }
+}
+
+proc moveFocus(var ui: Ui, var root: View, forward: Bool) {
+    val list: List<View> = []
+    focusables(root, list)
+    if (list.size == 0) { return }
+    var at = -1
+    var i = 0
+    while (i < list.size) {
+        if (list[i].id == ui.focus) { at = i }
+        i++
+    }
+    var next = 0
+    if (at < 0) {
+        next = if (forward) { 0 } else { list.size - 1 }
+    } else {
+        next = (at + (if (forward) { 1 } else { list.size - 1 })) % list.size
+    }
+    ui.focus = list[next].id
+    ui.focusVisible = true
+    invalidate()
+}
+
+// ------------------------------------------------------------------ offscreen
+
+/// Draw one frame of an application to a BMP file, with no window and no
+/// display. The tree is built, laid out and painted by exactly the code the
+/// window uses; only the surface is different.
+public proc snapshot(var app: App, w: Int, h: Int, scale: Float, path: String) {
+    val fonts = systemFonts()
+    val canvas = canvasOffscreen(w, h, scale)
+    val ui = Ui(canvas, fonts, app.theme)
+    val started = app.onStart
+    started()
+    val make = app.build
+    val root = make()
+    val area = canvas.bounds()
+    layout(ui, root, area)
+    canvas.clear(app.theme.bg)
+    paint(ui, root)
+    if (kvSaveBmp(path) == 0) { println("keal-view: could not write ${path}") }
+    val stopped = app.onStop
+    stopped()
+}

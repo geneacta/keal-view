@@ -1,0 +1,202 @@
+import "./canvas.keal"
+import "./color.keal"
+import "./font.keal"
+import "./geom.keal"
+
+/// Laying text out: measuring it, fitting it, and putting it on a canvas.
+///
+/// Everything here measures in logical points and converts to device pixels
+/// only to ask the font engine for a glyph — which is rasterised at the size
+/// it will actually be drawn, so a Retina screen gets a Retina glyph rather
+/// than a stretched one. The pen advances in device pixels as a `Float` and is
+/// rounded only when a glyph is blitted, which keeps a line's total width
+/// honest while every glyph still lands on the pixel grid.
+
+/// How text should look: a size in points, and which of the three faces.
+public record TextStyle(public val size: Float, public val bold: Bool, public val mono: Bool)
+
+public func text(size: Float): TextStyle { return TextStyle(size, false, false) }
+public func textBold(size: Float): TextStyle { return TextStyle(size, true, false) }
+public func textMono(size: Float): TextStyle { return TextStyle(size, false, true) }
+
+/// Horizontal placement inside a box.
+public func alignStart(): Int { return 0 }
+public func alignCenter(): Int { return 1 }
+public func alignEnd(): Int { return 2 }
+
+/// The three faces an application draws with, and everything that needs them.
+public class Fonts(public var sans: Font?, public var boldFace: Font?, public var mono: Font?) {
+
+    /// The face a style asks for, falling back to whatever is loaded — a
+    /// missing bold is better shown as regular than as nothing.
+    public func faceFor(st: TextStyle): Font? {
+        if (st.mono) {
+            val m = this.mono
+            if (m != null) { return m }
+        }
+        if (st.bold) {
+            val b = this.boldFace
+            if (b != null) { return b }
+        }
+        val s = this.sans
+        if (s != null) { return s }
+        return this.boldFace ?: this.mono
+    }
+
+    /// How wide the string is, in points, at `scale` device pixels per point.
+    public func width(s: String, st: TextStyle, scale: Float): Float {
+        val f = this.faceFor(st)
+        if (f == null) { return 0.0 }
+        val px = st.size * scale
+        var w = 0.0
+        for (ch in s.chars()) { w = w + advanceOf(f, ch.code(), px) }
+        return w / scale
+    }
+
+    /// Baseline to baseline, in points.
+    public func lineHeight(st: TextStyle, scale: Float): Float {
+        val f = this.faceFor(st)
+        if (f == null) { return st.size * 1.4 }
+        return f.lineHeight(st.size * scale) / scale
+    }
+
+    /// How far the tallest letter reaches above the baseline, in points.
+    public func ascent(st: TextStyle, scale: Float): Float {
+        val f = this.faceFor(st)
+        if (f == null) { return st.size * 0.8 }
+        return f.ascent(st.size * scale) / scale
+    }
+
+    /// Draw a string with its baseline at `baseline`, starting at `x`.
+    /// Answers where the pen ended up, in points.
+    public func draw(c: Canvas, s: String, x: Float, baseline: Float, st: TextStyle, col: Int): Float {
+        val f = this.faceFor(st)
+        if (f == null) { return x }
+        if (alphaOf(col) == 0) { return x }
+        val scale = c.scale
+        val px = st.size * scale
+        var pen = x * scale
+        val by = (baseline * scale).round()
+        for (ch in s.chars()) {
+            val g = f.glyphOf(ch.code(), px)
+            if (g.mask != 0) { c.mask(g.mask, g.w, g.h, pen.round() + g.left, by - g.top, col) }
+            pen = pen + g.advance
+        }
+        return pen / scale
+    }
+
+    /// Draw a single line inside a box: aligned across, centred down the
+    /// middle, and cut with an ellipsis if it does not fit. This is what a
+    /// label, a button and a menu item all call.
+    public proc drawIn(c: Canvas, s: String, r: Rect, align: Int, st: TextStyle, col: Int) {
+        val scale = c.scale
+        val shown = this.ellipsize(s, r.w, st, scale)
+        val w = this.width(shown, st, scale)
+        var x = r.x
+        if (align == 1) { x = r.x + (r.w - w) / 2.0 }
+        if (align == 2) { x = r.x + r.w - w }
+        val asc = this.ascent(st, scale)
+        val lh = this.lineHeight(st, scale)
+        // Centre the text's own box in the rectangle, not its baseline: a line
+        // of capitals and a line of descenders then sit at the same height.
+        val baseline = r.y + (r.h - lh) / 2.0 + asc
+        this.draw(c, shown, x, baseline, st, col)
+    }
+
+    /// The longest prefix of `s` that fits in `maxW` points, with `…` in place
+    /// of what was dropped. Answers `s` unchanged when it fits.
+    public func ellipsize(s: String, maxW: Float, st: TextStyle, scale: Float): String {
+        if (this.width(s, st, scale) <= maxW) { return s }
+        val dots = "…"
+        val dw = this.width(dots, st, scale)
+        if (dw > maxW) { return "" }
+        val cs = s.chars()
+        var w = 0.0
+        var n = 0
+        while (n < cs.size) {
+            val cw = this.width(cs[n], st, scale)
+            if (w + cw + dw > maxW) { break }
+            w = w + cw
+            n++
+        }
+        if (n == 0) { return dots }
+        return s.take(n) + dots
+    }
+
+    /// Break `s` into lines no wider than `maxW`, at spaces where it can and
+    /// mid-word where it must. Existing newlines are kept.
+    public func wrap(s: String, maxW: Float, st: TextStyle, scale: Float): List<String> {
+        val out: List<String> = []
+        for (para in s.split("\n")) {
+            if (para == "") { out.add(""); continue }
+            var line = ""
+            for (word in para.split(" ")) {
+                val trial = if (line == "") { word } else { line + " " + word }
+                if (this.width(trial, st, scale) <= maxW) {
+                    line = trial
+                } else {
+                    if (line != "") { out.add(line) }
+                    // A single word too long for the column is cut by character
+                    // rather than left to overflow.
+                    var rest = word
+                    while (this.width(rest, st, scale) > maxW) {
+                        var n = 1
+                        while (n < rest.length) {
+                            if (this.width(rest.take(n + 1), st, scale) > maxW) { break }
+                            n++
+                        }
+                        out.add(rest.take(n))
+                        rest = rest.drop(n)
+                    }
+                    line = rest
+                }
+            }
+            out.add(line)
+        }
+        return out
+    }
+
+    /// Draw wrapped text from the top of `r` down, answering the height it
+    /// used, in points.
+    public func drawWrapped(c: Canvas, s: String, r: Rect, st: TextStyle, col: Int): Float {
+        val scale = c.scale
+        val lines = this.wrap(s, r.w, st, scale)
+        val lh = this.lineHeight(st, scale)
+        val asc = this.ascent(st, scale)
+        var i = 0
+        while (i < lines.size) {
+            val y = r.y + i.toFloat() * lh
+            if (y > r.y + r.h) { break }
+            this.draw(c, lines[i], r.x, y + asc, st, col)
+            i++
+        }
+        return lines.size.toFloat() * lh
+    }
+
+    /// Which character boundary in `s` lies nearest `dx` points from its
+    /// start — the caret position a click asks for.
+    public func indexAt(s: String, dx: Float, st: TextStyle, scale: Float): Int {
+        val cs = s.chars()
+        var w = 0.0
+        var i = 0
+        while (i < cs.size) {
+            val cw = this.width(cs[i], st, scale)
+            if (dx < w + cw / 2.0) { return i }
+            w = w + cw
+            i++
+        }
+        return cs.size
+    }
+
+    /// How far into the string, in points, character `i` begins.
+    public func xOfIndex(s: String, i: Int, st: TextStyle, scale: Float): Float {
+        return this.width(s.take(i.max(0)), st, scale)
+    }
+}
+
+/// The three system faces, loaded. Missing ones stay null and text in that
+/// face falls back — an application still runs on a machine with no fonts,
+/// which is the state a fresh container is in.
+public func systemFonts(): Fonts {
+    return Fonts(systemFont(0), systemFont(1), systemFont(2))
+}
