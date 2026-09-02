@@ -598,6 +598,47 @@ proc interactionTests() {
     eqF("and at the bottom", ui.scrollOf(sc.id), 700.0)
 }
 
+// ------------------------------------------------------- state in an object
+
+/// The shape an application takes past a certain size: one object holding both
+/// the state and the handlers that change it, with the lambdas capturing
+/// `this`. The C backend refused this until keal-view asked for it, so it is
+/// pinned here — a build that cannot compile the shape the guide recommends is
+/// a build that fails.
+class Counter {
+    public var n: Int = 0
+    public var label2: String = "zero"
+
+    proc bump() {
+        this.n = this.n + 1
+        this.label2 = "n=${this.n}"
+    }
+
+    public func view(): View {
+        return column([
+            label(this.label2),
+            button("+1", { -> this.bump() }).sized(80.0, 30.0)
+        ])
+    }
+}
+
+proc objectStateTests() {
+    val ui = testUi()
+    val app = App("t", 400, 300)
+    val c = Counter()
+    val tree = c.view()
+    layout(ui, tree, Rect(0.0, 0.0, 200.0, 200.0))
+    val btn = tree.kids[1]
+    dispatch(ui, app, tree, down(centerX(btn.frame), centerY(btn.frame)))
+    dispatch(ui, app, tree, up(centerX(btn.frame), centerY(btn.frame)))
+    eqI("a lambda capturing `this` reaches the object", c.n, 1)
+    ok("and what it wrote is there", c.label2 == "n=1")
+    // Built again from the object, the way a frame would.
+    val tree2 = c.view()
+    layout(ui, tree2, Rect(0.0, 0.0, 200.0, 200.0))
+    ok("and the next frame shows it", tree2.kids[0].label == "n=1")
+}
+
 // --------------------------------------------------------------------- run
 
 colourTests()
@@ -607,6 +648,7 @@ dockTests()
 interactionTests()
 textTests()
 stateTests()
+objectStateTests()
 
 println("")
 if (failed == 0) {

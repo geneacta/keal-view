@@ -91,7 +91,10 @@ Look for, in `frame.png`:
 9. **Clipboard.** Select in a field, **Ctrl+C**, then **Ctrl+V** somewhere
    else. On X11 this is a real selection owner answering real
    `SelectionRequest` events; try pasting into another application too, and
-   copying *from* one.
+   copying *from* one. Do it **quickly**, several times: `OpenClipboard` on
+   Windows is a lock the system's clipboard-history service also takes, and a
+   write followed immediately by a read is where that shows. The backend
+   retries; a failure here would mean it does not retry enough.
 10. **The wheel**, over the scrolling list in the gallery's *Regroupements*
     section.
 11. **A double click** in a text field should select a word's worth of
@@ -116,6 +119,23 @@ above, below, or as another tab. Drag the dividers between panels. Close a tab
 with its ×. Press *Ranger* to put it all back.
 
 ---
+
+## 2½. Before you report an input problem, run the control
+
+Both false positives in this project's first two test passes came from the
+harness rather than the framework, and both were caught the same way: doing
+the same thing to a program that is known to work.
+
+Arrow keys sent with `SendInput` and no `KEYEVENTF_EXTENDEDKEY` are treated as
+the numeric keypad's, and Windows then cancels the Shift around them — so
+Shift+Arrow selected nothing, in a way that looked exactly like a missing
+selection. And a burst of synthesised keystrokes dropped characters, which
+looked exactly like a full event queue, until the same burst was sent to
+Notepad and dropped them there too.
+
+So: if input seems to be lost or ignored, send the same input to a text editor
+first. If it is lost there as well, the report is about your injection and not
+about this framework.
 
 ## 3. Reporting
 

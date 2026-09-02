@@ -147,10 +147,13 @@ proc paintButton(var ui: Ui, v: View) {
     // A colour named on the button itself wins over the variant's, so that
     // one destructive key in a grid can be red without being a whole variant.
     if (v.fg != 0) { ink = v.fg }
+    // A disabled control looks inert whatever family it belongs to. Fading a
+    // primary button leaves a washed-out blue with grey text on it, which
+    // reads as broken rather than as unavailable.
     if (not v.enabled) {
-        face = fade(face, 0.4)
+        face = withAlpha(t.surfaceHi, 120)
+        edge = withAlpha(t.border, 120)
         ink = t.textMuted
-        edge = fade(edge, 0.4)
     }
 
     if (alphaOf(face) > 0) { c.fillRound(r, rad, face) }

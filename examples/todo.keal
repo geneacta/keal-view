@@ -1,0 +1,181 @@
+import "../keal-view.keal"
+
+/// A to-do list, written the way an application usually wants to be written:
+/// a class that holds its own state and knows how to draw itself.
+///
+/// The two things worth reading it for:
+///
+/// **A lambda captures `this`.** `button("Add", { -> this.add() })` works, so
+/// the state and the handlers that change it can live in the same object.
+/// (This was refused by the C backend until the day this example was written;
+/// the language grew it because keal-view asked.)
+///
+/// **Every row is `keyed`.** Identity is otherwise the path down the tree, so
+/// deleting a task would slide the one below it into the deleted one's place
+/// — and its caret, its selection and its half-typed word would go with the
+/// place rather than with the task. Tick the first of three and watch nothing
+/// move: that is the key doing its work.
+
+var nextId = 1
+
+class Task(public val id: Int, public var title: String) {
+    public var done: Bool = false
+}
+
+func newTask(title: String): Task {
+    val t = Task(nextId, title)
+    nextId = nextId + 1
+    return t
+}
+
+/// 0 all, 1 to do, 2 done.
+class TodoList {
+    public var tasks: List<Task> = []
+    public var draft: String = ""
+    public var showing: Int = 0
+
+    proc add() {
+        val text = this.draft.trim()
+        if (text == "") { return }
+        this.tasks.add(newTask(text))
+        this.draft = ""
+        invalidate()
+    }
+
+    /// Tasks are addressed by identity rather than handed round as objects.
+    /// That is the language's doing and it is an improvement: a parameter's
+    /// contents belong to whoever passed them, so a `Task` received as an
+    /// argument cannot be changed — and the list, which owns them, is the only
+    /// thing that may. It removes the question of who is allowed to write.
+    proc toggle(id: Int) {
+        for (t in this.tasks) {
+            if (t.id == id) { t.done = not t.done; invalidate(); return }
+        }
+    }
+
+    proc remove(id: Int) {
+        var i = 0
+        while (i < this.tasks.size) {
+            if (this.tasks[i].id == id) { this.tasks.removeAt(i); invalidate(); return }
+            i++
+        }
+    }
+
+    proc clearDone() {
+        val kept: List<Task> = []
+        for (t in this.tasks) {
+            if (not t.done) { kept.add(t) }
+        }
+        this.tasks = kept
+        invalidate()
+    }
+
+    func left(): Int {
+        var n = 0
+        for (t in this.tasks) {
+            if (not t.done) { n++ }
+        }
+        return n
+    }
+
+    func visible(): List<Task> {
+        val out: List<Task> = []
+        for (t in this.tasks) {
+            if (this.showing == 0) { out.add(t) }
+            else { if ((this.showing == 1) and (not t.done)) { out.add(t) }
+            else { if ((this.showing == 2) and t.done) { out.add(t) } } }
+        }
+        return out
+    }
+
+    // ------------------------------------------------------------ the view
+
+    func view(): View {
+        return column([
+            this.header(),
+            this.composer(),
+            this.rows().grows(),
+            this.footer()
+        ]).gaps(theme().gap(3.0)).padAll(theme().gap(5.0)).grows()
+    }
+
+    func header(): View {
+        return row([
+            title("Tâches"),
+            spacer(),
+            badge("${this.left()} à faire")
+        ]).aligned(mainStart, crossCenter)
+    }
+
+    func composer(): View {
+        val entry = field(this.draft, "quoi faire ensuite ?", { s -> this.draft = s })
+        entry.keyed("draft")
+        entry.grows()
+        entry.onTap = { -> this.add() }          // Return submits
+        return row([
+            entry,
+            button("Ajouter", { -> this.add() }).kindOf(primary).offWhen(this.draft.trim() == "")
+        ]).gaps(theme().gap(2.0))
+    }
+
+    func rows(): View {
+        val shown = this.visible()
+        if (shown.size == 0) { return this.empty() }
+        val out: List<View> = []
+        for (t in shown) { out.add(this.rowFor(t)) }
+        return scroll(out).gaps(theme().gap(1.0))
+    }
+
+    func rowFor(t: Task): View {
+        val id = t.id
+        val tick = checkbox("", t.done, { b -> this.toggle(id) })
+        val name = label(t.title).grows()
+        if (t.done) { name.color(theme().textMuted) }
+        val row2 = row([
+            tick.w(theme().gap(5.0)),
+            name,
+            iconButton("trash", { -> this.remove(id) }).tip("Supprimer")
+        ])
+        row2.gaps(theme().gap(1.0))
+        row2.padXY(theme().gap(2.0), theme().gap(1.0))
+        row2.rounded(theme().radiusMd)
+        row2.aligned(mainStart, crossCenter)
+        // The key is the task's own identity, not its place in the list. Take
+        // this off and deleting a row hands its state to the row beneath.
+        row2.keyed("task-${id}")
+        return row2
+    }
+
+    func empty(): View {
+        val what = ["Rien pour le moment.", "Tout est fait.", "Rien de terminé."][this.showing]
+        return column([
+            spacer(),
+            icon("check").color(theme().textMuted).fontSize(28.0),
+            label(what).color(theme().textMuted).centered(),
+            spacer()
+        ]).gaps(theme().gap(2.0)).aligned(mainCenter, crossCenter).grows()
+    }
+
+    func footer(): View {
+        return row([
+            segmented(["Toutes", "À faire", "Terminées"], this.showing,
+                      { i -> this.showing = i; invalidate() }).w(240.0),
+            spacer(),
+            link("effacer les terminées", { -> this.clearDone() })
+        ]).aligned(mainStart, crossCenter)
+    }
+}
+
+val list = TodoList()
+
+proc seed() {
+    list.tasks.add(newTask("Lire docs/guide.md"))
+    list.tasks.add(newTask("Écrire une fenêtre"))
+    list.tasks.add(newTask("Mesurer avant d'affirmer"))
+    list.tasks[2].done = true
+}
+
+val app = App("Tâches", 460, 520)
+app.onStart = { -> seed() }
+app.build = { -> list.view() }
+run(app)

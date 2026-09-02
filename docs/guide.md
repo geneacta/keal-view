@@ -65,6 +65,60 @@ invalidate()                      // a timer fired, a file finished loading
 
 ---
 
+## 2¾. Where the state lives
+
+Cells are one answer and they are the right one for a small program. Past a
+certain size an application usually wants its state and the things that change
+it in the same object — and a lambda can capture `this`, so it can:
+
+```keal
+class TodoList {
+    var tasks: List<Task> = []
+    var draft: String = ""
+
+    proc add() {
+        if (this.draft != "") { this.tasks.add(newTask(this.draft)); this.draft = "" }
+        invalidate()
+    }
+
+    func view(): View {
+        return column([
+            field(this.draft, "what next?", { s -> this.draft = s }),
+            button("Add", { -> this.add() }).kindOf(primary)
+        ]).gaps(8.0).padAll(16.0)
+    }
+}
+
+val list = TodoList()
+runApp("Tasks", 460, 520, { -> list.view() })
+```
+
+The object holds the truth, `view()` is a pure function of it, and `invalidate()`
+says the frame is stale — the same contract a `Cell` has, written out by hand.
+[`examples/todo.keal`](../examples/todo.keal) is this, finished.
+
+Two things the language decides for you here, and both are improvements:
+
+**A parameter's contents belong to whoever passed them.** A `Task` received as
+an argument cannot be changed; only the list that owns it may. So things are
+addressed by identity — `toggle(id)`, not `toggle(task)` — and the question of
+who is allowed to write never comes up.
+
+**Careful with a closure you keep.** A lambda that captures `this` and is
+stored *inside* the object is a cycle, and reference counting will not collect
+it:
+
+```keal
+this.render = { -> this.name }        // the object holds the closure that holds it
+```
+
+Handlers hung on a view are fine — the tree is thrown away every frame, so
+nothing survives to close the loop. It is caching a view, or a callback, in a
+long-lived object that does it. `weak` on the back edge breaks one, and
+`keal build --audit` names any that are left.
+
+---
+
 ## 2½. What persists, and the one trap in it
 
 The tree is thrown away every frame, so anything a *widget* remembers by
