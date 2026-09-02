@@ -65,6 +65,39 @@ invalidate()                      // a timer fired, a file finished loading
 
 ---
 
+## 2½. What persists, and the one trap in it
+
+The tree is thrown away every frame, so anything a *widget* remembers by
+itself — a scroll position, a text caret, which end of a selection is which —
+cannot live in the tree. It lives beside it, in a map, keyed by **where the
+node sits in the tree**.
+
+That is right almost always: the same tree is rebuilt sixty times a second and
+every node lands back on its own state. It is wrong exactly once, and it is
+worth knowing before it happens to you:
+
+```keal
+column(tasks.get().map({ t -> field(t.title, "", { s -> rename(t, s) }) }))
+```
+
+Delete the first task. Everything below moves up a place — and the state moves
+with the *place*, not with the task. The caret, the selection and the
+keystroke you had not finished typing are now in the row underneath. Nothing
+crashes; the wrong row is simply focused, and you get to explain it to
+somebody.
+
+Give the row a name of its own and the problem disappears:
+
+```keal
+field(t.title, "", { s -> rename(t, s) }).keyed(t.id)
+```
+
+**The rule: key anything in a list that can be reordered, inserted into or
+deleted from.** A fixed layout — a toolbar, a form, a settings page — never
+needs one, because nothing ever moves.
+
+---
+
 ## 3. Laying things out
 
 Two containers do almost everything.

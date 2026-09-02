@@ -18,6 +18,16 @@ import "./geom.keal"
 /// and 0; `hmtx` advances; TrueType Collections. What is not: hinting (modern
 /// rendering does not want it), and `CFF ` outlines, which are cubic and a
 /// different table — a font with those loads and reports that it has none.
+///
+/// **Who owns what, before you add a third cache here.** A glyph's coverage
+/// mask and the font file itself are blobs — memory outside Keal's heap, which
+/// nothing here collects. Both are owned by a `deinit`: the mask dies with the
+/// `Glyph` that holds it, the file dies with the `Font`. So the rasterised
+/// glyphs are freed by the cache letting go of them, and the cache is bounded
+/// for that reason — sizes are kept to a sixty-fourth of a pixel, and a slider
+/// that changes the text size while it is dragged asks for a fresh set at
+/// every step. Anything else cached in this file must answer the same two
+/// questions: who lets go of it, and what stops it growing.
 
 // ------------------------------------------------------------ reading bytes
 

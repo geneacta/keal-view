@@ -167,7 +167,7 @@ Alignment values: `mainStart` `mainCenter` `mainEnd` `mainBetween`, and
 |---|---|
 | `.off()` / `.offWhen(c)` | grey it out and stop it responding |
 | `.shownWhen(c)` | draw it, or do not |
-| `.keyed(s)` | give it a name, so its own state follows it when a list is reordered |
+| `.keyed(s)` | give it a name, so its own state follows **it** and not its position — required for anything in a list that can be reordered, inserted into or deleted from |
 | `.tip(s)` | a note beside the pointer while it rests here |
 | `.pointer(c)` | the pointer shape: `cursorArrow` `cursorHand` `cursorText` `cursorResizeH` `cursorResizeV` |
 | `.tappable(f)` | take a click without being a control |

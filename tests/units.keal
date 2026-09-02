@@ -171,6 +171,31 @@ proc layoutTests() {
     layout(ui, again, Rect(0.0, 0.0, 200.0, 200.0))
     eqI("the same tree gives the same identity", again.kids[1].id, btn.id)
 
+
+    // Identity is the path, and a list that loses a row shifts every path
+    // below it. Without a key, the retained state — a caret, a scroll
+    // position, an unsent keystroke — belongs to the *position* and follows
+    // whoever takes it. This is the hazard, pinned, in both directions.
+    val page = Rect(0.0, 0.0, 300.0, 300.0)
+    val a1 = field("one", "", { s -> })
+    val a2 = field("two", "", { s -> })
+    layout(ui, column([a1, a2]), page)
+    ui.setCaret(a1.id, 1)
+    ui.setCaret(a2.id, 3)
+    // "one" is deleted; "two" moves up into its place.
+    val a2again = field("two", "", { s -> })
+    layout(ui, column([a2again]), page)
+    eqI("without a key, state belongs to the position", ui.caretOf(a2again.id, 99), 1)
+
+    val b1 = field("one", "", { s -> }).keyed("one")
+    val b2 = field("two", "", { s -> }).keyed("two")
+    layout(ui, column([b1, b2]), page)
+    ui.setCaret(b1.id, 1)
+    ui.setCaret(b2.id, 3)
+    val b2again = field("two", "", { s -> }).keyed("two")
+    layout(ui, column([b2again]), page)
+    eqI("with a key, state belongs to the thing", ui.caretOf(b2again.id, 99), 3)
+
     // A key overrides the path, so a node keeps its identity when it moves.
     val k1 = column([label("x").keyed("mine")])
     val k2 = column([label("a"), label("b"), label("x").keyed("mine")])
