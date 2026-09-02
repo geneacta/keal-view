@@ -73,13 +73,24 @@ public class Event(
     public func alt(): Bool { return this.has(modAlt()) }
 }
 
+/// Which kinds of event carry text.
+///
+/// Two do, and forgetting the second is how `Ctrl+C` came to do nothing on
+/// every platform for a day: a **text** event carries what was typed, and a
+/// **key press** carries the letter the key would type with nothing held
+/// down — which is the only way to tell one shortcut from another, because a
+/// shortcut suppresses the text event that would have followed it.
+public func carriesText(kind: Int): Bool {
+    return (kind == evText()) or (kind == evKeyDown())
+}
+
 /// Take the next event, converted, or null when the queue is empty.
 public func nextEvent(scale: Float): Event? {
     val k = kvPoll()
     if (k == 0) { return null }
     val s = if (scale < 0.1) { 1.0 } else { scale }
     var txt = ""
-    if (k == 9) { txt = kvEvText() }
+    if (carriesText(k)) { txt = kvEvText() }
     return Event(k, kvEvX().toFloat() / s, kvEvY().toFloat() / s,
                  kvEvButton(), kvEvKey(), kvEvMods(), kvEvClicks(),
                  kvEvDx() / s, kvEvDy() / s, txt)

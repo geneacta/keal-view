@@ -537,6 +537,15 @@ proc interactionTests() {
     ok("a shortcut key press carries its letter", picked == "a")
 
 
+    // Which kinds carry text across the boundary. This is asserted on its own
+    // because the tests below build an `Event` by hand and so never exercise
+    // `nextEvent` — which is exactly where the letter was being dropped while
+    // every one of those tests passed.
+    ok("a text event carries text", carriesText(evText()))
+    ok("and so does a key press", carriesText(evKeyDown()))
+    ok("a mouse move does not", not carriesText(evMove()))
+    ok("nor a key release", not carriesText(evKeyUp()))
+
     // The shortcuts. `e.text` on a key press is the letter the key would type
     // with nothing held down — filled by all three backends, because a key
     // press carries no text of its own and a shortcut suppresses the text
