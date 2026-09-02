@@ -1,0 +1,16 @@
+/// keal-view, in one import.
+///
+///     import "keal-view/keal-view.keal"
+///
+///     runApp("Hello", 320, 200, { ->
+///         column([label("hello")]).padAll(24.0)
+///     })
+///
+/// Everything the framework offers is visible after this line: the views, the
+/// layout, the theme, the state cells, the docking, the menus and dialogs, the
+/// canvas for a view that draws itself, and the run loop. Importing a single
+/// module instead — `src/view.keal`, say — works too and brings only what that
+/// file reaches.
+import "./src/app.keal"
+import "./src/dock.keal"
+import "./src/popup.keal"

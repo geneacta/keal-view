@@ -82,6 +82,14 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
     } else { if (v.kind == kCheck) {
         hh = t.control
         w = checkSize(t) + t.gap(2.0) + ui.fonts.width(v.label, st, sc)
+    } else { if (v.kind == kRadio) {
+        hh = t.control
+        w = checkSize(t) + t.gap(2.0) + ui.fonts.width(v.label, st, sc)
+    } else { if (v.kind == kSegmented) {
+        hh = t.control
+        var acc = t.gap(1.0)
+        for (o in v.options) { acc = acc + ui.fonts.width(o, st, sc) + t.gap(5.0) }
+        w = acc
     } else { if (v.kind == kToggle) {
         hh = t.control
         w = switchWidth(t) + t.gap(2.0) + ui.fonts.width(v.label, st, sc)
@@ -161,7 +169,7 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
             v.content = main + v.pad.top + v.pad.bottom
             hh = availH
         }
-    } } } } } } } } } } } } } }
+    } } } } } } } } } } } } } } } }
 
     if (v.wantW >= 0.0) { w = v.wantW }
     if (v.wantH >= 0.0) { hh = v.wantH }
@@ -189,11 +197,11 @@ func boxAvail(v: View, avail: Float, horizontal: Bool): Float {
 
 /// The side of a checkbox's box, and the width of a switch — shared with the
 /// painter so that what is measured is what is drawn.
-public func checkSize(t: Theme): Float { return t.gap(4.0) }
-public func switchWidth(t: Theme): Float { return t.gap(9.0) }
-public func switchHeight(t: Theme): Float { return t.gap(5.0) }
-public func sliderTrack(t: Theme): Float { return t.gap(1.0) }
-public func sliderKnob(t: Theme): Float { return t.gap(3.5) }
+public func checkSize(t: Theme = theme()): Float { return t.gap(4.0) }
+public func switchWidth(t: Theme = theme()): Float { return t.gap(9.0) }
+public func switchHeight(t: Theme = theme()): Float { return t.gap(5.0) }
+public func sliderTrack(t: Theme = theme()): Float { return t.gap(1.0) }
+public func sliderKnob(t: Theme = theme()): Float { return t.gap(3.5) }
 
 // -------------------------------------------------------------- arranging
 
@@ -328,6 +336,8 @@ public func interactive(v: View): Bool {
     if (v.kind == kButton) { return true }
     if (v.kind == kCheck) { return true }
     if (v.kind == kToggle) { return true }
+    if (v.kind == kRadio) { return true }
+    if (v.kind == kSegmented) { return true }
     if (v.kind == kSlider) { return true }
     if (v.kind == kField) { return true }
     if (v.kind == kTabs) { return true }
@@ -382,7 +392,8 @@ public func scrollUnder(v: View, x: Float, y: Float): View? {
 /// them — which is the order they were declared in.
 public proc focusables(v: View, var out: List<View>) {
     if (v.enabled) {
-        if ((v.kind == kField) or ((v.kind == kButton) or ((v.kind == kCheck) or (v.kind == kToggle)))) {
+        if ((v.kind == kField) or ((v.kind == kButton) or ((v.kind == kCheck)
+            or ((v.kind == kToggle) or (v.kind == kRadio))))) {
             out.add(v)
         }
     }

@@ -1,0 +1,260 @@
+import "../keal-view.keal"
+
+/// Every widget keal-view has, on one page.
+///
+/// This is documentation that runs: if a control is not in here it does not
+/// exist, and if it looks wrong here it looks wrong everywhere. It is also the
+/// shortest tour of the API — read the source next to the window.
+
+// ------------------------------------------------------------------- state
+
+val name = state("")
+val secret = state("")
+val notes = state("Un champ ordinaire. Tape dedans.")
+val agreed = state(false)
+val live = state(true)
+val plan = state(1)
+val size = state(1)
+val quality = state(0.7)
+val count = state(3.0)
+val tab = state(0)
+val density = state(0)
+val lastAction = state("rien encore")
+
+proc did(what: String) { lastAction.set(what) }
+
+// ------------------------------------------------------------------ pieces
+
+/// A titled block. Every section on the page is one of these.
+func section(title: String, kids: List<View>): View {
+    return column([
+        label(title).font(textBold(theme().fontSm)).color(theme().textMuted),
+        card(kids)
+    ]).gaps(theme().gap(1.5))
+}
+
+/// A label on the left, a control on the right — the shape of most forms.
+func field2(label2: String, control: View): View {
+    return row([
+        label(label2).color(theme().textSecondary).w(150.0),
+        control.grows()
+    ]).gaps(theme().gap(3.0)).aligned(mainStart, crossCenter)
+}
+
+// ---------------------------------------------------------------- sections
+
+func typography(): View {
+    return section("Texte", [
+        title("Un titre"),
+        heading("Un intertitre"),
+        label("Le corps du texte, à ${theme().fontBase} points."),
+        caption("Une légende, plus petite et plus discrète."),
+        label("Du texte en chasse fixe.").mono(),
+        paragraph("Un paragraphe se replie sur la largeur qu'on lui donne, "
+                + "coupé aux espaces quand il peut et au milieu d'un mot quand "
+                + "il le faut. Une ligne trop longue pour sa boîte est coupée "
+                + "avec des points de suspension plutôt que de déborder.")
+            .color(theme().textSecondary),
+        row([badge("neutre"), badge("info"), badge("prêt")]).gaps(theme().gap(1.5))
+    ])
+}
+
+func buttons(): View {
+    return section("Boutons", [
+        row([
+            button("Principal", { -> did("bouton principal") }).kindOf(primary),
+            button("Ordinaire", { -> did("bouton ordinaire") }),
+            button("Discret", { -> did("bouton discret") }).kindOf(quiet),
+            button("Destructif", { -> did("bouton destructif") }).kindOf(danger),
+            button("Désactivé", { -> }).off()
+        ]).gaps(theme().gap(2.0)),
+        row([
+            button("Avec une icône", { -> did("icône + texte") }).withIcon("play"),
+            iconButton("search", { -> did("loupe") }).tip("Rechercher"),
+            iconButton("gear", { -> did("réglages") }).tip("Réglages"),
+            iconButton("trash", { -> did("corbeille") }).tip("Supprimer"),
+            link("un lien", { -> did("lien") })
+        ]).gaps(theme().gap(2.0)).aligned(mainStart, crossCenter)
+    ])
+}
+
+func choices(): View {
+    return section("Choix", [
+        field2("Interrupteur", toggle("Rechargement à chaud", live.get(),
+                                      { b -> live.set(b); did("interrupteur") })),
+        field2("Case à cocher", checkbox("J'accepte les termes", agreed.get(),
+                                         { b -> agreed.set(b) })),
+        field2("Boutons radio", row([
+            radio("Mensuel", plan.get() == 0, { -> plan.set(0) }),
+            radio("Annuel", plan.get() == 1, { -> plan.set(1) }),
+            radio("À vie", plan.get() == 2, { -> plan.set(2) })
+        ]).gaps(theme().gap(3.0))),
+        field2("Segments", segmented(["Compact", "Confortable", "Aéré"],
+                                     density.get(), { i -> density.set(i) })),
+        field2("Liste déroulante", select(["Petit", "Moyen", "Grand", "Immense"],
+                                          size.get(), { i -> size.set(i); did("taille") }))
+    ])
+}
+
+func values(): View {
+    return section("Valeurs", [
+        field2("Curseur", column([
+            slider(quality.get(), 0.0, 1.0, { v -> quality.set(v) }),
+            caption("${(quality.get() * 100.0).round()} %").color(theme().textMuted)
+        ]).gaps(theme().gap(0.5))),
+        field2("Incrément", stepper(count.get(), 0.0, 10.0, 1.0, { v -> count.set(v) })),
+        field2("Progression", column([
+            progress(quality.get()),
+            caption("suit le curseur").color(theme().textMuted)
+        ]).gaps(theme().gap(1.0)))
+    ])
+}
+
+func inputs(): View {
+    return section("Saisie", [
+        field2("Texte", field(name.get(), "votre nom", { s -> name.set(s) }).keyed("name")),
+        field2("Masqué", secretField(secret.get(), "mot de passe",
+                                     { s -> secret.set(s) }).keyed("secret")),
+        field2("Rempli", field(notes.get(), "", { s -> notes.set(s) }).keyed("notes")),
+        field2("Désactivé", field("intouchable", "", { s -> }).off())
+    ])
+}
+
+func panels(): View {
+    return section("Regroupements", [
+        tabView(["Premier", "Deuxième", "Troisième"], tab.get(), { i -> tab.set(i) },
+            column([
+                gapV(theme().gap(2.0)),
+                label(["Le contenu du premier onglet.",
+                       "Celui du deuxième, qui dit autre chose.",
+                       "Et le troisième."][tab.get()]).color(theme().textSecondary)
+            ])),
+        divider(),
+        row([
+            banner(1, "Tout va bien.").grows(),
+            banner(2, "Attention à ceci.").grows()
+        ]).gaps(theme().gap(2.0)),
+        banner(3, "Quelque chose a échoué."),
+        divider(),
+        label("Une zone qui défile, dans une hauteur fixe :").color(theme().textSecondary),
+        scroll(manyRows()).h(120.0).bg(theme().surfaceHi).rounded(theme().radiusMd)
+            .padAll(theme().gap(1.5))
+    ])
+}
+
+func manyRows(): List<View> {
+    val rows: List<View> = []
+    var i = 1
+    while (i <= 24) {
+        rows.add(row([
+            icon("dot").color(theme().accent).fontSize(11.0),
+            label("Ligne numéro ${i}").color(theme().textSecondary).grows(),
+            caption("${i * 7} ko").color(theme().textMuted)
+        ]).gaps(theme().gap(1.5)).h(24.0).aligned(mainStart, crossCenter))
+        i++
+    }
+    return rows
+}
+
+func overlays(): View {
+    return section("Par-dessus", [
+        paragraph("Un menu, une boîte de dialogue et une bulle d'aide "
+                + "apparaissent au-dessus de l'interface sans en faire partie. "
+                + "Rien à installer : ils sont dessinés par la boucle.")
+            .color(theme().textSecondary),
+        row([
+            button("Ouvrir un menu", { -> openTheMenu() }),
+            button("Ouvrir un dialogue", { -> openTheDialog() }).kindOf(primary),
+            label("survole-moi").color(theme().textMuted).tip("Voilà la bulle.")
+        ]).gaps(theme().gap(2.0)).aligned(mainStart, crossCenter)
+    ])
+}
+
+proc openTheMenu() {
+    openIconMenu(160.0, 300.0,
+        ["Ouvrir…", "Enregistrer", "Enregistrer sous…", "Fermer"],
+        ["folder", "check", "file", "close"],
+        -1,
+        { i -> did("menu : entrée ${i + 1}") })
+}
+
+proc openTheDialog() {
+    openSheet("Supprimer le projet ?", { ->
+        column([
+            paragraph("Cette action ne peut pas être annulée. Tout ce qui se "
+                    + "trouve dans le projet sera perdu.")
+                .color(theme().textSecondary),
+            gapV(theme().gap(2.0)),
+            row([
+                spacer(),
+                button("Annuler", { -> closePopup() }).kindOf(quiet),
+                button("Supprimer", { -> closePopup(); did("supprimé") }).kindOf(danger)
+            ]).gaps(theme().gap(1.5))
+        ]).gaps(theme().gap(1.0))
+    })
+}
+
+/// A view that draws itself, handed a clipped canvas, the fonts and the theme.
+func drawing(): View {
+    return section("Dessin", [
+        paragraph("Un `custom` reçoit une toile déjà découpée à son rectangle, "
+                + "les polices, le thème et son propre état de survol. Tout "
+                + "keal-view est fait de ça.").color(theme().textSecondary),
+        custom({ p ->
+            val th = p.theme
+            val r = shrink(p.area, 8.0)
+            val n = 34
+            val bw = r.w / n.toFloat()
+            var i = 0
+            while (i < n) {
+                val f = i.toFloat() / (n - 1).toFloat()
+                val h = r.h * (0.2 + 0.8 * f * (1.0 - f) * 4.0)
+                p.canvas.fillRound(Rect(r.x + bw * i.toFloat() + 1.0, r.y + r.h - h,
+                                        (bw - 2.0).max(1.0), h),
+                                   2.0, mix(th.accent, th.success, f))
+                i++
+            }
+            if (p.hot) {
+                p.text("le survol arrive jusqu'ici", Rect(r.x, r.y, r.w, 18.0),
+                       1, th.small(), th.textPrimary)
+            }
+        }).h(110.0).bg(theme().surfaceHi).rounded(theme().radiusMd)
+    ])
+}
+
+// ------------------------------------------------------------------- shell
+
+func header(): View {
+    return stack([
+        underlay({ p ->
+            p.canvas.fillRect(p.area, p.theme.surface)
+            p.canvas.fillRect(Rect(p.area.x, bottom(p.area) - p.theme.hairline,
+                                   p.area.w, p.theme.hairline), p.theme.border)
+        }),
+        row([
+            icon("gear").color(theme().accent).fontSize(18.0),
+            label("keal-view").font(textBold(15.0)).color(theme().textPrimary),
+            badge("galerie"),
+            spacer(),
+            caption("dernière action : ${lastAction.get()}").color(theme().textMuted),
+            segmented(["Sombre", "Clair"], if (theme().dark) { 0 } else { 1 },
+                      { i -> useTheme(if (i == 0) { darkTheme() } else { lightTheme() }) })
+                .w(160.0)
+        ]).gaps(theme().gap(2.5)).padXY(theme().gap(4.0), 0.0).aligned(mainStart, crossCenter)
+    ]).h(52.0)
+}
+
+val app = App("keal-view — galerie", 900, 760)
+
+app.build = { ->
+    column([
+        header(),
+        scroll([
+            typography(), buttons(), choices(), values(),
+            inputs(), panels(), overlays(), drawing(),
+            gapV(theme().gap(4.0))
+        ]).gaps(theme().gap(4.0)).padAll(theme().gap(5.0)).grows()
+    ]).grows()
+}
+
+run(app)

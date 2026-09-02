@@ -9,13 +9,13 @@ pixels on the screen. It does not draw anything.
 
 ```
               lines    what it is
-  Keal         4 556   the whole framework: rasteriser, fonts, layout,
-                       widgets, theme, docking, the run loop
+  Keal         5 117   the whole framework: rasteriser, fonts, layout,
+                       widgets, theme, docking, menus, the run loop
   C              671   one window, one event queue, and inline accessors
                        (kv.h, plus one backend of three)
 ```
 
-**87 % of a running keal-view program is Keal**, and none of the other 13 %
+**88 % of a running keal-view program is Keal**, and none of the other 12 %
 puts a pixel anywhere.
 
 <p align="center"><img src="docs/studio.png" alt="A docked workspace" width="900"></p>
@@ -46,18 +46,16 @@ blob, an event struct, and accessors for each. Everything else is Keal.
 ## Hello
 
 ```keal
-import "keal-view/src/app.keal"
+import "keal-view/keal-view.keal"
 
 val clicks = state(0)
 
-val app = App("Hello", 320, 200)
-app.build = { ->
+runApp("Hello", 320, 200, { ->
     column([
         label("Clicked ${clicks.get()} times").fontSize(20.0).centered(),
         button("Click me", { -> clicks.set(clicks.get() + 1) }).kindOf(primary)
     ]).gaps(12.0).padAll(24.0).aligned(mainCenter, crossCenter).grows()
-}
-run(app)
+})
 ```
 
 ```sh
@@ -116,14 +114,32 @@ pointer says where letting go would put it — left, right, above, below, or as
 another tab — *before* it is let go. Dividers are dragged. Tabs close. A panel
 is an ordinary view function and does not know it is docked.
 
+## Documentation
+
+* **[The guide](docs/guide.md)** — a window, state, layout, widgets, style,
+  menus, drawing your own, the keyboard, docking. Read this one.
+* **[The reference](docs/widgets.md)** — every constructor, modifier, theme
+  field and canvas call, on one page.
+* **[`examples/gallery.keal`](examples/gallery.keal)** — documentation that
+  runs: every widget there is, on one scrolling page. If a control is not in
+  there it does not exist.
+
+<p align="center"><img src="docs/gallery.png" alt="The widget gallery" width="820"></p>
+
 ## What is in it
 
 **Widgets.** `label` `heading` `title` `caption` `paragraph` `badge` `icon`
-`button` `iconButton` `checkbox` `toggle` `slider` `progress` `field`
-`secretField` `tabs` `divider` `spacer` — and `custom`, which is handed a
-clipped canvas, its rectangle, the fonts, the theme and its own hover state,
-and may draw anything. The editor and the chart in the picture are two of
-those.
+`link` `banner` · `button` `iconButton` `menuButton` `checkbox` `radio`
+`toggle` `segmented` `select` `slider` `stepper` `progress` `field`
+`secretField` `tabs` `tabView` · `card` `panel` `scroll` `divider` `spacer` —
+and `custom`, which is handed a clipped canvas, its rectangle, the fonts, the
+theme and its own hover state, and may draw anything. The editor and the chart
+in the first picture are two of those.
+
+**Menus, dialogs and tooltips.** `openMenu`, `openDialog`, `openSheet` and
+`.tip("…")`. Nothing has to be installed: the run loop composes that layer
+above the application's own overlay, so `openMenu` works in a program that has
+never heard of it.
 
 **Layout.** One axis of flexbox and no more: children stack along the
 container's axis, whatever is left over is shared among those that said
@@ -151,9 +167,9 @@ boxes, however large the rectangle. Shadows, gradients, strokes, clipping and
 circles come from the same twenty-odd loops.
 
 **Theme.** Dark and light, built from one surface ramp, one accent and three
-status hues rather than a list of hex codes. No widget hard-codes a colour or
-a corner: change the theme and everything changes with it, including widgets
-written afterwards.
+status hues rather than a list of hex codes. There is one theme in force and
+everything reads it, so `useTheme(lightTheme())` is the whole change — and no
+widget hard-codes a colour or a corner, including widgets written afterwards.
 
 **Everything measures in points.** The rasteriser is the only thing that
 knows what a pixel is. One layout is correct on a Retina display and a
@@ -168,6 +184,7 @@ git clone https://github.com/geneacta/keal
 git clone https://github.com/geneacta/keal-view
 cd keal && cargo build --release && cd ../keal-view
 
+tools/build.sh examples/gallery.keal    && build/gallery      # every widget
 tools/build.sh examples/calculator.keal && build/calculator
 tools/build.sh examples/studio.keal     && build/studio
 tools/test.sh                                    # 131 checks, no display
@@ -180,8 +197,9 @@ system here.
 Two things every keal-view program understands for free:
 
 ```sh
-build/studio --snapshot frame.bmp 2      # draw one frame to a file and exit
-build/studio --window-id /tmp/id         # write its own window number out
+build/studio --snapshot frame.bmp 2          # draw one frame to a file and exit
+build/studio --snapshot frame.bmp 2 900 1900 # …at a size of your choosing
+build/studio --window-id /tmp/id             # write its own window number out
 ```
 
 The first needs no display at all, which is how the framework is checked in
@@ -234,6 +252,8 @@ src/
   event.keal      what happened, in points
   state.keal      `Cell<T>` and one revision counter
   dock.keal       splits, tabs, and dragging a panel between them
+  popup.keal      menus, dialogs and tooltips — things that appear over an
+                  interface rather than in it, so calls rather than nodes
   app.keal        the loop, and how input gets back to the application
 ```
 

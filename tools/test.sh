@@ -12,6 +12,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 "$ROOT/tools/build.sh" "$ROOT/tests/text.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/examples/calculator.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/examples/studio.keal" >/dev/null
+"$ROOT/tools/build.sh" "$ROOT/examples/gallery.keal" >/dev/null
 
 cd "$ROOT/build"
 ./units
@@ -19,8 +20,9 @@ cd "$ROOT/build"
 ./text >/dev/null
 ./calculator --snapshot calculator.bmp 2
 ./studio --snapshot studio.bmp 2
+./gallery --snapshot gallery.bmp 2 900 1900
 
-for f in shapes text calculator studio; do
+for f in shapes text calculator studio gallery; do
   [ -s "$f.bmp" ] || { echo "FAIL  $f drew nothing" >&2; exit 1; }
 done
 echo "frames drawn: $(cd "$ROOT/build" && ls -1 *.bmp | tr '\n' ' ')"

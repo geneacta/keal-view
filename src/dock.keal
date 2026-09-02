@@ -283,7 +283,7 @@ public func zoneRect(r: Rect, zone: Int): Rect {
 
 /// The whole arrangement, as views. Drop this into an application's `build`
 /// and give it `grows()`; everything below is ordinary keal-view.
-public func dockView(var d: Dock, t: Theme): View {
+public func dockView(var d: Dock, t: Theme = theme()): View {
     return nodeView(d, t, d.root)
 }
 
@@ -365,7 +365,7 @@ func tabStrip(var d: Dock, t: Theme, var n: Node): View {
     while (i < n.tabs.size) {
         val idx = i
         val p = d.panel(n.tabs[idx])
-        if (p != null) { items.add(tabView(d, t, n, p, idx)) }
+        if (p != null) { items.add(dockTabView(d, t, n, p, idx)) }
         i++
     }
     items.add(spacer())
@@ -379,7 +379,7 @@ func tabStrip(var d: Dock, t: Theme, var n: Node): View {
     ]).h(t.strip)
 }
 
-func tabView(var d: Dock, t: Theme, var n: Node, p: Panel, idx: Int): View {
+func dockTabView(var d: Dock, t: Theme, var n: Node, p: Panel, idx: Int): View {
     val chosen = idx == n.active
     val pid = p.id
     val face = underlay({ p ->
@@ -430,7 +430,7 @@ func tabView(var d: Dock, t: Theme, var n: Node, p: Panel, idx: Int): View {
 }
 
 /// What a drop would do, drawn over everything. Give this to `app.overlay`.
-public func dockOverlay(var d: Dock, t: Theme): View {
+public func dockOverlay(var d: Dock, t: Theme = theme()): View {
     if (d.dragging == "") { return nothing() }
     val p = d.panel(d.dragging)
     val title = if (p == null) { d.dragging } else { p.title }

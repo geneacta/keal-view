@@ -109,8 +109,6 @@ proc percent() {
 
 // --------------------------------------------------------------- the keypad
 
-val t = darkTheme()
-
 /// One key. Digits are quiet, operators carry the accent, and the two on the
 /// left that undo something are marked as such.
 func key(labelText: String, variant: Int, tap: () -> Unit): View {
@@ -118,14 +116,14 @@ func key(labelText: String, variant: Int, tap: () -> Unit): View {
 }
 
 func digitKey(d: String): View {
-    return key(d, plain, { -> typeDigit(d) }).bg(t.surfaceHi)
+    return key(d, plain, { -> typeDigit(d) }).bg(theme().surfaceHi)
 }
 
 /// The three keys that are neither a digit nor an operator sit a shade
 /// lighter, so the keypad reads as three families at a glance rather than as
 /// twenty identical squares.
 func funcKey(labelText: String, tap: () -> Unit): View {
-    return key(labelText, plain, tap).bg(t.surfaceDown).color(t.textSecondary)
+    return key(labelText, plain, tap).bg(theme().surfaceDown).color(theme().textSecondary)
 }
 
 func opKey(o: String): View { return key(o, primary, { -> chooseOp(o) }) }
@@ -133,20 +131,20 @@ func opKey(o: String): View { return key(o, primary, { -> chooseOp(o) }) }
 func keypad(): View {
     return column([
         row([
-            funcKey("C", { -> clearAll() }).color(t.danger),
+            funcKey("C", { -> clearAll() }).color(theme().danger),
             funcKey("±", { -> negate() }),
             funcKey("%", { -> percent() }),
             opKey("÷")
-        ]).grows().gaps(t.gap(2.0)),
-        row([digitKey("7"), digitKey("8"), digitKey("9"), opKey("×")]).grows().gaps(t.gap(2.0)),
-        row([digitKey("4"), digitKey("5"), digitKey("6"), opKey("−")]).grows().gaps(t.gap(2.0)),
-        row([digitKey("1"), digitKey("2"), digitKey("3"), opKey("+")]).grows().gaps(t.gap(2.0)),
+        ]).grows().gaps(theme().gap(2.0)),
+        row([digitKey("7"), digitKey("8"), digitKey("9"), opKey("×")]).grows().gaps(theme().gap(2.0)),
+        row([digitKey("4"), digitKey("5"), digitKey("6"), opKey("−")]).grows().gaps(theme().gap(2.0)),
+        row([digitKey("1"), digitKey("2"), digitKey("3"), opKey("+")]).grows().gaps(theme().gap(2.0)),
         row([
             digitKey("0").growsBy(2.0),
             digitKey("."),
             key("=", primary, { -> equals() })
-        ]).grows().gaps(t.gap(2.0))
-    ]).gaps(t.gap(2.0)).padAll(t.gap(4.0)).grows()
+        ]).grows().gaps(theme().gap(2.0))
+    ]).gaps(theme().gap(2.0)).padAll(theme().gap(4.0)).grows()
 }
 
 func screen(): View {
@@ -156,15 +154,14 @@ func screen(): View {
             iconButton("backspace", { -> backspace() }).sized(40.0, 30.0)
         ]),
         spacer(),
-        label(memory.get()).color(t.textMuted).fontSize(14.0).trailing(),
-        label(entry.get()).color(t.textPrimary).fontSize(46.0).bold().trailing()
-    ]).gaps(t.gap(1.0)).padXY(t.gap(5.0), t.gap(3.0)).h(142.0)
+        label(memory.get()).color(theme().textMuted).fontSize(14.0).trailing(),
+        label(entry.get()).color(theme().textPrimary).fontSize(46.0).bold().trailing()
+    ]).gaps(theme().gap(1.0)).padXY(theme().gap(5.0), theme().gap(3.0)).h(142.0)
 }
 
 // ------------------------------------------------------------------ the app
 
 val app = App("Calculatrice", 320, 470)
-app.theme = t
 
 app.build = { ->
     column([

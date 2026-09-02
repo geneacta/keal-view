@@ -36,6 +36,8 @@ public val kTabs = 13
 public val kProgress = 14
 public val kBadge = 15
 public val kHandle = 16
+public val kRadio = 17
+public val kSegmented = 18
 
 /// Where children sit along the axis they are stacked on.
 public val mainStart = 0
@@ -122,6 +124,8 @@ public class View {
     public var clickable: Bool = false
     /// The pointer shape over this view, or -1 to leave it alone.
     public var cursor: Int = -1
+    /// A line of text to show beside the pointer while it rests here.
+    public var tipText: String = ""
     /// Children's `weight` is an exact share of the room rather than a share
     /// of what is left over — which is what a splitter needs and what a
     /// stack of buttons does not.
@@ -191,6 +195,20 @@ public class View {
     public func growsBy(f: Float): View {
         this.weight = f
         this.basisZero = true
+        return this
+    }
+    /// Take what the content needs, **and** a share of anything left over.
+    ///
+    /// The difference from `grows()` matters exactly once, and it is worth
+    /// knowing which way round it is. `grows()` starts from nothing, so in a
+    /// container that is sized by its own content there is nothing left over
+    /// and a growing child gets zero height — right for a pane in a window,
+    /// wrong for the body of a tab view inside a card. `fills()` starts from
+    /// what the content asked for, so it is never smaller than its contents
+    /// and still expands into a window when there is one.
+    public func fills(): View {
+        this.weight = 1.0
+        this.basisZero = false
         return this
     }
 
@@ -271,6 +289,19 @@ public class View {
     }
     /// The pointer shape while over this view.
     public func pointer(c: Int): View { this.cursor = c; return this }
+    /// A note that appears beside the pointer while it rests on this view.
+    public func tip(s: String): View { this.tipText = s; return this }
+    /// Draw it, or do not — without the caller writing an `if` around a list.
+    public func shownWhen(c: Bool): View {
+        if (not c) { this.kind = kSpacer; this.kids = [] }
+        return this
+    }
+    /// Space outside the view rather than inside it.
+    public func margin(v: Float): View {
+        this.pad = Insets(this.pad.left + v, this.pad.top + v,
+                          this.pad.right + v, this.pad.bottom + v)
+        return this
+    }
     /// Inside a `stack`, put this view at these window points and give it the
     /// size it asked for, rather than the whole layer. Menus, tooltips and
     /// the ghost under a drag are all this.
@@ -398,6 +429,80 @@ public func badge(s: String): View {
     return v
 }
 
+/// A surface with a border and room to breathe — the default container for a
+/// group of things that belong together.
+public func card(kids: List<View>, t: Theme = theme()): View {
+    val v = column(kids)
+    v.gaps(t.gap(2.0))
+    v.padAll(t.gap(4.0))
+    v.bg(t.surface)
+    v.rounded(t.radiusLg)
+    v.outline(t.border, t.hairline)
+    return v
+}
+
+/// A card that lifts off the page.
+public func raisedCard(kids: List<View>, t: Theme = theme()): View {
+    return card(kids, t).raised(14.0)
+}
+
+/// A strip of tabs with the chosen one's content underneath.
+public func tabView(titles: List<String>, index: Int, onChange: (Int) -> Unit,
+                    content: View): View {
+    return column([tabs(titles, index, onChange), content.fills()])
+}
+
+/// A line of text that acts on a click.
+public func link(s: String, onTap: () -> Unit, t: Theme = theme()): View {
+    val v = button(s, onTap)
+    v.kindOf(quiet)
+    v.color(t.accent)
+    v.padXY(0.0, 0.0)
+    return v
+}
+
+/// Something the application wants to say: `0` plain, `1` good, `2` a
+/// warning, `3` a failure.
+public func banner(level: Int, s: String, t: Theme = theme()): View {
+    var tint = t.textSecondary
+    var name = "dot"
+    if (level == 1) { tint = t.success; name = "check" }
+    if (level == 2) { tint = t.warning; name = "warning" }
+    if (level == 3) { tint = t.danger; name = "close" }
+    val v = row([
+        icon(name).color(tint).fontSize(t.fontBase),
+        label(s).color(t.textPrimary).grows()
+    ])
+    v.gaps(t.gap(2.0))
+    v.padXY(t.gap(3.0), t.gap(2.5))
+    v.bg(withAlpha(tint, 34))
+    v.rounded(t.radiusMd)
+    v.aligned(mainStart, crossCenter)
+    return v
+}
+
+/// A number with a minus and a plus.
+public func stepper(value: Float, lo: Float, hi: Float, step: Float,
+                    onChange: (Float) -> Unit, t: Theme = theme()): View {
+    val v = row([
+        iconButton("minus", { -> onChange(clampF(value - step, lo, hi)) })
+            .sized(t.control, t.control).offWhen(value <= lo),
+        label(shortNumber(value)).centered().least(t.gap(9.0), 0.0),
+        iconButton("plus", { -> onChange(clampF(value + step, lo, hi)) })
+            .sized(t.control, t.control).offWhen(value >= hi)
+    ])
+    v.gaps(t.gap(0.5))
+    v.aligned(mainStart, crossCenter)
+    return v
+}
+
+/// A number without the trailing zeros nobody wanted.
+public func shortNumber(v: Float): String {
+    val whole = v.round()
+    if ((v - whole.toFloat()).abs() < 0.0001) { return whole.toString() }
+    return ((v * 100.0).round().toFloat() / 100.0).toString()
+}
+
 /// A shape drawn from a name rather than a font, so that an application has
 /// icons without carrying a file: `check` `close` `plus` `minus` `chevron-down`
 /// `chevron-right` `chevron-left` `chevron-up` `search` `menu` `dot` `gear`
@@ -433,6 +538,25 @@ public func checkbox(s: String, on: Bool, changed: (Bool) -> Unit): View {
     v.label = s
     v.on = on
     v.onBool = changed
+    return v
+}
+
+/// One of several choices, shown as a dot.
+public func radio(s: String, on: Bool, chose: () -> Unit): View {
+    val v = mk(kRadio)
+    v.label = s
+    v.on = on
+    v.onTap = chose
+    return v
+}
+
+/// A row of choices, one of them pressed — a compact alternative to a set of
+/// radios where there are two, three or four of them.
+public func segmented(choices: List<String>, index: Int, onChange: (Int) -> Unit): View {
+    val v = mk(kSegmented)
+    v.options = choices
+    v.index = index
+    v.onIndex = onChange
     return v
 }
 

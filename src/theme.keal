@@ -1,6 +1,7 @@
 import "./canvas.keal"
 import "./color.keal"
 import "./geom.keal"
+import "./state.keal"
 import "./text.keal"
 
 /// What an application looks like, in one object.
@@ -81,6 +82,26 @@ public class Theme {
     public func small(): TextStyle { return text(this.fontSm) }
     public func heading(): TextStyle { return textBold(this.fontLg) }
     public func title(): TextStyle { return textBold(this.fontTitle) }
+}
+
+// ------------------------------------------------------- the one in force
+
+var current: Theme = darkTheme()
+
+/// The theme the application is using. Everything that needs one takes it as
+/// a defaulted argument, so a widget, a panel or a whole example can be
+/// written without ever mentioning a theme — and one call changes all of it.
+public func theme(): Theme { return current }
+
+/// Change it. The next frame is drawn in the new one.
+public proc useTheme(t: Theme) {
+    current = t
+    invalidate()
+}
+
+/// Swap between the two built-in palettes.
+public proc flipTheme() {
+    useTheme(if (current.dark) { lightTheme() } else { darkTheme() })
 }
 
 /// The dark palette: a near-neutral slate ramp with a blue accent, tuned so

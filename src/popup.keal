@@ -1,0 +1,286 @@
+import "./color.keal"
+import "./ffi.keal"
+import "./geom.keal"
+import "./state.keal"
+import "./text.keal"
+import "./theme.keal"
+import "./view.keal"
+
+/// Menus, dialogs and tooltips — the things that appear over an interface
+/// rather than in it.
+///
+/// They are here rather than in `view.keal` because none of them is a node in
+/// the tree: a menu is not a child of the button that opened it, and a dialog
+/// is not a child of anything. Each is a small piece of global state and one
+/// layer that `run` always draws on top, so opening one is a call and not a
+/// rearrangement of the application's own tree.
+///
+/// Nothing has to be installed. `run` composes this layer above the
+/// application's own overlay, so `openMenu` works in a program that has never
+/// heard of it.
+
+val kindNone = 0
+val kindMenu = 1
+val kindDialog = 2
+val kindTip = 3
+
+var kind: Int = 0
+var atX: Float = 0.0
+var atY: Float = 0.0
+var items: List<String> = []
+var icons: List<String> = []
+var enabledFlags: List<Bool> = []
+var chosen: Int = -1
+var pick: (Int) -> Unit = { i -> }
+var body: () -> View = { -> nothing() }
+var popupTitle: String = ""
+var dismissable: Bool = true
+
+/// Is anything showing?
+public func popupOpen(): Bool { return kind != kindNone }
+
+/// Put away whatever is showing.
+public proc closePopup() {
+    if (kind == kindNone) { return }
+    kind = kindNone
+    items = []
+    icons = []
+    enabledFlags = []
+    invalidate()
+}
+
+/// A list of choices at a point, in window coordinates. `selected` is drawn
+/// with a tick, or -1 for none.
+public proc openMenu(x: Float, y: Float, choices: List<String>, selected: Int,
+                     onPick: (Int) -> Unit) {
+    kind = kindMenu
+    atX = x
+    atY = y
+    items = choices
+    icons = []
+    enabledFlags = []
+    chosen = selected
+    pick = onPick
+    dismissable = true
+    invalidate()
+}
+
+/// A menu whose entries carry icons. `names` runs alongside `choices`; an
+/// empty string leaves that entry without one.
+public proc openIconMenu(x: Float, y: Float, choices: List<String>, names: List<String>,
+                         selected: Int, onPick: (Int) -> Unit) {
+    openMenu(x, y, choices, selected, onPick)
+    icons = names
+}
+
+/// A modal box in the middle of the window, over a dimmed interface. It is
+/// dismissed by whatever `content` provides — a dialog with no way out is the
+/// one thing this refuses to make easy.
+public proc openDialog(title: String, content: () -> View) {
+    kind = kindDialog
+    popupTitle = title
+    body = content
+    dismissable = false
+    invalidate()
+}
+
+/// The same, but clicking outside it or pressing Escape puts it away.
+public proc openSheet(title: String, content: () -> View) {
+    openDialog(title, content)
+    dismissable = true
+}
+
+/// A line of text beside a point. Applications rarely call this; `.tip()` on
+/// a view does it for them.
+public proc showTip(x: Float, y: Float, s: String) {
+    if ((kind == kindTip) and ((popupTitle == s) and ((atX == x) and (atY == y)))) { return }
+    if ((kind != kindNone) and (kind != kindTip)) { return }
+    kind = kindTip
+    atX = x
+    atY = y
+    popupTitle = s
+    invalidate()
+}
+
+public proc hideTip() {
+    if (kind == kindTip) { closePopup() }
+}
+
+// --------------------------------------------------------------- the layer
+
+/// What `run` draws over everything, every frame. An application never calls
+/// this; it is composed above `app.overlay` automatically.
+public func popupLayer(t: Theme = theme()): View {
+    if (kind == kindMenu) { return menuLayer(t) }
+    if (kind == kindDialog) { return dialogLayer(t) }
+    if (kind == kindTip) { return tipLayer(t) }
+    return nothing()
+}
+
+/// Everything outside the popup, catching the click that dismisses it.
+func scrim(t: Theme, dim: Bool): View {
+    val v = underlay({ p ->
+        if (dim) { p.canvas.fillRect(p.area, rgba(0, 0, 0, if (t.dark) { 120 } else { 70 })) }
+    })
+    if (dismissable) { v.tappable({ -> closePopup() }) }
+    return v
+}
+
+func menuLayer(t: Theme): View {
+    val rows: List<View> = []
+    var i = 0
+    while (i < items.size) {
+        val idx = i
+        val on = idx == chosen
+        val row = button(items[idx], { -> menuChose(idx) })
+        row.kindOf(quiet)
+        row.h(t.control)
+        row.rounded(t.radiusSm)
+        row.align = 0
+        if (idx < icons.size) {
+            if (icons[idx] != "") { row.withIcon(icons[idx]) }
+        }
+        if (on) {
+            row.withIcon("check")
+            row.color(t.accent)
+        }
+        rows.add(row)
+        i++
+    }
+    val menu = column(rows)
+    menu.gaps(1.0)
+    menu.padAll(t.gap(1.0))
+    menu.bg(t.surface)
+    menu.rounded(t.radiusMd)
+    menu.outline(t.border, t.hairline)
+    menu.raised(16.0)
+    menu.least(menuWidth(t), 0.0)
+    return stack([scrim(t, false), menu.at(clampX(atX, menuWidth(t)), clampY(atY, rowsHeight(t)))])
+}
+
+proc menuChose(i: Int) {
+    val f = pick
+    closePopup()
+    f(i)
+}
+
+func menuWidth(t: Theme): Float {
+    var w = t.gap(24.0)
+    val f = systemFontsCached()
+    var i = 0
+    while (i < items.size) {
+        val need = f.width(items[i], t.body(), 2.0) + t.gap(14.0)
+        if (need > w) { w = need }
+        i++
+    }
+    return w.min(t.gap(90.0))
+}
+
+func rowsHeight(t: Theme): Float {
+    return items.size.toFloat() * (t.control + 1.0) + t.gap(2.0)
+}
+
+/// Keep a popup on screen: a menu opened near the right edge opens leftwards
+/// instead of half off the window.
+func clampX(x: Float, w: Float): Float {
+    val screen = kvWidth().toFloat() / kvScale()
+    if (x + w > screen - 8.0) { return (screen - w - 8.0).max(8.0) }
+    return x.max(8.0)
+}
+
+func clampY(y: Float, h: Float): Float {
+    val screen = kvHeight().toFloat() / kvScale()
+    if (y + h > screen - 8.0) { return (screen - h - 8.0).max(8.0) }
+    return y.max(8.0)
+}
+
+func dialogLayer(t: Theme): View {
+    val inner = column([
+        label(popupTitle).font(t.heading()).color(t.textPrimary),
+        body()
+    ])
+    inner.gaps(t.gap(3.0))
+    inner.padAll(t.gap(5.0))
+    inner.bg(t.surface)
+    inner.rounded(t.radiusLg)
+    inner.outline(t.border, t.hairline)
+    inner.raised(28.0)
+    inner.least(320.0, 0.0)
+    return stack([
+        scrim(t, true),
+        column([spacer(), row([spacer(), inner, spacer()]), spacer()])
+    ])
+}
+
+func tipLayer(t: Theme): View {
+    val tip = row([label(popupTitle).font(t.small()).color(t.textPrimary)])
+    tip.padXY(t.gap(2.0), t.gap(1.0))
+    tip.bg(t.surfaceHi)
+    tip.rounded(t.radiusSm)
+    tip.outline(t.border, t.hairline)
+    tip.raised(8.0)
+    return stack([tip.at(clampX(atX, 200.0), clampY(atY, 28.0))])
+}
+
+// ------------------------------------------------------------------ fonts
+
+/// The popup layer measures its own width, which needs a font, and it is not
+/// handed the `Ui`. One set, loaded once.
+var cachedFonts: Fonts? = null
+
+func systemFontsCached(): Fonts {
+    val f = cachedFonts
+    if (f != null) { return f }
+    val made = systemFonts()
+    cachedFonts = made
+    return made
+}
+
+// ---------------------------------------------------------------- widgets
+
+/// A dropdown: a button showing the current choice, which opens a menu of
+/// them under itself.
+///
+///     select(["Small", "Medium", "Large"], size.get(), { i -> size.set(i) })
+public func select(choices: List<String>, index: Int, onChange: (Int) -> Unit,
+                   t: Theme = theme()): View {
+    val shown = if ((index >= 0) and (index < choices.size)) { choices[index] } else { "—" }
+    val v = custom({ p ->
+        val r = p.area
+        val th = p.theme
+        val face = if (p.pressed) { th.surfaceDown }
+                   else { if (p.hot) { lighten(th.surfaceHi, 0.07) } else { th.surfaceHi } }
+        p.canvas.fillRound(r, th.radiusMd, face)
+        p.canvas.strokeRound(r, th.radiusMd, th.hairline,
+                             if (p.hot) { th.borderStrong } else { th.border })
+        val pad = th.gap(3.0)
+        p.text(shown, Rect(r.x + pad, r.y, (r.w - pad * 2.0 - th.gap(4.0)).max(0.0), r.h),
+               0, th.body(), th.textPrimary)
+        drawChevron(p, Rect(right(r) - th.gap(6.0), r.y, th.gap(4.0), r.h), th.textSecondary)
+    })
+    v.h(t.control)
+    v.least(120.0, 0.0)
+    v.cursor = 0
+    v.tappable({ -> selectOpened(v, choices, index, onChange) })
+    return v
+}
+
+proc selectOpened(v: View, choices: List<String>, index: Int, onChange: (Int) -> Unit) {
+    openMenu(v.frame.x, bottom(v.frame) + 4.0, choices, index, onChange)
+}
+
+proc drawChevron(p: Paint, r: Rect, col: Int) {
+    val cx = centerX(r)
+    val cy = centerY(r)
+    val q = 3.0
+    p.canvas.line(cx - q, cy - q * 0.5, cx, cy + q * 0.6, 1.6, col)
+    p.canvas.line(cx, cy + q * 0.6, cx + q, cy - q * 0.5, 1.6, col)
+}
+
+/// A button that opens a menu of its own — a toolbar's overflow, a context
+/// menu behind three dots.
+public func menuButton(name: String, choices: List<String>, onPick: (Int) -> Unit): View {
+    val v = iconButton(name, { -> })
+    v.onTap = { -> openMenu(v.frame.x, bottom(v.frame) + 4.0, choices, -1, onPick) }
+    return v
+}

@@ -14,8 +14,6 @@ import "../src/dock.keal"
 
 // -------------------------------------------------------------------- state
 
-var t = darkTheme()
-
 val files = ["canvas.keal", "font.keal", "layout.keal", "paint.keal", "view.keal",
              "dock.keal", "app.keal", "theme.keal", "color.keal", "geom.keal",
              "state.keal", "text.keal", "ui.keal", "event.keal", "ffi.keal"]
@@ -134,7 +132,7 @@ proc setIcon(id: String, name: String) {
 func filesPanel(): View {
     val rows: List<View> = []
     rows.add(field(filter.get(), "filtrer…", { s -> filter.set(s) }).keyed("filter"))
-    rows.add(gapV(t.gap(1.0)))
+    rows.add(gapV(theme().gap(1.0)))
     val needle = filter.get().toLower()
     var i = 0
     while (i < files.size) {
@@ -144,18 +142,18 @@ func filesPanel(): View {
             val b = button(name, { -> chooseFile(idx) })
             b.kindOf(quiet)
             b.withIcon("file")
-            b.h(t.control - 4.0)
-            b.rounded(t.radiusSm)
-            b.font(t.small())
+            b.h(theme().control - 4.0)
+            b.rounded(theme().radiusSm)
+            b.font(theme().small())
             if (idx == chosen.get()) {
-                b.bg(t.accentSoft)
-                b.color(t.textPrimary)
+                b.bg(theme().accentSoft)
+                b.color(theme().textPrimary)
             }
             rows.add(b)
         }
         i++
     }
-    return scroll(rows).gaps(1.0).padAll(t.gap(2.0)).grows()
+    return scroll(rows).gaps(1.0).padAll(theme().gap(2.0)).grows()
 }
 
 /// The editor draws itself: a gutter of line numbers, then the text. This is
@@ -187,18 +185,18 @@ func editorPanel(): View {
 func terminalPanel(): View {
     val lines: List<View> = []
     for (l in log.get()) {
-        lines.add(label(l).font(textMono(11.5)).color(t.textSecondary))
+        lines.add(label(l).font(textMono(11.5)).color(theme().textSecondary))
     }
     val entry = field(commandLine.get(), "une commande", { s -> commandLine.set(s) })
     entry.keyed("cmd")
     entry.grows()
     entry.onTap = { -> submitCommand() }
     return column([
-        scroll(lines).gaps(2.0).padAll(t.gap(2.0)).grows(),
+        scroll(lines).gaps(2.0).padAll(theme().gap(2.0)).grows(),
         row([
-            label("›").font(textMono(13.0)).color(t.accent).w(12.0),
+            label("›").font(textMono(13.0)).color(theme().accent).w(12.0),
             entry
-        ]).gaps(t.gap(1.0)).padAll(t.gap(2.0)).aligned(mainStart, crossCenter)
+        ]).gaps(theme().gap(1.0)).padAll(theme().gap(2.0)).aligned(mainStart, crossCenter)
     ]).grows()
 }
 
@@ -207,36 +205,36 @@ func propertiesPanel(): View {
         heading("Affichage"),
         toggle("Retour à la ligne", wrapLines.get(), { b -> setWrap(b) }),
         checkbox("Rechargement à chaud", liveReload.get(), { b -> liveReload.set(b) }),
-        gapV(t.gap(1.5)),
+        gapV(theme().gap(1.5)),
         row([
-            label("Taille du texte").color(t.textSecondary).grows(),
+            label("Taille du texte").color(theme().textSecondary).grows(),
             badge((fontScale.get() * 100.0).round().toString() + " %")
         ]).aligned(mainStart, crossCenter),
         slider(fontScale.get(), 0.7, 2.0, { v -> fontScale.set(v) }),
-        gapV(t.gap(2.0)),
+        gapV(theme().gap(2.0)),
         divider(),
-        gapV(t.gap(2.0)),
+        gapV(theme().gap(2.0)),
         heading("Analyse"),
         row([
-            label("Couverture").color(t.textSecondary).grows(),
-            label((coverage.get() * 100.0).round().toString() + " %").color(t.textPrimary)
+            label("Couverture").color(theme().textSecondary).grows(),
+            label((coverage.get() * 100.0).round().toString() + " %").color(theme().textPrimary)
         ]),
         progress(coverage.get()),
-        gapV(t.gap(2.0)),
+        gapV(theme().gap(2.0)),
         row([
             button("Analyser", { -> analyse() }).kindOf(primary).grows(),
             button("Effacer", { -> clearLog() }).kindOf(danger)
-        ]).gaps(t.gap(2.0)),
-        gapV(t.gap(2.0)),
+        ]).gaps(theme().gap(2.0)),
+        gapV(theme().gap(2.0)),
         divider(),
-        gapV(t.gap(2.0)),
+        gapV(theme().gap(2.0)),
         heading("État"),
-        row([badge("prêt"), badge("15 modules"), badge("0 erreur")]).gaps(t.gap(1.5)),
-        gapV(t.gap(2.0)),
+        row([badge("prêt"), badge("15 modules"), badge("0 erreur")]).gaps(theme().gap(1.5)),
+        gapV(theme().gap(2.0)),
         paragraph("Chaque contrôle de ce panneau est dessiné par le rasteriseur "
                 + "écrit en Keal : les coins, les bordures, les ombres et le texte.")
-            .color(t.textMuted).font(t.small())
-    ]).gaps(t.gap(1.5)).padAll(t.gap(3.0)).grows()
+            .color(theme().textMuted).font(theme().small())
+    ]).gaps(theme().gap(1.5)).padAll(theme().gap(3.0)).grows()
 }
 
 /// A chart, drawn by hand — proof that a view can be anything.
@@ -276,11 +274,9 @@ func sinish(x: Float): Float {
 
 val app = App("keal-view — atelier", 1180, 740)
 
-proc flipTheme() {
-    t = if (t.dark) { lightTheme() } else { darkTheme() }
-    app.theme = t
-    kvSetDark(t.dark)
-    say("thème : " + (if (t.dark) { "sombre" } else { "clair" }))
+proc switchTheme() {
+    flipTheme()
+    say("thème : " + (if (theme().dark) { "sombre" } else { "clair" }))
 }
 
 func toolbar(): View {
@@ -292,16 +288,16 @@ func toolbar(): View {
                                    p.area.w, th.hairline), th.border)
         }),
         row([
-            icon("gear").color(t.accent).fontSize(17.0),
-            label("Atelier").font(textBold(14.0)).color(t.textPrimary),
+            icon("gear").color(theme().accent).fontSize(17.0),
+            label("Atelier").font(textBold(14.0)).color(theme().textPrimary),
             badge("keal-view"),
             spacer(),
             iconButton("play", { -> compile() }),
             iconButton("search", { -> revealFiles() }),
-            iconButton("dot", { -> flipTheme() }),
+            iconButton("dot", { -> switchTheme() }).tip("Changer de thème"),
             button("Ranger", { -> resetLayout() }).kindOf(quiet)
-        ]).gaps(t.gap(2.0)).padXY(t.gap(3.0), 0.0).aligned(mainStart, crossCenter)
-    ]).h(t.gap(11.0))
+        ]).gaps(theme().gap(2.0)).padXY(theme().gap(3.0), 0.0).aligned(mainStart, crossCenter)
+    ]).h(theme().gap(11.0))
 }
 
 func statusbar(): View {
@@ -313,26 +309,25 @@ func statusbar(): View {
         }),
         row([
             label("src/" + files[clampI(chosen.get(), 0, files.size - 1)])
-                .color(t.textSecondary).font(t.small()),
+                .color(theme().textSecondary).font(theme().small()),
             spacer(),
-            label(source.size.toString() + " lignes").color(t.textMuted).font(t.small()),
-            label("UTF-8").color(t.textMuted).font(t.small()),
-            label("Keal").color(t.textMuted).font(t.small())
-        ]).gaps(t.gap(4.0)).padXY(t.gap(3.0), 0.0).aligned(mainStart, crossCenter)
-    ]).h(t.gap(6.0))
+            label(source.size.toString() + " lignes").color(theme().textMuted).font(theme().small()),
+            label("UTF-8").color(theme().textMuted).font(theme().small()),
+            label("Keal").color(theme().textMuted).font(theme().small())
+        ]).gaps(theme().gap(4.0)).padXY(theme().gap(3.0), 0.0).aligned(mainStart, crossCenter)
+    ]).h(theme().gap(6.0))
 }
 
 func shell(): View {
     return column([
         toolbar(),
-        dockView(dock, t).grows(),
+        dockView(dock).grows(),
         statusbar()
     ]).grows()
 }
 
-app.theme = t
 app.onStart = { -> registerPanels() }
 app.build = { -> shell() }
-app.overlay = { -> dockOverlay(dock, t) }
+app.overlay = { -> dockOverlay(dock) }
 
 run(app)

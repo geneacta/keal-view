@@ -6,6 +6,7 @@ import "./font.keal"
 import "./geom.keal"
 import "./layout.keal"
 import "./paint.keal"
+import "./popup.keal"
 import "./state.keal"
 import "./text.keal"
 import "./theme.keal"
@@ -27,7 +28,6 @@ import "./view.keal"
 
 /// An application: a window, a look, and a function from state to a tree.
 public class App(public var title: String, public var width: Int, public var height: Int) {
-    public var theme: Theme = darkTheme()
     /// Called to produce the interface. It is called again whenever a `Cell`
     /// is written, so it must be a function of the state and nothing else —
     /// no side effects, no counters, no reading the clock.
@@ -49,9 +49,9 @@ public class App(public var title: String, public var width: Int, public var hei
 
 /// Open the window and run until it is closed.
 ///
-/// Every keal-view program also understands `--snapshot <file.bmp> [scale]`
-/// on its command line, which draws one frame to a file and exits without
-/// opening anything. That is how the examples in the README are made and how
+/// Every keal-view program also understands
+/// `--snapshot <file.bmp> [scale] [width height]` on its command line, which
+/// draws one frame to a file and exits without opening anything. That is how the examples in the README are made and how
 /// the widgets are checked on a machine with no display — the same code path
 /// the window uses, minus the window.
 public proc run(var app: App) {
@@ -60,7 +60,15 @@ public proc run(var app: App) {
         if (argv[0] == "--snapshot") {
             var sc = 2.0
             if (argv.size >= 3) { sc = argv[2].toFloat() ?: 2.0 }
-            snapshot(app, app.width, app.height, sc, argv[1])
+            var w = app.width
+            var h = app.height
+            // A size may be given, so that a page taller than its window can
+            // be photographed whole for the documentation.
+            if (argv.size >= 5) {
+                w = argv[3].toInt() ?: w
+                h = argv[4].toInt() ?: h
+            }
+            snapshot(app, w, h, sc, argv[1])
             return
         }
     }
@@ -68,13 +76,14 @@ public proc run(var app: App) {
         println("keal-view: the platform would not open a window")
         return
     }
-    kvSetDark(app.theme.dark)
+    kvSetDark(theme().dark)
+    var wasDark = theme().dark
     val fonts = systemFonts()
     if (fonts.sans == null) {
         println("keal-view: no system font could be read — text will not be drawn")
     }
     val canvas = Canvas()
-    val ui = Ui(canvas, fonts, app.theme)
+    val ui = Ui(canvas, fonts, theme())
     val t0 = kvNow()
     // `--window-id <file>` writes the system's number for this window into a
     // file, so that a script outside the process can point `screencapture -l`
@@ -92,7 +101,13 @@ public proc run(var app: App) {
     var lastRev = -1
     while (running) {
         ui.time = kvNow() - t0
-        ui.theme = app.theme
+        ui.theme = theme()
+        // The system draws the title bar, so it has to be told when the
+        // application's own idea of light and dark changed.
+        if (theme().dark != wasDark) {
+            wasDark = theme().dark
+            kvSetDark(wasDark)
+        }
 
         // Everything the system has to say, taken in one go: a burst of mouse
         // moves should cost one frame, not one frame each.
@@ -112,7 +127,7 @@ public proc run(var app: App) {
         canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
         val area = canvas.bounds()
 
-        var root = stack([app.build(), app.overlay()])
+        var root = stack([app.build(), app.overlay(), popupLayer()])
         layout(ui, root, area)
         var i = 0
         while (i < events.size) {
@@ -120,14 +135,14 @@ public proc run(var app: App) {
             i++
         }
         if (revision() != lastRev) {
-            root = stack([app.build(), app.overlay()])
+            root = stack([app.build(), app.overlay(), popupLayer()])
             layout(ui, root, area)
             lastRev = revision()
         }
 
         ui.animating = false
         canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
-        canvas.clear(app.theme.bg)
+        canvas.clear(theme().bg)
         paint(ui, root)
         kvSetCursor(ui.cursor)
         kvFlush()
@@ -158,6 +173,7 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         }
         if (ui.active != 0) { drag(ui, root, e) }
         setCursor(ui, root, e)
+        tipUnder(ui, root, e)
         return
     }
 
@@ -183,6 +199,7 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         if (h.kind == kField) { caretToPointer(ui, h, e, false) }
         if (h.kind == kSlider) { sliderToPointer(ui, h, e.x) }
         if (h.kind == kTabs) { tabAt(ui, h, e.x) }
+        if (h.kind == kSegmented) { segmentAt(ui, h, e.x) }
         invalidate()
         return
     }
@@ -245,6 +262,7 @@ proc fire(var n: View) {
     if (n.kind == kButton) { n.onTap(); return }
     if (n.kind == kCheck) { n.onBool(not n.on); return }
     if (n.kind == kToggle) { n.onBool(not n.on); return }
+    if (n.kind == kRadio) { n.onTap(); return }
 }
 
 proc drag(var ui: Ui, var root: View, e: Event) {
@@ -265,6 +283,15 @@ proc drag(var ui: Ui, var root: View, e: Event) {
         invalidate()
         return
     }
+}
+
+/// Show the note attached to whatever the pointer is resting on, and take it
+/// away as soon as the pointer is somewhere else.
+proc tipUnder(var ui: Ui, root: View, e: Event) {
+    val h = hit(root, e.x, e.y)
+    if (h == null) { hideTip(); return }
+    if (h.tipText == "") { hideTip(); return }
+    showTip(e.x + 14.0, e.y + 18.0, h.tipText)
 }
 
 proc setCursor(var ui: Ui, root: View, e: Event) {
@@ -294,6 +321,14 @@ proc sliderToPointer(var ui: Ui, var v: View, x: Float) {
     if (v.step > 0.0) { value = v.lo + ((value - v.lo) / v.step).round().toFloat() * v.step }
     value = clampF(value, v.lo.min(v.hi), v.lo.max(v.hi))
     if (value != v.value) { v.onFloat(value) }
+}
+
+proc segmentAt(var ui: Ui, var v: View, x: Float) {
+    val n = v.options.size
+    if (n == 0) { return }
+    val inner = shrink(v.frame, ui.theme.gap(0.75))
+    val i = clampI(floorI((x - inner.x) / (inner.w / n.toFloat())), 0, n - 1)
+    if (i != v.index) { v.onIndex(i) }
 }
 
 proc tabAt(var ui: Ui, var v: View, x: Float) {
@@ -380,6 +415,11 @@ proc moveCaret(var ui: Ui, var v: View, to: Int, extend: Bool) {
 proc keyDown(var ui: Ui, var root: View, e: Event) {
     val key = e.key
 
+    // Escape puts away whatever is over the interface before it reaches it.
+    if (key == keyEscape()) {
+        if (popupOpen()) { closePopup(); return }
+    }
+
     if (key == keyTab()) {
         moveFocus(ui, root, not e.shift())
         return
@@ -452,13 +492,28 @@ proc moveFocus(var ui: Ui, var root: View, forward: Bool) {
 public proc snapshot(var app: App, w: Int, h: Int, scale: Float, path: String) {
     val fonts = systemFonts()
     val canvas = canvasOffscreen(w, h, scale)
-    val ui = Ui(canvas, fonts, app.theme)
+    val ui = Ui(canvas, fonts, theme())
     app.onStart()
-    val root = stack([app.build(), app.overlay()])
+    val root = stack([app.build(), app.overlay(), popupLayer()])
     val area = canvas.bounds()
     layout(ui, root, area)
-    canvas.clear(app.theme.bg)
+    canvas.clear(theme().bg)
     paint(ui, root)
     if (kvSaveBmp(path) == 0) { println("keal-view: could not write ${path}") }
     app.onStop()
+}
+
+/// The shortest way to a window.
+///
+///     runApp("Hello", 320, 200, { ->
+///         column([label("hello")]).padAll(24.0)
+///     })
+///
+/// Everything `App` can be told is still there when it is wanted — a theme,
+/// an overlay, a key handler, something to do on start. This is the two lines
+/// of ceremony removed for the case that does not want them.
+public proc runApp(title: String, w: Int, h: Int, build: () -> View) {
+    val app = App(title, w, h)
+    app.build = build
+    run(app)
 }

@@ -57,6 +57,8 @@ proc paintNode(var ui: Ui, v: View) {
     if (v.kind == kButton) { paintButton(ui, v); return }
     if (v.kind == kCheck) { paintCheck(ui, v); return }
     if (v.kind == kToggle) { paintToggle(ui, v); return }
+    if (v.kind == kRadio) { paintRadio(ui, v); return }
+    if (v.kind == kSegmented) { paintSegmented(ui, v); return }
     if (v.kind == kSlider) { paintSlider(ui, v); return }
     if (v.kind == kProgress) { paintProgress(ui, v); return }
     if (v.kind == kField) { paintField(ui, v); return }
@@ -158,7 +160,12 @@ proc paintButton(var ui: Ui, v: View) {
     val st = ui.styleFor(v)
     val sc = c.scale
     val gap = t.gap(1.5)
-    val iconW = if (v.icon == "") { 0.0 } else { st.size + 2.0 }
+    // An icon alone carries the whole button, so it is drawn to the button's
+    // height rather than to the text size it does not have.
+    var iconW = 0.0
+    if (v.icon != "") {
+        iconW = if (v.label == "") { (r.h * 0.56).min(26.0) } else { st.size + 3.0 }
+    }
     val textW = if (v.label == "") { 0.0 } else { ui.fonts.width(v.label, st, sc) }
     var total = iconW + textW
     if ((iconW > 0.0) and (textW > 0.0)) { total = total + gap }
@@ -202,6 +209,63 @@ proc paintCheck(var ui: Ui, v: View) {
         val x = r.x + side + t.gap(2.0)
         ui.fonts.drawIn(c, v.label, Rect(x, r.y, (r.w - side - t.gap(2.0)).max(0.0), r.h),
                         0, ui.styleFor(v), ui.inkFor(v))
+    }
+}
+
+proc paintRadio(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val side = checkSize(t)
+    val cx = r.x + side / 2.0
+    val cy = centerY(r)
+    val rad = side / 2.0
+    val hot = ui.isHot(v)
+    var edge = if (hot) { t.borderStrong } else { t.border }
+    if (v.on) { edge = t.accent }
+    if (not v.enabled) { edge = fade(edge, 0.45) }
+    c.fillCircle(cx, cy, rad, if (v.enabled) { t.surfaceHi } else { fade(t.surfaceHi, 0.5) })
+    c.strokeRound(Rect(cx - rad, cy - rad, side, side), rad, t.hairline, edge)
+    if (v.on) {
+        c.fillCircle(cx, cy, rad * 0.46,
+                     if (v.enabled) { t.accent } else { fade(t.accent, 0.45) })
+    }
+    focusRing(ui, v, rad)
+    if (v.label != "") {
+        val x = r.x + side + t.gap(2.0)
+        ui.fonts.drawIn(c, v.label, Rect(x, r.y, (r.w - side - t.gap(2.0)).max(0.0), r.h),
+                        0, ui.styleFor(v), ui.inkFor(v))
+    }
+}
+
+/// A row of choices in a well, the pressed one raised out of it.
+proc paintSegmented(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val st = ui.styleFor(v)
+    val sc = c.scale
+    val n = v.options.size
+    if (n == 0) { return }
+    c.fillRound(r, t.radiusMd, t.surfaceDown)
+    val pad = t.gap(0.75)
+    val inner = shrink(r, pad)
+    val w = inner.w / n.toFloat()
+    var i = 0
+    while (i < n) {
+        val seg = Rect(inner.x + w * i.toFloat(), inner.y, w, inner.h)
+        val chosen = i == v.index
+        val hot = ui.isHot(v) and holds(seg, ui.pointer.x, ui.pointer.y)
+        if (chosen) {
+            c.shadow(seg, t.radiusSm, 4.0, 1.0, fade(t.shadow, 0.5))
+            c.fillRound(seg, t.radiusSm, t.surface)
+        } else {
+            if (hot) { c.fillRound(seg, t.radiusSm, withAlpha(t.surfaceHi, 150)) }
+        }
+        val ink = if (chosen) { t.textPrimary }
+                  else { if (v.enabled) { t.textSecondary } else { t.textMuted } }
+        ui.fonts.drawIn(c, v.options[i], seg, 1, st, ink)
+        i++
     }
 }
 
