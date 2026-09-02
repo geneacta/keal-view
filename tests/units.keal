@@ -296,6 +296,21 @@ proc textTests() {
     ok("but it still advances", sp.advance > 1.0)
     ok("an accented letter resolves", face.glyphId("é".code()) != 0)
     ok("the same glyph twice is the same object", face.glyphOf("A".code(), 32.0).w == g.w)
+
+    // The cache is bounded, or a slider that changes the text size while it is
+    // dragged would ask for a new set of every glyph at every sixty-fourth of
+    // a pixel and never give one back.
+    var px = 8.0
+    while (px < 60.0) {
+        var c = 32
+        while (c < 90) {
+            face.glyphOf(c, px)
+            c++
+        }
+        px = px + 0.25
+    }
+    ok("the glyph cache stays bounded", face.cached() <= glyphCacheLimit())
+    ok("and still answers correctly afterwards", face.glyphOf("A".code(), 32.0).mask != 0)
 }
 
 // -------------------------------------------------------------------- state

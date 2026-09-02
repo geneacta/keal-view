@@ -57,7 +57,13 @@ public class Glyph(
     public val top: Int,
     /// Device pixels the pen moves after drawing it.
     public val advance: Float
-)
+) {
+    /// The mask lives outside Keal's heap, so nothing would ever collect it.
+    /// Deterministic destruction does: when the cache that holds this glyph
+    /// lets go — because the size it was rasterised at is no longer wanted, or
+    /// because the font itself died — the bytes go with it, at that statement.
+    proc deinit() { kvBlobFree(this.mask) }
+}
 
 // ------------------------------------------------------------------- fonts
 
@@ -77,6 +83,12 @@ public class Font(public val blob: Int, public val base: Int) {
     public var ok: Bool = false
     var glyphs: Map<Int, Glyph> = {}
     var gids: Map<Int, Int> = {}
+
+    /// The font file itself is a blob too, and dies with the font.
+    proc deinit() { kvBlobFree(this.blob) }
+
+    /// How many rasterised glyphs are held right now.
+    public func cached(): Int { return this.glyphs.size }
 
     /// The offset of a table, or 0 when the font has none.
     public func table(name: String): Int {
@@ -193,10 +205,18 @@ public class Font(public val blob: Int, public val base: Int) {
     /// **device** pixels: the caller has already multiplied by the display's
     /// scale, which is why a Retina screen gets a Retina glyph and not a
     /// stretched one.
+    ///
+    /// The cache is bounded, and it has to be. Sizes are cached to a
+    /// sixty-fourth of a pixel, so a slider that changes the text size while
+    /// it is dragged asks for a new set of every glyph at every step — an
+    /// interface that keeps drawing would grow without limit. Past the bound
+    /// the whole cache goes; the frame after that redraws it, once, for the
+    /// sizes actually on screen.
     public func glyph(gid: Int, px: Float): Glyph {
         val key = gid * 100000 + (px * 64.0).round()
         val hit = this.glyphs[key]
         if (hit != null) { return hit }
+        if (this.glyphs.size >= glyphCacheLimit()) { this.glyphs.clear() }
         val g = this.render(gid, px)
         this.glyphs[key] = g
         return g
@@ -350,6 +370,11 @@ public class Font(public val blob: Int, public val base: Int) {
         }
     }
 }
+
+/// How many rasterised glyphs to keep. Four thousand is a few megabytes and
+/// far more than any one frame asks for — a page of text at three sizes is
+/// perhaps three hundred.
+public func glyphCacheLimit(): Int { return 4000 }
 
 func f2dot14(b: Int, o: Int): Float { return i16(b, o).toFloat() / 16384.0 }
 
