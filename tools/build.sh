@@ -32,7 +32,7 @@ case $(uname -s) in
     ;;
   Linux)
     BACKEND=$ROOT/runtime/kv_x11.c
-    LINK="-lX11 -lXext"
+    LINK="-lX11"
     ;;
   MINGW*|MSYS*|CYGWIN*|Windows_NT)
     BACKEND=$ROOT/runtime/kv_win32.c

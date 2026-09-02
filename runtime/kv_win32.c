@@ -10,6 +10,17 @@
  */
 #include "kv.h"
 
+/* UNICODE before windows.h, so that `MAKEINTRESOURCE` — and with it
+ * `IDC_ARROW` and its siblings — expands to the wide form the `…W` entry
+ * points take. Without it MinGW hands `LoadCursorW` an `LPSTR` and the
+ * compiler is right to refuse. Everything here calls the W functions by name
+ * already; this only makes the macros agree. */
+#ifndef UNICODE
+#define UNICODE
+#endif
+#ifndef _UNICODE
+#define _UNICODE
+#endif
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <windowsx.h>
