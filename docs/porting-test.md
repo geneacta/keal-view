@@ -29,6 +29,18 @@ cd keal && cargo build --release && cd ../keal-view
 tools/build.sh examples/gallery.keal
 ```
 
+**The compiler moves too.** keal-view uses language features that arrived
+because keal-view asked for them, so `git pull` in `../keal` and
+`cargo build --release` are part of updating this repository, not a separate
+errand. A stale compiler refuses with `the C backend cannot compile …`,
+naming the construct — that message means the compiler is behind, not that
+your machine is at fault.
+
+And do not pipe `tools/build.sh` into anything. A pipeline's exit status is
+the last command's, so `tools/build.sh … | tail -2 && ./units` runs the old
+binary after a failed build and tells you nothing about why it behaves
+strangely. `tools/test.sh` prints the compiler it used, for the same reason.
+
 ---
 
 ## 1. Before the window: is the framework itself alright?

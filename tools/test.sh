@@ -17,6 +17,11 @@ elif [ -x "$ROOT/../keal/target/release/keal" ]; then KEAL_BIN=$ROOT/../keal/tar
 else KEAL_BIN=keal
 fi
 
+# Which compiler, said out loud: keal-view uses language features that arrived
+# because it asked for them, so a stale one refuses in ways that look like this
+# repository's fault.
+echo "compiler: $("$KEAL_BIN" version) at $KEAL_BIN"
+
 "$ROOT/tools/build.sh" "$ROOT/tests/units.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/tests/shapes.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/tests/text.keal" >/dev/null

@@ -212,14 +212,26 @@ window without capturing anything else on the screen.
 | | | |
 |---|---|---|
 | macOS | `runtime/kv_cocoa.m` | Cocoa. **Verified** — developed here |
-| Windows | `runtime/kv_win32.c` | Win32 and a BI_RGB DIB. **Compiled in CI, never run** |
-| Linux | `runtime/kv_x11.c` | Xlib only, no toolkit. **Compiled in CI, never run** |
+| Windows | `runtime/kv_win32.c` | Win32 and a BI_RGB DIB. **Verified** on Windows 10 22H2 (19045), MinGW-w64. Everything in [`docs/porting-test.md`](docs/porting-test.md) except display scaling, which was not tested |
+| Linux | `runtime/kv_x11.c` | Xlib only, no toolkit. **Builds and runs its whole test suite in CI; the window has never opened** |
 
-The last two were written against the same dozen functions the first answers,
-and nothing above `runtime/` changed to add them — which is the point of
-having drawn the boundary where it is. But they have not run: there is no
-Windows or Linux machine here, and compiling is not working. If you have one,
-the first report is welcome.
+All three were written against the same dozen functions, and nothing above
+`runtime/` changed to add the second and third — which is the point of having
+drawn the boundary where it is.
+
+Windows was verified by someone on a real machine, in three passes, and it
+cost four defects: three of them above the backend and therefore present on
+every platform (`Ctrl`+A/C/X/V did nothing anywhere, no selection was ever
+painted, a double click selected nothing), one in the backend (a light title
+bar), and then a fifth that only a race could show — `OpenClipboard` losing to
+the system's clipboard-history service about 6 % of the time, which the
+backend now retries through.
+
+Linux is where Windows was a day ago: the framework builds there, the 160
+assertions pass there, and every example draws a frame there, all in CI with
+no display. The window itself is untested. If you have a Linux machine,
+[`docs/porting-test.md`](docs/porting-test.md) is the checklist, and the first
+report is welcome.
 
 The framebuffer format is the same on all three — `0xAARRGGBB` in a
 `uint32_t` — because that is what CoreGraphics, a 32-bit BI_RGB DIB and an
