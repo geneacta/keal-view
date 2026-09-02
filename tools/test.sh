@@ -15,12 +15,16 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 "$ROOT/tools/build.sh" "$ROOT/examples/gallery.keal" >/dev/null
 
 cd "$ROOT/build"
-./units
-./shapes >/dev/null
-./text >/dev/null
-./calculator --snapshot calculator.bmp 2
-./studio --snapshot studio.bmp 2
-./gallery --snapshot gallery.bmp 2 900 1900
+
+# Windows names the executable with an extension and nothing else does.
+run() { p=$1; shift; if [ -x "./$p.exe" ]; then "./$p.exe" "$@"; else "./$p" "$@"; fi; }
+
+run units
+run shapes >/dev/null
+run text >/dev/null
+run calculator --snapshot calculator.bmp 2
+run studio --snapshot studio.bmp 2
+run gallery --snapshot gallery.bmp 2 900 1900
 
 for f in shapes text calculator studio gallery; do
   [ -s "$f.bmp" ] || { echo "FAIL  $f drew nothing" >&2; exit 1; }

@@ -53,4 +53,5 @@ echo "keal $(basename "$SRC")"
 cd "$OUT"
 # shellcheck disable=SC2086
 "$KEAL" build "$SRC" "$OBJ" -I"$ROOT/runtime" $LINK
-echo "→ build/$NAME"
+# Windows adds the extension; everywhere else the stem is the whole name.
+if [ -f "$NAME.exe" ]; then echo "→ build/$NAME.exe"; else echo "→ build/$NAME"; fi
