@@ -24,7 +24,6 @@ elif command -v keal >/dev/null 2>&1; then KEAL=keal
 else echo "no keal compiler found — set KEAL, or build ../keal" >&2; exit 1
 fi
 
-CC=${CC:-cc}
 case $(uname -s) in
   Darwin)
     BACKEND=$ROOT/runtime/kv_cocoa.m
@@ -37,9 +36,13 @@ case $(uname -s) in
   MINGW*|MSYS*|CYGWIN*|Windows_NT)
     BACKEND=$ROOT/runtime/kv_win32.c
     LINK="-lgdi32 -luser32"
+    # MinGW-w64 ships `gcc` and no `cc` at all, so the Unix default is not a
+    # default here.
+    CC=${CC:-gcc}
     ;;
   *) echo "keal-view has no backend for $(uname -s)" >&2; exit 1 ;;
 esac
+CC=${CC:-cc}
 
 OBJ=$OUT/$(basename "$BACKEND" | sed 's/\.[^.]*$//').o
 if [ ! -f "$OBJ" ] || [ "$BACKEND" -nt "$OBJ" ] || [ "$ROOT/runtime/kv.h" -nt "$OBJ" ]; then

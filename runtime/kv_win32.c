@@ -35,6 +35,7 @@ static int    alive = 0;
 static double scale = 1.0;
 static int64_t pxw = 0, pxh = 0;
 static LARGE_INTEGER freq, start;
+static int      want_dark = 0;
 static HCURSOR cursors[5];
 static int     cursor_now = 0;
 
@@ -185,12 +186,20 @@ static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             push(e);
             return 0;
         }
-        case WM_KEYDOWN: case WM_SYSKEYDOWN:
+        case WM_KEYDOWN: case WM_SYSKEYDOWN: {
             e = blank(KV_EV_KEYDOWN);
             e.key = named_key(wp);
             e.mods = mods_now();
+            /* The letter the key would type with nothing held down, so that a
+             * shortcut can be told from another one. Ctrl+C sends WM_CHAR 0x03,
+             * which is dropped as a control character and rightly so, and the
+             * key press would otherwise carry nothing at all. */
+            UINT ch = MapVirtualKeyW((UINT)wp, 2 /* MAPVK_VK_TO_CHAR */) & 0x7FFF;
+            if (ch >= 'A' && ch <= 'Z') ch += 32;
+            if (ch >= 32 && ch < 127) { e.text[0] = (char)ch; e.text[1] = 0; }
             push(e);
             return 0;
+        }
         case WM_KEYUP: case WM_SYSKEYUP:
             e = blank(KV_EV_KEYUP);
             e.key = named_key(wp);
@@ -266,6 +275,10 @@ int64_t kvp_open(const char *title, int64_t w, int64_t h) {
                           want.right - want.left, want.bottom - want.top,
                           NULL, NULL, wc.hInstance, NULL);
     if (!win) return 0;
+    /* Before the window is shown: Windows 10 does not repaint a caption that
+     * is already on screen, so this is the only moment a dark one takes hold
+     * without a resize to shake it loose. */
+    kvp_set_dark(want_dark);
     ShowWindow(win, SW_SHOW);
     UpdateWindow(win);
     SetForegroundWindow(win);
@@ -342,20 +355,44 @@ void kvp_set_cursor(int64_t shape) {
     SetCursor(cursors[cursor_now]);
 }
 
+/* Remember what the application wants before there is a window to want it of.
+ * `kvp_open` applies this between creating the window and showing it. */
+void kvp_prefer_dark(int64_t dark) { want_dark = dark ? 1 : 0; }
+
 /* Windows has no system-wide dark title bar before build 17763, and telling
  * it about one after that is a documented-but-undocumented attribute. Both
- * cases are handled by asking and ignoring a refusal. */
+ * cases are handled by asking and ignoring a refusal.
+ *
+ * The attribute takes effect immediately on a window that has not been shown,
+ * and not at all on one that has: `RedrawWindow(RDW_FRAME)` and
+ * `SetWindowPos(SWP_FRAMECHANGED)` both leave the old caption in place, and a
+ * real change of size is the only thing that makes the desktop manager
+ * rebuild it. So a window already on screen is nudged one pixel and back —
+ * which is a hack, and is here because the alternative is a light caption over
+ * a dark application every time the theme is switched. */
 void kvp_set_dark(int64_t dark) {
     if (!win) return;
+    want_dark = dark ? 1 : 0;
     HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
     if (!dwm) return;
     typedef HRESULT (WINAPI *SetAttr_t)(HWND, DWORD, LPCVOID, DWORD);
     SetAttr_t f = (SetAttr_t)(void *)GetProcAddress(dwm, "DwmSetWindowAttribute");
+    int applied = 0;
     if (f) {
         BOOL v = dark ? TRUE : FALSE;
-        if (f(win, 20, &v, sizeof v) != S_OK) f(win, 19, &v, sizeof v);
+        if (f(win, 20, &v, sizeof v) == S_OK) applied = 1;
+        else if (f(win, 19, &v, sizeof v) == S_OK) applied = 1;
     }
     FreeLibrary(dwm);
+    if (applied && IsWindowVisible(win)) {
+        RECT r;
+        if (GetWindowRect(win, &r)) {
+            int w = r.right - r.left, h = r.bottom - r.top;
+            UINT flags = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS;
+            SetWindowPos(win, NULL, 0, 0, w, h + 1, flags);
+            SetWindowPos(win, NULL, 0, 0, w, h, flags);
+        }
+    }
 }
 
 int64_t kvp_window_id(void) { return (int64_t)(intptr_t)win; }

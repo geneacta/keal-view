@@ -72,6 +72,8 @@ public proc run(var app: App) {
             return
         }
     }
+    // Said before the window opens, because one platform can only hear it then.
+    kvPreferDark(theme().dark)
     if (kvOpen(app.title, app.width, app.height) == 0) {
         println("keal-view: the platform would not open a window")
         return
@@ -196,7 +198,19 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         // every toolkit that does this is criticised for.
         val wantFocus = if (h.kind == kField) { h.id } else { 0 }
         if (wantFocus != ui.focus) { ui.focus = wantFocus }
-        if (h.kind == kField) { caretToPointer(ui, h, e, false) }
+        if (h.kind == kField) {
+            caretToPointer(ui, h, e, false)
+            // Two clicks take the word, three take the line.
+            if (e.clicks == 2) {
+                val w = wordAround(h.label, ui.caretOf(h.id, 0))
+                ui.setAnchor(h.id, w.x.toInt())
+                ui.setCaret(h.id, w.y.toInt())
+            }
+            if (e.clicks >= 3) {
+                ui.setAnchor(h.id, 0)
+                ui.setCaret(h.id, h.label.length)
+            }
+        }
         if (h.kind == kSlider) { sliderToPointer(ui, h, e.x) }
         if (h.kind == kTabs) { tabAt(ui, h, e.x) }
         if (h.kind == kSegmented) { segmentAt(ui, h, e.x) }
@@ -404,10 +418,39 @@ proc deleteSel(var ui: Ui, var v: View, backwards: Bool) {
 
 proc moveCaret(var ui: Ui, var v: View, to: Int, extend: Bool) {
     val n = v.label.length
+    val from = clampI(ui.caretOf(v.id, n), 0, n)
     val at = clampI(to, 0, n)
+    // Extending needs somewhere to extend *from*. A field reached by Tab has
+    // never been clicked, so it has no anchor, and `anchorOf` would answer the
+    // caret — which is where the caret is going, so the selection would be
+    // empty however far it ran. Pin the anchor where the caret was.
+    if (extend) { ui.setAnchor(v.id, clampI(ui.anchorOf(v.id, from), 0, n)) }
+    else { ui.setAnchor(v.id, at) }
     ui.setCaret(v.id, at)
-    if (not extend) { ui.setAnchor(v.id, at) }
     invalidate()
+}
+
+/// The run of letters or digits around `at`, as an ordered pair. What a double
+/// click selects.
+func wordAround(s: String, at: Int): Rect {
+    val cs = s.chars()
+    if (cs.size == 0) { return Rect(0.0, 0.0, 0.0, 0.0) }
+    var a = clampI(at, 0, cs.size)
+    if ((a >= cs.size) or (not wordish(cs[a]))) { a = (a - 1).max(0) }
+    if (not wordish(cs[a])) { return Rect(at.toFloat(), at.toFloat(), 0.0, 0.0) }
+    var b = a
+    while ((a > 0) and wordish(cs[a - 1])) { a-- }
+    while (((b + 1) < cs.size) and wordish(cs[b + 1])) { b++ }
+    return Rect(a.toFloat(), (b + 1).toFloat(), 0.0, 0.0)
+}
+
+func wordish(c: String): Bool {
+    if ((c >= "0") and (c <= "9")) { return true }
+    val l = c.toLower()
+    if ((l >= "a") and (l <= "z")) { return true }
+    // Anything above ASCII is a letter as far as a double click is concerned:
+    // guessing otherwise would break every language that has accents.
+    return c.code() > 127
 }
 
 // ------------------------------------------------------------- the keyboard

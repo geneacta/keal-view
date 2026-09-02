@@ -110,6 +110,11 @@ void    kvp_clipboard_set(const char *s);
 char   *kvp_font_path(int64_t which);
 int64_t kvp_window_id(void);
 void    kvp_set_dark(int64_t dark);
+/* Said *before* `kvp_open`. Windows will not repaint a caption that is already
+ * on screen, so the only reliable moment to ask for a dark one is between
+ * creating the window and showing it. The other two platforms have nothing to
+ * do here and do nothing. */
+void    kvp_prefer_dark(int64_t dark);
 
 #ifdef __cplusplus
 }

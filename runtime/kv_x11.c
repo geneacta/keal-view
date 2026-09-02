@@ -197,6 +197,15 @@ static void translate(XEvent *ev) {
             e = blank(KV_EV_KEYDOWN);
             e.key = named_key(ks);
             e.mods = mods_of(ev->xkey.state);
+            /* The letter the key carries with nothing held down, so that a
+             * shortcut can be told from another one. */
+            KeySym base = XLookupKeysym(&ev->xkey, 0);
+            if (base >= 32 && base < 127) {
+                char c0 = (char)base;
+                if (c0 >= 'A' && c0 <= 'Z') c0 = (char)(c0 + 32);
+                e.text[0] = c0;
+                e.text[1] = 0;
+            }
             push(e);
             if (n > 0 && (unsigned char)buf[0] >= 32 && (unsigned char)buf[0] != 127) {
                 KvEv te = blank(KV_EV_TEXT);
@@ -379,6 +388,10 @@ void kvp_set_cursor(int64_t shape) {
     if (shape < 0 || shape > 4) shape = 0;
     XDefineCursor(dpy, win, cursors[shape]);
 }
+
+/* The window manager owns the decorations, and reads the hint whenever it
+ * likes, so there is nothing to arrange in advance. */
+void kvp_prefer_dark(int64_t dark) { (void)dark; }
 
 /* X11 has no title bar of its own — the window manager draws it. This sets
  * the hint GTK-based managers read, and does nothing anywhere else, which is

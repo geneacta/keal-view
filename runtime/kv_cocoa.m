@@ -156,6 +156,16 @@ static int translate(NSEvent *e) {
             ev = blank(KV_EV_KEYDOWN);
             ev.mods = m;
             ev.key = named_key([e keyCode]);
+            /* The letter the key would type with nothing held down, so that a
+             * shortcut can be told from another one. A key press carries no
+             * text otherwise — the text arrives as its own event, and a
+             * shortcut suppresses that. */
+            NSString *base = [e charactersIgnoringModifiers];
+            if ([base length] > 0) {
+                unichar c0 = [base characterAtIndex:0];
+                if (c0 >= 'A' && c0 <= 'Z') c0 = (unichar)(c0 + 32);
+                if (c0 >= 32 && c0 < 127) { ev.text[0] = (char)c0; ev.text[1] = 0; }
+            }
             push(ev);
             if (m & KV_MOD_SUPER) return 0;      /* let the menu have it */
             NSString *s = [e characters];
@@ -311,6 +321,10 @@ void kvp_present(const uint32_t *fb, int64_t w, int64_t h) {
 /* The system's own number for this window. `screencapture -l <n>` captures
  * exactly it, which is how the pictures in the README are made and how a
  * window can be looked at from outside the process that owns it. */
+/* Cocoa repaints the title bar whenever it is told, so there is nothing to
+ * arrange in advance. */
+void kvp_prefer_dark(int64_t dark) { (void)dark; }
+
 /* The title bar belongs to the system, not to the framebuffer, so a dark
  * application has to say so or it gets a white strip above a black window. */
 void kvp_set_dark(int64_t dark) {

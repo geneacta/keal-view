@@ -118,9 +118,11 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
         w = acc
     } else { if (v.kind == kHandle) {
         // A divider is thin along the axis it divides and takes whatever it
-        // is given across it.
-        w = if (v.vertical) { t.gap(1.5) } else { availW }
-        hh = if (v.vertical) { availH } else { t.gap(1.5) }
+        // is given across it. Eight points, not the four it draws as: a
+        // divider is aimed at with a mouse, and the thing you can hit should
+        // be bigger than the thing you can see.
+        w = if (v.vertical) { t.gap(2.0) } else { availW }
+        hh = if (v.vertical) { availH } else { t.gap(2.0) }
     } else { if (v.kind == kSpacer) {
         w = 0.0
         hh = 0.0

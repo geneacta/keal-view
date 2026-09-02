@@ -378,7 +378,7 @@ proc paintField(var ui: Ui, v: View) {
             val a = ui.fonts.xOfIndex(shown, caret.min(anchor), st, sc)
             val b = ui.fonts.xOfIndex(shown, caret.max(anchor), st, sc)
             c.fillRect(Rect(inner.x + a - shift, inner.y + (inner.h - lh) / 2.0, b - a, lh),
-                       t.accentSoft)
+                       t.selection)
         }
         ui.fonts.draw(c, shown, inner.x - shift, baseline, st, ui.inkFor(v))
         if (focused) {

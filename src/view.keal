@@ -458,6 +458,7 @@ public func link(s: String, onTap: () -> Unit, t: Theme = theme()): View {
     v.kindOf(quiet)
     v.color(t.accent)
     v.padXY(0.0, 0.0)
+    v.pointer(1)          // a hand: a link is the one control that gets one
     return v
 }
 

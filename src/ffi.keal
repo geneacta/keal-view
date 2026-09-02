@@ -93,6 +93,10 @@ public extern proc kvClipboardSet(s: borrow String) = "kvp_clipboard_set"
 /// Tell the system's own chrome — the title bar, the traffic lights — which
 /// way the application's theme goes.
 public extern proc kvSetDark(dark: Bool) = "kvp_set_dark"
+/// The same, said *before* the window exists. Windows will not repaint a
+/// caption that is already on screen, so the only moment a dark one takes
+/// hold there is between creating the window and showing it.
+public extern proc kvPreferDark(dark: Bool) = "kvp_prefer_dark"
 /// The window's number as the system knows it — what `screencapture -l` takes.
 public extern func kvWindowId(): Int = "kvp_window_id"
 /// A path to a font the system already has: 0 sans, 1 sans bold, 2 monospace.

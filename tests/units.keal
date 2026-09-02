@@ -233,6 +233,35 @@ proc dockTests() {
     eqI("outside is nothing at all", zoneAt(d2, 500.0, 500.0), zoneNone)
     eqF("a left drop takes a third", zoneRect(n.area, zoneLeft).w, 32.0)
     eqF("a middle drop takes it all", zoneRect(n.area, zoneCentre).w, 100.0)
+
+    // The divider between two panes asks for a resize pointer, and the
+    // dispatcher hands that shape to the platform.
+    val ui = testUi()
+    val app = App("t", 400, 300)
+    val d3 = Dock(beside(leaf(["a"]), leaf(["b"]), 0.5))
+    d3.add(panelOf("a", "A", { -> label("a") }))
+    d3.add(panelOf("b", "B", { -> label("b") }))
+    val tree = dockView(d3, ui.theme)
+    val area = Rect(0.0, 0.0, 400.0, 300.0)
+    layout(ui, tree, area)
+    val bar = firstHandle(tree)
+    ok("a split has a divider", bar != null)
+    if (bar != null) {
+        eqI("which asks for a sideways pointer", bar.cursor, cursorResizeH())
+        dispatch(ui, app, tree, moveTo(centerX(bar.frame), centerY(bar.frame)))
+        eqI("and the dispatcher passes it on", ui.cursor, cursorResizeH())
+    }
+}
+
+func firstHandle(v: View): View? {
+    if (v.kind == kHandle) { return v }
+    var i = 0
+    while (i < v.kids.size) {
+        val f = firstHandle(v.kids[i])
+        if (f != null) { return f }
+        i++
+    }
+    return null
 }
 
 // -------------------------------------------------------------------- text
@@ -425,6 +454,84 @@ proc interactionTests() {
     dispatch(ui, app, t7, up(gx, gy))
     eqI("a press that did not move is a click", stray, 1)
     eqI("and not a drop", drops, 1)
+
+
+    // Selection: the anchor is where the extend started, and it must exist
+    // even when the field was reached by Tab and never clicked.
+    //
+    // The fields below are `keyed` on purpose. Identity is the path down the
+    // tree, so `column([field])` twice is the *same* field as far as retained
+    // state is concerned — which is right in an application and wrong in a
+    // test that builds a dozen unrelated trees against one `Ui`.
+    val sel1 = field("hello", "", { s -> }).sized(200.0, 30.0).keyed("sel1")
+    var t9 = column([sel1])
+    layout(ui, t9, area)
+    ui.focus = sel1.id
+    ui.setCaret(sel1.id, 5)
+    dispatch(ui, app, t9, Event(evKeyDown(), 0.0, 0.0, 0, keyLeft(), modShift(), 0, 0.0, 0.0, ""))
+    eqI("shift-left moves the caret", ui.caretOf(sel1.id, 5), 4)
+    eqI("and pins the anchor where it started", ui.anchorOf(sel1.id, 4), 5)
+    dispatch(ui, app, t9, Event(evKeyDown(), 0.0, 0.0, 0, keyLeft(), modShift(), 0, 0.0, 0.0, ""))
+    eqI("extending again moves only the caret", ui.caretOf(sel1.id, 5), 3)
+    eqI("and leaves the anchor alone", ui.anchorOf(sel1.id, 3), 5)
+    dispatch(ui, app, t9, Event(evKeyDown(), 0.0, 0.0, 0, keyLeft(), 0, 0, 0.0, 0.0, ""))
+    eqI("moving without shift collapses it", ui.anchorOf(sel1.id, 0), 2)
+
+    // A drag across a field selects what it crossed.
+    val sel2 = field("hello world", "", { s -> }).sized(200.0, 30.0).keyed("sel2")
+    var t10 = column([sel2])
+    layout(ui, t10, area)
+    dispatch(ui, app, t10, down(sel2.frame.x + 6.0, centerY(sel2.frame)))
+    dispatch(ui, app, t10, moveTo(right(sel2.frame) - 6.0, centerY(sel2.frame)))
+    ok("dragging across a field selects", ui.caretOf(sel2.id, 0) != ui.anchorOf(sel2.id, 0))
+    dispatch(ui, app, t10, up(right(sel2.frame) - 6.0, centerY(sel2.frame)))
+
+    // The modifier key that means "shortcut" carries a letter on a key press,
+    // or nothing can tell Cmd-A from Cmd-Z.
+    var picked = ""
+    val app2 = App("t", 400, 300)
+    app2.onKey = { ev -> picked = ev.text; false }
+    var t11 = column([label("x")])
+    layout(ui, t11, area)
+    dispatch(ui, app2, t11, Event(evKeyDown(), 0.0, 0.0, 0, 0, modSuper(), 0, 0.0, 0.0, "a"))
+    ok("a shortcut key press carries its letter", picked == "a")
+
+
+    // The shortcuts. `e.text` on a key press is the letter the key would type
+    // with nothing held down — filled by all three backends, because a key
+    // press carries no text of its own and a shortcut suppresses the text
+    // event that would have followed.
+    val sc1 = field("hello world", "", { s -> }).sized(200.0, 30.0).keyed("sc1")
+    var t12 = column([sc1])
+    layout(ui, t12, area)
+    ui.focus = sc1.id
+    val mod = if (onMac()) { modSuper() } else { modCtrl() }
+    dispatch(ui, app, t12, Event(evKeyDown(), 0.0, 0.0, 0, 0, mod, 0, 0.0, 0.0, "a"))
+    eqI("select-all anchors at the start", ui.anchorOf(sc1.id, 9), 0)
+    eqI("and puts the caret at the end", ui.caretOf(sc1.id, 0), 11)
+    dispatch(ui, app, t12, Event(evKeyDown(), 0.0, 0.0, 0, 0, mod, 0, 0.0, 0.0, "c"))
+    ok("copy reaches the clipboard", kvClipboardGet() == "hello world")
+
+    var pasted = ""
+    val sc2 = field("", "", { s -> pasted = s }).sized(200.0, 30.0).keyed("sc2")
+    var t13 = column([sc2])
+    layout(ui, t13, area)
+    ui.focus = sc2.id
+    dispatch(ui, app, t13, Event(evKeyDown(), 0.0, 0.0, 0, 0, mod, 0, 0.0, 0.0, "v"))
+    ok("paste puts it back", pasted == "hello world")
+
+    // A double click takes the word under it, a triple click takes the line.
+    val wd = field("alpha beta gamma", "", { s -> }).sized(240.0, 30.0).keyed("wd")
+    var t14 = column([wd])
+    layout(ui, t14, area)
+    val mid = wd.frame.x + ui.theme.gap(2.5) + ui.fonts.width("alpha be", ui.styleFor(wd), ui.canvas.scale)
+    dispatch(ui, app, t14, Event(evDown(), mid, centerY(wd.frame), 1, 0, 0, 2, 0.0, 0.0, ""))
+    eqI("a double click starts at the word", ui.anchorOf(wd.id, 0), 6)
+    eqI("and ends at the word", ui.caretOf(wd.id, 0), 10)
+    dispatch(ui, app, t14, Event(evDown(), mid, centerY(wd.frame), 1, 0, 0, 3, 0.0, 0.0, ""))
+    eqI("a triple click starts at nothing", ui.anchorOf(wd.id, 9), 0)
+    eqI("and takes the lot", ui.caretOf(wd.id, 0), 16)
+    dispatch(ui, app, t14, up(mid, centerY(wd.frame)))
 
     // The wheel moves the region under the pointer, and stops at both ends.
     val tall: List<View> = []

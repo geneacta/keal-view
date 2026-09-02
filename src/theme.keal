@@ -44,6 +44,10 @@ public class Theme {
     public var accentDown: Int = 0
     /// The accent at low opacity — a selected row, a focus halo.
     public var accentSoft: Int = 0
+    /// Behind selected text. Stronger than `accentSoft`: a focus ring may be
+    /// a hint, but a selection has to be legible at a glance or it is not
+    /// telling you anything.
+    public var selection: Int = 0
 
     public var success: Int = 0
     public var warning: Int = 0
@@ -123,6 +127,7 @@ public func darkTheme(): Theme {
     t.accentHover = web("#5c99f8")
     t.accentDown = web("#2f6fd8")
     t.accentSoft = rgba(59, 130, 246, 46)
+    t.selection = rgba(59, 130, 246, 110)
     t.success = web("#34d399")
     t.warning = web("#fbbf24")
     t.danger = web("#f87171")
@@ -150,6 +155,7 @@ public func lightTheme(): Theme {
     t.accentHover = web("#3b82f6")
     t.accentDown = web("#1d4ed8")
     t.accentSoft = rgba(37, 99, 235, 34)
+    t.selection = rgba(37, 99, 235, 90)
     t.success = web("#059669")
     t.warning = web("#d97706")
     t.danger = web("#dc2626")
