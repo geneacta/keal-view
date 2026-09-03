@@ -226,7 +226,14 @@ public class Font(public val blob: Int, public val base: Int) {
         val key = gid * 100000 + (px * 64.0).round()
         val hit = this.glyphs[key]
         if (hit != null) { return hit }
-        if (this.glyphs.size >= glyphCacheLimit()) { this.glyphs.clear() }
+        // A fresh map rather than `clear()`. Both should be equivalent and one
+        // of them is: `keal build` 1.2.0 turns a map that has been cleared
+        // twice into a linear scan, so a bounded cache that empties itself
+        // this way stops answering in constant time. Reported upstream with a
+        // twelve-line reproduction; this line is the way round it, and it is
+        // the better line anyway — a new map keeps no capacity it no longer
+        // needs.
+        if (this.glyphs.size >= glyphCacheLimit()) { this.glyphs = {} }
         val g = this.render(gid, px)
         this.glyphs[key] = g
         return g

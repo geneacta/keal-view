@@ -325,6 +325,12 @@ proc textTests() {
     // The cache is bounded, or a slider that changes the text size while it is
     // dragged would ask for a new set of every glyph at every sixty-fourth of
     // a pixel and never give one back.
+    //
+    // This sweep is also the regression test for how the cache empties itself.
+    // Twelve thousand lookups against a four-thousand bound means three
+    // evictions, and `keal build` 1.2.0 turned a map that had been cleared
+    // twice into a linear scan — so this test stopped finishing at all, which
+    // is how the defect was found. It is left deliberately large.
     var px = 8.0
     while (px < 60.0) {
         var c = 32
