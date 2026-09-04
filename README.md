@@ -116,13 +116,25 @@ is an ordinary view function and does not know it is docked.
 
 ## Documentation
 
-* **[The guide](docs/guide.md)** — a window, state, layout, widgets, style,
-  menus, drawing your own, the keyboard, docking. Read this one.
+* **[`examples/tour.keal`](examples/tour.keal)** — a guided tour of keal-view,
+  written in keal-view. Eleven chapters, each showing a thing **running** next
+  to the code that made it: a live counter, a live slider, a live dock you can
+  drag a panel around inside. Start here.
+
+  ```sh
+  tools/build.sh examples/tour.keal && build/tour
+  ```
+
+* **[The guide](docs/guide.md)** — the same ground in prose, in the order you
+  need it: a window, state, layout, widgets, style, menus, drawing your own,
+  the keyboard, docking.
 * **[The reference](docs/widgets.md)** — every constructor, modifier, theme
   field and canvas call, on one page.
 * **[`examples/gallery.keal`](examples/gallery.keal)** — documentation that
   runs: every widget there is, on one scrolling page. If a control is not in
   there it does not exist.
+
+<p align="center"><img src="docs/tour.png" alt="The guided tour" width="820"></p>
 
 <p align="center"><img src="docs/gallery.png" alt="The widget gallery" width="820"></p>
 
@@ -184,6 +196,7 @@ git clone https://github.com/geneacta/keal
 git clone https://github.com/geneacta/keal-view
 cd keal && cargo build --release && cd ../keal-view
 
+tools/build.sh examples/tour.keal       && build/tour         # start here
 tools/build.sh examples/gallery.keal    && build/gallery      # every widget
 tools/build.sh examples/calculator.keal && build/calculator
 tools/build.sh examples/studio.keal     && build/studio

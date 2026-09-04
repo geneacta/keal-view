@@ -1,6 +1,9 @@
 # The keal-view guide
 
-Everything you need to build an interface, in the order you need it. There is
+Everything you need to build an interface, in the order you need it. If you
+would rather see it than read it, [`examples/tour.keal`](../examples/tour.keal)
+covers the same ground with every chapter running beside its own source —
+`tools/build.sh examples/tour.keal && build/tour`. There is
 one idea to hold on to and the rest follows from it:
 
 > **An application is a function from its state to a tree of views.**
@@ -476,6 +479,8 @@ window without capturing anything else on the screen.
 
 ## Where to look next
 
+* [`../examples/tour.keal`](../examples/tour.keal) — all of this, running,
+  each chapter beside the code that made it
 * [`widgets.md`](widgets.md) — every constructor and modifier
 * [`examples/gallery.keal`](../examples/gallery.keal) — all of it, running
 * [`examples/calculator.keal`](../examples/calculator.keal) — a small whole app

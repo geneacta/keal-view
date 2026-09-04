@@ -1,0 +1,574 @@
+import "../keal-view.keal"
+
+/// A guided tour of keal-view, written in keal-view.
+///
+/// Every chapter shows a thing running and the code that made it, side by
+/// side. That is the whole idea: a screenshot goes stale and a code block in a
+/// document is never run, but this is compiled by the same compiler as the
+/// framework and drawn by the same rasteriser. If a chapter is wrong, it is
+/// wrong on screen.
+///
+/// Left and right arrows move between chapters, or click one in the list.
+
+// ------------------------------------------------ what the demos play with
+
+val counter = state(0)
+val agreed = state(true)
+val loud = state(false)
+val volume = state(0.6)
+val who = state("")
+val flavour = state(1)
+val leaf2 = state(0)
+
+// ------------------------------------------------------------- a chapter
+
+class Chapter(public val title: String, public val blurb: String,
+              public val code: String) {
+    public var demo: () -> View = { -> nothing() }
+}
+
+func chapter(t: String, blurb: String, code: String, demo: () -> View): Chapter {
+    val c = Chapter(t, blurb, code)
+    c.demo = demo
+    return c
+}
+
+// ------------------------------------------------------ syntax colouring
+
+/// Keal, coloured. It is here rather than in the framework because it is the
+/// tour's own business — and because it is the best demonstration `custom` has
+/// of what a view that paints itself can be.
+func keywords(): List<String> {
+    return ["val", "var", "func", "proc", "class", "record", "enum", "trait",
+            "if", "else", "while", "for", "in", "return", "when", "import",
+            "public", "package", "native", "extern", "is", "not", "and", "or",
+            "true", "false", "null", "this", "break", "continue"]
+}
+
+func isDigitCh(c: String): Bool { return (c >= "0") and (c <= "9") }
+
+func isWordCh(c: String): Bool {
+    val l = c.toLower()
+    if ((l >= "a") and (l <= "z")) { return true }
+    if (isDigitCh(c)) { return true }
+    return c == "_"
+}
+
+/// Draw one line of Keal on a baseline, answering where the pen ended.
+func drawKeal(p: Paint, line: String, x0: Float, baseline: Float, st: TextStyle): Float {
+    val t = p.theme
+    val cs = line.chars()
+    val kw = keywords()
+    var x = x0
+    var i = 0
+    while (i < cs.size) {
+        val c = cs[i]
+        if ((c == "/") and (((i + 1) < cs.size) and (cs[i + 1] == "/"))) {
+            // A comment runs to the end of the line, and so does this.
+            x = p.line(line.drop(i), x, baseline, st, t.textMuted)
+            i = cs.size
+        } else {
+            if (c == "\"") {
+                var j = i + 1
+                while ((j < cs.size) and (cs[j] != "\"")) { j++ }
+                val stop = (j + 1).min(cs.size)
+                x = p.line(line.substring(i, stop), x, baseline, st, t.success)
+                i = stop
+            } else {
+                if (isDigitCh(c)) {
+                    var j = i
+                    while ((j < cs.size) and (isDigitCh(cs[j]) or (cs[j] == "."))) { j++ }
+                    x = p.line(line.substring(i, j), x, baseline, st, t.warning)
+                    i = j
+                } else {
+                    if (isWordCh(c)) {
+                        var j = i
+                        while ((j < cs.size) and isWordCh(cs[j])) { j++ }
+                        val word = line.substring(i, j)
+                        val col = if (kw.contains(word)) { t.accent } else { t.textPrimary }
+                        x = p.line(word, x, baseline, st, col)
+                        i = j
+                    } else {
+                        x = p.line(c, x, baseline, st, t.textSecondary)
+                        i++
+                    }
+                }
+            }
+        }
+    }
+    return x
+}
+
+func codeStyle(): TextStyle { return textMono(12.0) }
+
+/// A panel of source, coloured, with a gutter of line numbers.
+func codeView(src: String): View {
+    val lines = src.split("\n")
+    val v = custom({ p ->
+        val t = p.theme
+        val r = p.area
+        val st = codeStyle()
+        val lh = p.lineHeight(st)
+        val asc = p.ascent(st)
+        val gutter = p.width("00", st) + t.gap(3.0)
+        p.canvas.fillRect(Rect(r.x, r.y, gutter, r.h), withAlpha(t.surfaceHi, 150))
+        var i = 0
+        while (i < lines.size) {
+            val y = r.y + t.gap(2.0) + i.toFloat() * lh
+            p.text((i + 1).toString(), Rect(r.x, y, gutter - t.gap(1.5), lh),
+                   2, st, t.textMuted)
+            drawKeal(p, lines[i], r.x + gutter + t.gap(2.0), y + asc, st)
+            i++
+        }
+    })
+    // Height is the content's: a code panel that scrolls hides the line you
+    // were reading about.
+    v.h(lines.size.toFloat() * 17.0 + 20.0)
+    v.bg(theme().surface)
+    v.rounded(theme().radiusMd)
+    v.outline(theme().border, theme().hairline)
+    return v
+}
+
+// -------------------------------------------------------------- the tour
+
+class Tour {
+    public var at: Int = 0
+    public var chapters: List<Chapter> = []
+
+    proc go(i: Int) {
+        this.at = clampI(i, 0, this.chapters.size - 1)
+        invalidate()
+    }
+
+    proc next() { this.go(this.at + 1) }
+    proc back() { this.go(this.at - 1) }
+
+    func current(): Chapter { return this.chapters[clampI(this.at, 0, this.chapters.size - 1)] }
+
+    // ------------------------------------------------------------- views
+
+    public func view(): View {
+        return column([
+            this.header(),
+            row([
+                this.contents().w(230.0),
+                this.page().grows()
+            ]).grows(),
+            this.footer()
+        ]).grows()
+    }
+
+    func header(): View {
+        return stack([
+            underlay({ p ->
+                p.canvas.fillRect(p.area, p.theme.surface)
+                p.canvas.fillRect(Rect(p.area.x, bottom(p.area) - p.theme.hairline,
+                                       p.area.w, p.theme.hairline), p.theme.border)
+            }),
+            row([
+                icon("play").color(theme().accent).fontSize(17.0),
+                label("keal-view").font(textBold(15.0)),
+                badge("visite guidée"),
+                spacer(),
+                caption("flèches gauche et droite pour naviguer").color(theme().textMuted),
+                segmented(["Sombre", "Clair"], if (theme().dark) { 0 } else { 1 },
+                          { i -> useTheme(if (i == 0) { darkTheme() } else { lightTheme() }) })
+                    .w(150.0)
+            ]).gaps(theme().gap(2.5)).padXY(theme().gap(4.0), 0.0).aligned(mainStart, crossCenter)
+        ]).h(52.0)
+    }
+
+    func contents(): View {
+        val rows: List<View> = []
+        var i = 0
+        while (i < this.chapters.size) {
+            val idx = i
+            val here = idx == this.at
+            val b = button("${idx + 1}. ${this.chapters[idx].title}", { -> this.go(idx) })
+            b.kindOf(quiet)
+            b.align = 0
+            b.h(theme().control)
+            b.rounded(theme().radiusSm)
+            b.font(theme().small())
+            if (here) {
+                b.bg(theme().accentSoft)
+                b.color(theme().textPrimary)
+            }
+            b.keyed("chap-${idx}")
+            rows.add(b)
+            i++
+        }
+        return stack([
+            underlay({ p ->
+                p.canvas.fillRect(Rect(right(p.area) - p.theme.hairline, p.area.y,
+                                       p.theme.hairline, p.area.h), p.theme.border)
+            }),
+            scroll(rows).gaps(2.0).padAll(theme().gap(2.0)).grows()
+        ])
+    }
+
+    func page(): View {
+        val c = this.current()
+        val make = c.demo
+        return scroll([
+            title(c.title),
+            paragraph(c.blurb).color(theme().textSecondary),
+            gapV(theme().gap(1.0)),
+            label("EN MARCHE").font(textBold(theme().fontSm)).color(theme().textMuted),
+            card([make()]),
+            gapV(theme().gap(1.0)),
+            label("LE CODE QUI LE FAIT").font(textBold(theme().fontSm)).color(theme().textMuted),
+            codeView(c.code),
+            gapV(theme().gap(4.0))
+        ]).gaps(theme().gap(2.0)).padAll(theme().gap(5.0)).grows()
+    }
+
+    func footer(): View {
+        val n = this.chapters.size
+        return stack([
+            underlay({ p ->
+                p.canvas.fillRect(p.area, p.theme.surface)
+                p.canvas.fillRect(Rect(p.area.x, p.area.y, p.area.w, p.theme.hairline),
+                                  p.theme.border)
+            }),
+            row([
+                button("Précédent", { -> this.back() }).kindOf(quiet)
+                    .withIcon("chevron-left").offWhen(this.at == 0),
+                spacer(),
+                caption("${this.at + 1} / ${n}").color(theme().textMuted),
+                spacer(),
+                button("Suivant", { -> this.next() }).kindOf(primary)
+                    .offWhen(this.at >= (n - 1))
+            ]).gaps(theme().gap(2.0)).padXY(theme().gap(4.0), 0.0).aligned(mainStart, crossCenter)
+        ]).h(52.0)
+    }
+}
+
+val tour = Tour()
+
+// ---------------------------------------------------------- the chapters
+
+val miniDock = Dock(beside(leaf(["a"]), above(leaf(["b"]), leaf(["c"]), 0.6), 0.35))
+
+proc buildChapters() {
+    dockPanels()
+
+    tour.chapters.add(chapter("Une fenêtre",
+        "Un import, une fonction, et il y a une fenêtre. `runApp` l'ouvre et "
+      + "tourne jusqu'à ce qu'on la ferme ; la lambda est l'interface. Elle est "
+      + "rappelée chaque fois que quelque chose change, et son travail est de "
+      + "décrire ce qui doit être à l'écran maintenant — pas de modifier ce qui "
+      + "y est déjà. Remarque la flèche dans `{ -> … }` : une lambda sans "
+      + "argument en a besoin, parce que `{ }` tout seul est une carte vide.",
+        """import "keal-view/keal-view.keal"
+
+runApp("Bonjour", 320, 200, { ->
+    column([
+        label("Bonjour, keal-view").fontSize(18.0),
+        button("Une action", { -> })
+    ]).gaps(12.0).padAll(20.0)
+})""",
+        { -> column([
+            label("Bonjour, keal-view").fontSize(18.0),
+            button("Une action", { -> })
+        ]).gaps(12.0).padAll(20.0) }))
+
+    tour.chapters.add(chapter("L'état",
+        "L'état vit dans une `Cell`. On la lit avec `get`, on l'écrit avec "
+      + "`set`, et c'est l'écriture qui fait exister la frame suivante. Tu "
+      + "n'appelles jamais « redessine ». Il n'y a ni diff ni graphe de "
+      + "dépendances : une écriture reconstruit tout l'arbre. Ce que ça achète, "
+      + "c'est qu'une vue est une fonction pure de l'état — rien à invalider, "
+      + "donc rien à oublier d'invalider.",
+        """val counter = state(0)
+
+column([
+    label("Cliqué ${counter.get()} fois").fontSize(16.0),
+    row([
+        button("+1", { -> counter.set(counter.get() + 1) }).kindOf(primary),
+        button("remise à zéro", { -> counter.set(0) }).kindOf(quiet)
+    ]).gaps(8.0)
+]).gaps(10.0)""",
+        { -> column([
+            label("Cliqué ${counter.get()} fois").fontSize(16.0),
+            row([
+                button("+1", { -> counter.set(counter.get() + 1) }).kindOf(primary),
+                button("remise à zéro", { -> counter.set(0) }).kindOf(quiet)
+            ]).gaps(8.0)
+        ]).gaps(10.0) }))
+
+    tour.chapters.add(chapter("Empiler",
+        "Deux conteneurs font presque tout : `column` empile vers le bas, `row` "
+      + "en travers. Chaque enfant prend la taille qu'il demande. `spacer()` "
+      + "prend tout ce qui reste — deux d'entre eux centrent ce qu'il y a entre "
+      + "eux. `gaps` sépare les enfants, `padAll` garnit le conteneur.",
+        """column([
+    row([label("à gauche"), spacer(), label("à droite")]),
+    divider(),
+    row([spacer(), badge("centré"), spacer()]),
+    divider(),
+    row([label("un"), label("deux"), label("trois")]).gaps(24.0)
+]).gaps(10.0)""",
+        { -> column([
+            row([label("à gauche"), spacer(), label("à droite")]),
+            divider(),
+            row([spacer(), badge("centré"), spacer()]),
+            divider(),
+            row([label("un"), label("deux"), label("trois")]).gaps(24.0)
+        ]).gaps(10.0) }))
+
+    tour.chapters.add(chapter("Partager la place",
+        "`grows()` est le `flex: 1` de CSS : prends une part de la place, **en "
+      + "partant de rien**. Deux vues qui poussent la partagent également ; "
+      + "`growsBy(2.0)` contre `growsBy(1.0)` la partage deux tiers un tiers. "
+      + "Le piège : partant de rien, dans un conteneur dimensionné par son "
+      + "propre contenu il ne reste rien à partager, et l'enfant obtient zéro. "
+      + "Quand tu veux « au moins mon contenu, et plus s'il y a la place », "
+      + "c'est `fills()`. Et `shares()` sur un conteneur divise la place en "
+      + "proportion exacte — c'est ce qui fait qu'un séparateur atterrit là où "
+      + "on l'a lâché.",
+        """row([
+    box(label("1").centered()).bg(theme().accentSoft).grows(),
+    box(label("2").centered()).bg(theme().surfaceHi).grows(),
+    box(label("3, double").centered()).bg(theme().accentSoft).growsBy(2.0)
+]).gaps(8.0).h(56.0)""",
+        { -> row([
+            box(label("1").centered()).bg(theme().accentSoft).rounded(6.0).grows(),
+            box(label("2").centered()).bg(theme().surfaceHi).rounded(6.0).grows(),
+            box(label("3, double").centered()).bg(theme().accentSoft).rounded(6.0).growsBy(2.0)
+        ]).gaps(8.0).h(56.0) }))
+
+    tour.chapters.add(chapter("Les widgets",
+        "Chaque contrôle rapporte **ce qu'il deviendrait**, pas ce qu'il est : "
+      + "une case décochée te rend `true` quand on la coche. Il ne se retourne "
+      + "jamais lui-même — l'arbre est reconstruit depuis ton état, donc ton "
+      + "état est la seule chose qui décide. Il n'existe aucun chemin par "
+      + "lequel l'écran et l'état divergent. La liste complète est dans "
+      + "`docs/widgets.md`, et `examples/gallery.keal` les montre tous.",
+        """column([
+    checkbox("J'accepte", agreed.get(), { v -> agreed.set(v) }),
+    toggle("Mode bruyant", loud.get(), { v -> loud.set(v) }),
+    segmented(["Vanille", "Chocolat", "Pistache"], flavour.get(),
+              { i -> flavour.set(i) }),
+    slider(volume.get(), 0.0, 1.0, { v -> volume.set(v) }),
+    field(who.get(), "votre nom", { s -> who.set(s) })
+]).gaps(10.0)""",
+        { -> column([
+            checkbox("J'accepte", agreed.get(), { v -> agreed.set(v) }),
+            toggle("Mode bruyant", loud.get(), { v -> loud.set(v) }),
+            segmented(["Vanille", "Chocolat", "Pistache"], flavour.get(),
+                      { i -> flavour.set(i) }),
+            slider(volume.get(), 0.0, 1.0, { v -> volume.set(v) }),
+            field(who.get(), "votre nom", { s -> who.set(s) }).keyed("tour-name"),
+            caption("volume ${(volume.get() * 100.0).round()} %").color(theme().textMuted)
+        ]).gaps(10.0) }))
+
+    tour.chapters.add(chapter("Le style",
+        "N'importe quelle vue peut porter un fond, une bordure, un coin et une "
+      + "ombre. C'est ce qui permet à une simple `column` d'être une carte sans "
+      + "qu'un widget carte existe. Les couleurs viennent du thème : il y en a "
+      + "un seul en vigueur, tout le monde le lit, et `useTheme` change tout "
+      + "d'un coup — y compris les widgets écrits après lui.",
+        """column([
+    label("Une carte").font(textBold(15.0)),
+    label("faite d'une colonne et de quatre adjectifs.")
+        .color(theme().textSecondary)
+])
+    .gaps(6.0)
+    .padAll(16.0)
+    .bg(theme().surface)
+    .rounded(14.0)
+    .outline(theme().border, 1.0)
+    .raised(14.0)""",
+        { -> row([
+            column([
+                label("Une carte").font(textBold(15.0)),
+                label("faite d'une colonne et de quatre adjectifs.")
+                    .color(theme().textSecondary)
+            ]).gaps(6.0).padAll(16.0).bg(theme().surface).rounded(14.0)
+              .outline(theme().border, 1.0).raised(14.0).grows(),
+            gapH(8.0)
+        ]) }))
+
+    tour.chapters.add(chapter("Par-dessus",
+        "Un menu n'est pas l'enfant du bouton qui l'ouvre, et une boîte de "
+      + "dialogue n'est l'enfant de rien. Ce sont donc des appels, et une "
+      + "couche que la boucle dessine toujours par-dessus. Rien à installer : "
+      + "`openMenu` marche dans un programme qui n'en a jamais entendu parler, "
+      + "Échap referme, et un clic à l'extérieur écarte celles qui doivent "
+      + "l'être. Une bulle d'aide, elle, est un modificateur.",
+        """row([
+    button("Un menu", { -> openMenu(x, y, ["Ouvrir…", "Enregistrer"], -1,
+                                    { i -> }) }),
+    button("Un dialogue", { -> openSheet("Sûr ?", { ->
+        row([button("Annuler", { -> closePopup() })])
+    }) }),
+    label("survole-moi").tip("Voilà la bulle.")
+]).gaps(8.0)""",
+        { -> row([
+            button("Un menu", { -> tourMenu() }),
+            button("Un dialogue", { -> tourDialog() }).kindOf(primary),
+            label("survole-moi").color(theme().textMuted).tip("Voilà la bulle.")
+        ]).gaps(8.0).aligned(mainStart, crossCenter) }))
+
+    tour.chapters.add(chapter("Dessiner soi-même",
+        "Quand aucun widget ne convient, dessine. `custom` reçoit un `Paint` : "
+      + "une toile déjà découpée à son rectangle, ce rectangle, les polices, le "
+      + "thème, et son propre état de survol. Tout keal-view est fait de ça — "
+      + "l'éditeur de l'atelier, le graphique de la galerie, et la coloration "
+      + "du code que tu lis en dessous.",
+        """custom({ p ->
+    val r = shrink(p.area, 8.0)
+    var i = 0
+    while (i < 28) {
+        val f = i.toFloat() / 27.0
+        val h = r.h * (0.15 + 0.85 * f * (1.0 - f) * 4.0)
+        p.canvas.fillRound(Rect(r.x + r.w / 28.0 * i.toFloat() + 1.0,
+                                r.y + r.h - h, r.w / 28.0 - 2.0, h),
+                           2.0, mix(p.theme.accent, p.theme.success, f))
+        i++
+    }
+    if (p.hot) { p.text("le survol arrive ici", r, 1, p.theme.small(),
+                        p.theme.textPrimary) }
+}).h(90.0)""",
+        { -> custom({ p ->
+            val r = shrink(p.area, 8.0)
+            var i = 0
+            while (i < 28) {
+                val f = i.toFloat() / 27.0
+                val hh = r.h * (0.15 + 0.85 * f * (1.0 - f) * 4.0)
+                p.canvas.fillRound(Rect(r.x + r.w / 28.0 * i.toFloat() + 1.0,
+                                        r.y + r.h - hh, r.w / 28.0 - 2.0, hh),
+                                   2.0, mix(p.theme.accent, p.theme.success, f))
+                i++
+            }
+            if (p.hot) {
+                p.text("le survol arrive ici", r, 1, p.theme.small(), p.theme.textPrimary)
+            }
+        }).h(90.0) }))
+
+    tour.chapters.add(chapter("Le clavier",
+        "Tab parcourt les contrôles qui prennent le focus, dans l'ordre où tu "
+      + "les as déclarés. Les champs gèrent la frappe, la sélection, Origine et "
+      + "Fin, et copier-couper-coller avec le modificateur de la plateforme. "
+      + "Échap referme d'abord un popup, puis rend le focus. Pour tes propres "
+      + "raccourcis, `app.onKey` voit tout en premier — et `e.cmd()` est "
+      + "Commande sur macOS et Contrôle ailleurs, donc une ligne couvre les "
+      + "deux.",
+        """app.onKey = { e ->
+    if (e.cmd() and (e.text == "s")) { save(); true }
+    else { if (e.key == keyEscape()) { deselect(); true } else { false } }
+}""",
+        { -> column([
+            row([
+                field("", "Tab commence ici", { s -> }).keyed("k1").grows(),
+                field("", "puis ici", { s -> }).keyed("k2").grows()
+            ]).gaps(8.0),
+            caption("Tab, Maj+Tab, puis Maj+Flèche pour sélectionner.")
+                .color(theme().textMuted)
+        ]).gaps(8.0) }))
+
+    tour.chapters.add(chapter("Organiser",
+        "Pour une application dont l'utilisateur arrange les panneaux : des "
+      + "divisions, des groupes d'onglets, et le glisser d'un panneau vers un "
+      + "autre. L'arrangement est un arbre binaire de deux cas seulement — une "
+      + "feuille qui tient des onglets, une division qui tient deux enfants et "
+      + "une fraction — ce qui est assez peu pour qu'on puisse raisonner sur "
+      + "chacun. Attrape un onglet ci-dessous et traîne-le ; tire les "
+      + "séparateurs. Un panneau est une fonction de vue ordinaire et ne sait "
+      + "pas qu'il est arrimé.",
+        """val dock = Dock(
+    beside(leaf(["files"]),
+           above(leaf(["editor"]), leaf(["terminal"]), 0.6),
+           0.35))
+
+dock.add(panelOf("files", "Fichiers", { -> filesPanel() }))
+
+app.build   = { -> dockView(dock).grows() }
+app.overlay = { -> dockOverlay(dock) }""",
+        { -> dockView(miniDock).h(260.0) }))
+
+    tour.chapters.add(chapter("La suite",
+        "Tu as vu l'essentiel. `docs/guide.md` est le tutoriel complet, dans "
+      + "l'ordre où on en a besoin ; `docs/widgets.md` liste chaque "
+      + "constructeur, modificateur et champ de thème sur une page. "
+      + "`examples/gallery.keal` montre tous les widgets d'un coup, "
+      + "`examples/calculator.keal` est une petite application entière, "
+      + "`examples/todo.keal` la même écrite comme une classe qui tient son "
+      + "état, et `examples/studio.keal` un atelier arrimé à cinq panneaux. "
+      + "Chaque programme comprend `--snapshot fichier.bmp 2` pour dessiner une "
+      + "frame sans ouvrir de fenêtre.",
+        """tools/build.sh examples/gallery.keal && build/gallery
+tools/build.sh mon-programme.keal      && build/mon-programme
+
+build/gallery --snapshot frame.bmp 2 900 1900   # sans écran""",
+        { -> column([
+            banner(1, "Tout ce que tu viens de voir est dessiné par du Keal."),
+            row([
+                badge("5 117 lignes de Keal"),
+                badge("671 de C"),
+                badge("0 qui dessine")
+            ]).gaps(8.0)
+        ]).gaps(10.0) }))
+}
+
+proc dockPanels() {
+    miniDock.add(panelOf("a", "Fichiers", { ->
+        column([
+            label("canvas.keal").color(theme().textSecondary),
+            label("font.keal").color(theme().textSecondary),
+            label("view.keal").color(theme().textSecondary)
+        ]).gaps(4.0).padAll(10.0)
+    }))
+    miniDock.add(panelOf("b", "Éditeur", { ->
+        column([label("Attrape mon onglet.").color(theme().textSecondary)]).padAll(10.0)
+    }))
+    miniDock.add(panelOf("c", "Terminal", { ->
+        column([label("Traîne-moi ailleurs.").color(theme().textSecondary)]).padAll(10.0)
+    }))
+    val pa = miniDock.panel("a")
+    if (pa != null) { pa.icon = "folder" }
+    val pb = miniDock.panel("b")
+    if (pb != null) { pb.icon = "file" }
+}
+
+proc tourMenu() {
+    openIconMenu(120.0, 300.0, ["Ouvrir…", "Enregistrer", "Fermer"],
+                 ["folder", "check", "close"], -1, { i -> })
+}
+
+proc tourDialog() {
+    openSheet("Une boîte de dialogue", { ->
+        column([
+            paragraph("Elle est au-dessus de l'interface sans en faire partie. "
+                    + "Un clic à l'extérieur, ou Échap, la referme.")
+                .color(theme().textSecondary),
+            gapV(8.0),
+            row([spacer(), button("Entendu", { -> closePopup() }).kindOf(primary)])
+        ]).gaps(6.0)
+    })
+}
+
+// --------------------------------------------------------------- the app
+
+val app = App("keal-view — visite guidée", 1000, 760)
+
+app.onStart = { ->
+    buildChapters()
+    // `--chapter N` opens on one, so a snapshot can photograph any page of the
+    // tour without anybody clicking through to it.
+    var i = 0
+    while ((i + 1) < args().size) {
+        if (args()[i] == "--chapter") { tour.go((args()[i + 1].toInt() ?: 1) - 1) }
+        i++
+    }
+}
+app.build = { -> tour.view() }
+app.overlay = { -> dockOverlay(miniDock) }
+app.onKey = { e ->
+    if (e.key == keyRight()) { tour.next(); true }
+    else { if (e.key == keyLeft()) { tour.back(); true } else { false } }
+}
+
+run(app)

@@ -29,6 +29,7 @@ echo "compiler: $("$KEAL_BIN" version) at $KEAL_BIN"
 "$ROOT/tools/build.sh" "$ROOT/examples/studio.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/examples/gallery.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/examples/todo.keal" >/dev/null
+"$ROOT/tools/build.sh" "$ROOT/examples/tour.keal" >/dev/null
 
 # `keal build` compiles without warnings, so this is the only place anyone
 # looks at them. Every miscompilation found in this project so far announced
@@ -36,7 +37,7 @@ echo "compiler: $("$KEAL_BIN" version) at $KEAL_BIN"
 # never declared, a pointer where an integer was expected, an integer where a
 # pointer was.
 CHECK=$ROOT/build/emit-check.c
-for prog in tests/units examples/gallery examples/studio examples/calculator examples/todo; do
+for prog in tests/units examples/gallery examples/studio examples/calculator examples/todo examples/tour; do
   "$KEAL_BIN" emit-c "$ROOT/$prog.keal" > "$CHECK" 2>/dev/null
   "${CC:-cc}" -fsyntax-only -std=c11 -I"$ROOT/runtime" \
       -Werror=implicit-function-declaration \
@@ -60,8 +61,9 @@ run calculator --snapshot calculator.bmp 2
 run studio --snapshot studio.bmp 2
 run gallery --snapshot gallery.bmp 2 900 1900
 run todo --snapshot todo.bmp 2
+run tour --snapshot tour.bmp 2 1000 900
 
-for f in shapes text calculator studio gallery todo; do
+for f in shapes text calculator studio gallery todo tour; do
   [ -s "$f.bmp" ] || { echo "FAIL  $f drew nothing" >&2; exit 1; }
 done
 echo "frames drawn: $(ls -1 ./*.bmp | tr '\n' ' ')"
