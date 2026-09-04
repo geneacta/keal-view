@@ -564,14 +564,17 @@ proc interactionTests() {
     dispatch(ui, app, t12, Event(evKeyDown(), 0.0, 0.0, 0, 0, mod, 0, 0.0, 0.0, "a"))
     eqI("select-all anchors at the start", ui.anchorOf(sc1.id, 9), 0)
     eqI("and puts the caret at the end", ui.caretOf(sc1.id, 0), 11)
-    // The clipboard is the operating system's, not this framework's, and on
-    // X11 it needs a display to exist at all. A machine without one — a
-    // continuous-integration runner, a container — is not a failure; it is a
-    // machine where this cannot be asked. So ask first.
+    // The clipboard is the operating system's, not this framework's, and it is
+    // not always reachable from here. A continuous-integration runner has no
+    // display at all. And on X11 a selection is owned *by a window*, so a test
+    // binary — which never opens one — cannot reach the clipboard even on a
+    // machine whose display is answering perfectly. Neither is a failure;
+    // both are places where the question cannot be put. So put it first.
     kvClipboardSet("keal-view-probe")
     val hasClipboard = kvClipboardGet() == "keal-view-probe"
     if (not hasClipboard) {
-        println("note  no clipboard on this machine — copy and paste are skipped")
+        println("note  the clipboard cannot be reached from a program with no window"
+              + " — copy and paste are skipped here and belong to a running application")
     } else {
         dispatch(ui, app, t12, Event(evKeyDown(), 0.0, 0.0, 0, 0, mod, 0, 0.0, 0.0, "c"))
         ok("copy reaches the clipboard", kvClipboardGet() == "hello world")
@@ -612,6 +615,19 @@ proc interactionTests() {
     eqF("and stops at the top", ui.scrollOf(sc.id), 0.0)
     dispatch(ui, app, t8, wheel(centerX(sc.frame), centerY(sc.frame), -99999.0))
     eqF("and at the bottom", ui.scrollOf(sc.id), 700.0)
+}
+
+// -------------------------------------------------------------- the numbers
+
+/// What a number looks like on screen. `toString` on a Float prints every
+/// digit the value has — which is right, and is three hundred characters for
+/// ten to the three hundredth — so anything with a fixed width has to decide
+/// for itself where to stop.
+proc numberTests() {
+    ok("a whole number keeps no point", shortNumber(3.0) == "3")
+    ok("a fraction keeps what it needs", shortNumber(0.5) == "0.5")
+    ok("and no more than that", shortNumber(1.0 / 3.0).length <= 5)
+    ok("a negative keeps its sign", shortNumber(-2.0) == "-2")
 }
 
 // ------------------------------------------------------- state in an object
@@ -664,6 +680,7 @@ dockTests()
 interactionTests()
 textTests()
 stateTests()
+numberTests()
 objectStateTests()
 
 println("")

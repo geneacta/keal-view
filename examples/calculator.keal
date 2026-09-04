@@ -17,18 +17,42 @@ val memory = state("")
 
 // -------------------------------------------------------------- arithmetic
 
-/// A number as a person writes it: no trailing zeros, no `.0`, and a plain
-/// word rather than `NaN` when the arithmetic did not work out.
+/// A number as a person writes it: no trailing zeros, no `.0`, a plain word
+/// rather than `NaN` when the arithmetic did not work out, and an exponent
+/// once the digits stop fitting on the screen.
+///
+/// The exponent is computed here rather than left to `toString`, which prints
+/// every digit a float has — and a float has as many as it takes. Ten to the
+/// three hundredth is three hundred characters, and this display is eleven.
 func fmt(v: Float): String {
     if (v.isNaN()) { return "erreur" }
     val a = v.abs()
-    if (a >= 1000000000000.0) { return v.toString() }
+    if (a == 0.0) { return "0" }
+    if ((a >= 1000000000000.0) or (a < 0.000001)) { return sci(v) }
     val scaled = (v * 1000000.0).round()
     if (scaled % 1000000 == 0) { return (scaled / 1000000).toString() }
     var s = (scaled.toFloat() / 1000000.0).toString()
     while (s.endsWith("0")) { s = s.take(s.length - 1) }
     if (s.endsWith(".")) { s = s.take(s.length - 1) }
     return s
+}
+
+/// `1.2345e18`, with the exponent found by dividing rather than by a
+/// logarithm the standard library does not have.
+func sci(v: Float): String {
+    if ((v.isNaN()) or (v.abs() > 1.0e308)) { return "erreur" }
+    val neg = v < 0.0
+    var m = v.abs()
+    var e = 0
+    while (m >= 10.0) { m = m / 10.0; e++ }
+    while (m < 1.0) { m = m * 10.0; e-- }
+    // Four decimals of mantissa: enough to be a number, short enough to fit
+    // beside its exponent.
+    var d = ((m * 10000.0).round().toFloat() / 10000.0).toString()
+    while (d.endsWith("0")) { d = d.take(d.length - 1) }
+    if (d.endsWith(".")) { d = d.take(d.length - 1) }
+    val sign = if (neg) { "-" } else { "" }
+    return sign + d + "e" + e.toString()
 }
 
 func shown(): Float { return entry.get().toFloat() ?: 0.0 }

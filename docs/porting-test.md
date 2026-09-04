@@ -100,7 +100,10 @@ Look for, in `frame.png`:
    one outside Latin-1 if your keyboard has one. Both backends decode to
    UTF-8 by hand — Windows folds surrogate pairs, X11 takes what
    `XLookupString` gives — and neither path has ever run.
-9. **Clipboard.** Select in a field, **Ctrl+C**, then **Ctrl+V** somewhere
+9. **Clipboard.** This one is only testable by hand: on X11 a selection is
+   owned by a *window*, so `build/units` — which never opens one — skips it
+   and says so, even on a machine whose display is answering. Select in a
+   field of the gallery, **Ctrl+C**, then **Ctrl+V** somewhere
    else. On X11 this is a real selection owner answering real
    `SelectionRequest` events; try pasting into another application too, and
    copying *from* one. Do it **quickly**, several times: `OpenClipboard` on
