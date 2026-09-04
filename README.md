@@ -9,13 +9,13 @@ pixels on the screen. It does not draw anything.
 
 ```
               lines    what it is
-  Keal         5 117   the whole framework: rasteriser, fonts, layout,
+  Keal         5479   the whole framework: rasteriser, fonts, layout,
                        widgets, theme, docking, menus, the run loop
-  C              671   one window, one event queue, and inline accessors
+  C              690   one window, one event queue, and inline accessors
                        (kv.h, plus one backend of three)
 ```
 
-**88 % of a running keal-view program is Keal**, and none of the other 12 %
+**89 % of a running keal-view program is Keal**, and none of the other 11 %
 puts a pixel anywhere.
 
 <p align="center"><img src="docs/studio.png" alt="A docked workspace" width="900"></p>
@@ -225,20 +225,29 @@ window without capturing anything else on the screen.
 | | | |
 |---|---|---|
 | macOS | `runtime/kv_cocoa.m` | Cocoa. **Verified** — developed here |
-| Windows | `runtime/kv_win32.c` | Win32 and a BI_RGB DIB. **Verified** on Windows 10 22H2 (19045) and Windows 11 22H2 (22621), MinGW-w64. Everything in [`docs/porting-test.md`](docs/porting-test.md); of display scaling, the mechanism is confirmed and only the look of it is outstanding — see below |
-| Linux | `runtime/kv_x11.c` | Xlib only, no toolkit. **Builds and runs its whole test suite in CI; the window has never opened** |
+| Windows | `runtime/kv_win32.c` | Win32 and a BI_RGB DIB. **Verified** on Windows 10 22H2 (19045) and Windows 11 22H2 (22621), MinGW-w64 |
+| Linux | `runtime/kv_x11.c` | Xlib only, no toolkit. **Verified** on Ubuntu 26.04 **aarch64**, under Wayland through XWayland |
 
 All three were written against the same dozen functions, and nothing above
 `runtime/` changed to add the second and third — which is the point of having
 drawn the boundary where it is.
 
-Windows was verified by someone on a real machine, in three passes, and it
-cost four defects: three of them above the backend and therefore present on
-every platform (`Ctrl`+A/C/X/V did nothing anywhere, no selection was ever
-painted, a double click selected nothing), one in the backend (a light title
-bar), and then a fifth that only a race could show — `OpenClipboard` losing to
-the system's clipboard-history service about 6 % of the time, which the
-backend now retries through.
+Windows and Linux were each verified by someone on a real machine, going
+through [`docs/porting-test.md`](docs/porting-test.md) line by line, and
+between them it cost eleven defects — **six of which were above the backend**
+and so were on every platform including the one this was written on. A
+tooltip on a plain label never appeared. Changing the theme left the previous
+frame's ink, permanently, because a window at rest is not woken. Two
+keystrokes in three were lost above a certain typing speed. A blinking caret
+repainted the whole window sixteen times a second. A double click selected
+from the start of the word to the pointer. And the loop redrew on every
+wake-up whether or not anything had changed, which on Windows fed itself into
+holding a whole core and everywhere else merely cost battery.
+
+None of those could have been found by the test suite as it stood, and two of
+them were being *hidden* by it: the assertions patched the state up between
+events by hand, which is the rebuild the loop does, so they tested a world
+that had already caught up.
 
 Display scaling is the one thing still short of a full answer, and it is worth
 saying exactly how short. Both Windows testers had screens at 100 %, and
@@ -250,11 +259,13 @@ rather than failing silently — which was the failure mode worth fearing. What
 remains is one pair of eyes on a screen at 125 % or more, confirming that
 everything is larger and still sharp.
 
-Linux is where Windows was a day ago: the framework builds there, the
-assertions pass there, and every example draws a frame there — in CI with no
-display, and now also on an ARM machine, where the offscreen frame is correct
-pixel for pixel. The window itself is untested. If you have a Linux machine,
-[`docs/porting-test.md`](docs/porting-test.md) is the checklist.
+Three things remain unverified, and they are recorded rather than glossed:
+display scaling **as it looks** on Windows (both testers had screens at 100 %
+and changing someone's display settings is not a tester's call), tearing
+during a fast resize (repeated screen capture tops out near sixty milliseconds
+and a tear lives inside one frame), and the pointer's *shape* under XWayland,
+where the compositor decides and a control window written the same way fails
+the same way.
 
 The framebuffer format is the same on all three — `0xAARRGGBB` in a
 `uint32_t` — because that is what CoreGraphics, a 32-bit BI_RGB DIB and an
