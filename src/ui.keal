@@ -40,9 +40,16 @@ public class Ui(public var canvas: Canvas, public var fonts: Fonts, public var t
     /// Milliseconds since the application started — for animation and for the
     /// caret's blink.
     public var time: Float = 0.0
-    /// Set when something wants another frame without an event to prompt it:
-    /// an animation in flight, a caret that has to blink.
-    public var animating: Bool = false
+    /// How long until another frame is wanted, in milliseconds, or -1 for
+    /// none. A view that needs to be redrawn without anything happening — an
+    /// animation in flight, a caret that has to blink — says so, and says
+    /// **when**, because the two are not the same request.
+    ///
+    /// A blinking caret asked for `animating = true` and got sixteen frames a
+    /// second for ever: the whole window, repainted, to move one bar. It costs
+    /// what a measurement on Windows found it costing, most of a core. Asking
+    /// for a frame at the moment the caret next changes costs two.
+    public var nextFrameIn: Float = -1.0
 
     // ------------------------------------------------------- retained state
 
@@ -70,8 +77,20 @@ public class Ui(public var canvas: Canvas, public var fonts: Fonts, public var t
     /// nearer the top of the tree overrides the container under it.
     public proc wantCursor(c: Int) { this.cursor = c }
 
-    /// Say that the next frame should be drawn even if nothing was clicked.
-    public proc animate() { this.animating = true }
+    /// Ask for another frame in `ms` milliseconds. The soonest asked for wins,
+    /// so several animations at different rates all get what they need and the
+    /// window still sleeps between them.
+    public proc wakeIn(ms: Float) {
+        val at = ms.max(1.0)
+        if ((this.nextFrameIn < 0.0) or (at < this.nextFrameIn)) { this.nextFrameIn = at }
+    }
+
+    /// Ask for the next frame as soon as a display could show it — what a
+    /// running animation wants.
+    public proc animate() { this.wakeIn(16.0) }
+
+    /// True when anything asked for a frame this time round.
+    public func animating(): Bool { return this.nextFrameIn >= 0.0 }
 
     /// The colour text should be, for a view in a given state.
     public func inkFor(v: View): Int {

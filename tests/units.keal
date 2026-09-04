@@ -376,6 +376,19 @@ func wheel(x: Float, y: Float, dy: Float): Event {
     return Event(evScroll(), x, y, 0, 0, 0, 0, 0.0, dy, "")
 }
 
+/// The first text field anywhere in a tree — how a test finds the node a
+/// rebuild has just replaced.
+func firstField(v: View): View? {
+    if (v.kind == kField) { return v }
+    var i = 0
+    while (i < v.kids.size) {
+        val f = firstField(v.kids[i])
+        if (f != null) { return f }
+        i++
+    }
+    return null
+}
+
 proc interactionTests() {
     val ui = testUi()
     val app = App("t", 400, 300)
@@ -452,10 +465,44 @@ proc interactionTests() {
     dispatch(ui, app, t5, pressed(keyBackspace()))
     ok("backspace takes one off", content == "a")
     fld.label = content
+
     dispatch(ui, app, t5, pressed(keyEscape()))
     ok("escape gives the keyboard back", ui.focus == 0)
     dispatch(ui, app, t5, typed("z"))
     ok("and typing then goes nowhere", content == "a")
+
+    // Three characters in one batch, with no rebuild between them — which is
+    // what a fast typist produces: several events arriving before the loop
+    // gets to draw. A handler reads the field's value out of the tree, and the
+    // tree holds the state as it was when the frame began; without a rebuild
+    // between events, three handlers read the same photograph and two
+    // keystrokes in three are lost.
+    //
+    // The assertions above hid this for a week by writing `fld.label = content`
+    // between events — the rebuild, done by hand. They tested the dispatcher
+    // against a world that had already caught up. `deliver` is what the run
+    // loop actually does, so it is what a test has to use.
+    val typed2 = state("")
+    val appT = App("t", 400, 300)
+    appT.build = { ->
+        column([field(typed2.get(), "", { s -> typed2.set(s) }).keyed("burst")])
+    }
+    var treeT = stack([appT.build(), appT.overlay(), popupLayer()])
+    layout(ui, treeT, area)
+    val f0 = firstField(treeT)
+    ok("the burst tree has a field", f0 != null)
+    if (f0 != null) {
+        ui.focus = f0.id
+        treeT = deliver(ui, appT, treeT, area, [typed("a"), typed("b"), typed("c")])
+        ok("a burst of typing keeps every character", typed2.get() == "abc")
+        val f1 = firstField(treeT)
+        if (f1 != null) { ui.setCaret(f1.id, 3) }
+        treeT = deliver(ui, appT, treeT, area,
+                        [pressed(keyBackspace()), pressed(keyBackspace())])
+        ok("and a burst of backspaces takes one off each", typed2.get() == "a")
+    }
+
+
 
     // Tab walks the controls that can take focus, in the order declared.
     val f1 = field("", "one", { s -> }).sized(100.0, 30.0)
@@ -587,6 +634,21 @@ proc interactionTests() {
         dispatch(ui, app, t13, Event(evKeyDown(), 0.0, 0.0, 0, 0, mod, 0, 0.0, 0.0, "v"))
         ok("paste puts it back", pasted == "hello world")
     }
+
+    // A press that has not moved must not drag. Two clicks in the same place
+    // arrive with a mouse move between them more often than not, and a drag
+    // that answered it would snap the caret back to the pointer and undo the
+    // word the second click had just selected.
+    val wd0 = field("alpha beta gamma", "", { s -> }).sized(240.0, 30.0).keyed("wd0")
+    val t14b = column([wd0])
+    layout(ui, t14b, area)
+    val mid0 = wd0.frame.x + ui.theme.gap(2.5) +
+               ui.fonts.width("alpha be", ui.styleFor(wd0), ui.canvas.scale)
+    dispatch(ui, app, t14b, Event(evDown(), mid0, centerY(wd0.frame), 1, 0, 0, 2, 0.0, 0.0, ""))
+    dispatch(ui, app, t14b, moveTo(mid0 + 1.0, centerY(wd0.frame)))
+    eqI("a tremor after a double click leaves the word alone", ui.anchorOf(wd0.id, 9), 6)
+    eqI("both ends of it", ui.caretOf(wd0.id, 0), 10)
+    dispatch(ui, app, t14b, up(mid0, centerY(wd0.frame)))
 
     // A double click takes the word under it, a triple click takes the line.
     val wd = field("alpha beta gamma", "", { s -> }).sized(240.0, 30.0).keyed("wd")

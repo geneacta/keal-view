@@ -99,6 +99,35 @@ public proc run(var app: App) {
     }
     app.onStart()
 
+    // `--trace <file>` writes one line a second: how many frames were drawn,
+    // how many events arrived and of what kind, and how many of those frames
+    // were asked for by an animation rather than by something happening. A
+    // window at rest should draw **nothing**, so a non-zero frame count here
+    // with no events is the whole diagnosis of a loop that is spinning — and
+    // the kind histogram names what is waking it when there is.
+    var tracePath = ""
+    var t0i = 0
+    while ((t0i + 1) < argv.size) {
+        if (argv[t0i] == "--trace") { tracePath = argv[t0i + 1] }
+        t0i++
+    }
+    var traceLog = ""
+    if (tracePath != "") {
+        // A header, because the interesting result is silence. A window at
+        // rest draws nothing, so it writes nothing, and an empty file would
+        // otherwise be indistinguishable from an instrument that is not
+        // running. One line at the start says it is.
+        traceLog = "trace started — a line per second in which a frame was drawn;\n"
+        traceLog = traceLog + "silence means the window drew nothing, which is what rest looks like.\n"
+        writeFile(tracePath, traceLog)
+    }
+    var traceMark = 0.0
+    var traceFrames = 0
+    var traceAnimated = 0
+    val traceKinds: List<Int> = []
+    var ki = 0
+    while (ki < 13) { traceKinds.add(0); ki++ }
+
     var running = true
     var lastRev = -1
     while (running) {
@@ -131,32 +160,81 @@ public proc run(var app: App) {
 
         var root = stack([app.build(), app.overlay(), popupLayer()])
         layout(ui, root, area)
-        var i = 0
-        while (i < events.size) {
-            dispatch(ui, app, root, events[i])
-            i++
-        }
+        root = deliver(ui, app, root, area, events)
         if (revision() != lastRev) {
             root = stack([app.build(), app.overlay(), popupLayer()])
             layout(ui, root, area)
             lastRev = revision()
         }
 
-        ui.animating = false
+        ui.nextFrameIn = -1.0
         canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
         canvas.clear(theme().bg)
         paint(ui, root)
         kvSetCursor(ui.cursor)
         kvFlush()
 
+        if (tracePath != "") {
+            traceFrames = traceFrames + 1
+            if (ui.animating()) { traceAnimated = traceAnimated + 1 }
+            var ei = 0
+            while (ei < events.size) {
+                val k = clampI(events[ei].kind, 0, 12)
+                traceKinds[k] = traceKinds[k] + 1
+                ei++
+            }
+            if ((ui.time - traceMark) >= 1000.0) {
+                traceLog = traceLog + traceLine(traceFrames, traceAnimated, traceKinds) + "\n"
+                writeFile(tracePath, traceLog)
+                traceMark = ui.time
+                traceFrames = 0
+                traceAnimated = 0
+                var zi = 0
+                while (zi < traceKinds.size) { traceKinds[zi] = 0; zi++ }
+            }
+        }
+
         if (running) {
-            // A blinking caret or an animation asks for the next frame on a
-            // clock; everything else waits for the user.
-            if (ui.animating) { kvWait(60) } else { kvWait(-1) }
+            // Something that asked for a frame says when it wants it; anything
+            // else waits for the user, for as long as that takes.
+            if (ui.animating()) { kvWait(ui.nextFrameIn.round().max(1)) }
+            else { kvWait(-1) }
         }
     }
     app.onStop()
     kvClose()
+}
+
+// ---------------------------------------------------------------- delivery
+
+/// Hand a batch of events to a tree, rebuilding whenever a handler changes
+/// anything, and answer the tree that is current afterwards.
+///
+/// The rebuild in the middle is not an optimisation, it is the correctness.
+/// A view holds the state as it was when the frame began — a text field's
+/// `label` is a photograph — and a handler computes the new state from it. Two
+/// events in one batch would then both read the same photograph and the second
+/// would overwrite the first: type three characters faster than the loop draws
+/// and two of them are lost. It was found that way, at about one character in
+/// three, by someone typing at a machine.
+///
+/// This is the unit the run loop uses and the unit a test should use. Calling
+/// `dispatch` in a row and patching the state up in between tests a world that
+/// has already caught up, which is not the world an application runs in.
+public func deliver(var ui: Ui, var app: App, var root: View, area: Rect,
+                    events: List<Event>): View {
+    var tree = root
+    var i = 0
+    while (i < events.size) {
+        val before = revision()
+        dispatch(ui, app, tree, events[i])
+        if (revision() != before) {
+            tree = stack([app.build(), app.overlay(), popupLayer()])
+            layout(ui, tree, area)
+        }
+        i++
+    }
+    return tree
 }
 
 // ---------------------------------------------------------------- dispatch
@@ -283,7 +361,15 @@ proc drag(var ui: Ui, var root: View, e: Event) {
     val a = nodeById(root, ui.active)
     if (a == null) { return }
     if (a.kind == kSlider) { sliderToPointer(ui, a, e.x); return }
-    if (a.kind == kField) { caretToPointer(ui, a, e, true); return }
+    if (a.kind == kField) {
+        // A press that has not really moved is not a drag. The mouse move that
+        // arrives between the two clicks of a double click would otherwise
+        // snap the caret back to the pointer and undo the word the second
+        // click had just selected — which is what it did.
+        if (ui.pointer.dragged() < 3.0) { return }
+        caretToPointer(ui, a, e, true)
+        return
+    }
     if (a.draggable) {
         val dx = e.x - ui.pointer.downX
         val dy = e.y - ui.pointer.downY
@@ -559,4 +645,25 @@ public proc runApp(title: String, w: Int, h: Int, build: () -> View) {
     val app = App(title, w, h)
     app.build = build
     run(app)
+}
+
+/// One line of the trace: frames, how many of them an animation asked for, and
+/// the events that arrived, by name. Kinds with no events are left out, so a
+/// quiet second is a short line and a flood names itself.
+func traceLine(frames: Int, animated: Int, kinds: List<Int>): String {
+    val names = ["none", "close", "resize", "move", "down", "up", "scroll",
+                 "keydown", "keyup", "text", "focus", "blur", "expose"]
+    var evs = ""
+    var i = 0
+    var total = 0
+    while (i < kinds.size) {
+        if (kinds[i] > 0) {
+            evs = evs + " " + names[i] + "=" + kinds[i].toString()
+            total = total + kinds[i]
+        }
+        i++
+    }
+    if (total == 0) { evs = " (no events)" }
+    return "frames=" + frames.toString() + " animated=" + animated.toString() +
+           " events=" + total.toString() + evs
 }

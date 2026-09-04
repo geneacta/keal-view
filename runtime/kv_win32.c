@@ -372,8 +372,19 @@ void kvp_set_title(const char *t) {
     if (MultiByteToWideChar(CP_UTF8, 0, t, -1, w, 511) > 0) SetWindowTextW(win, w);
 }
 
+/* Only when it changes.
+ *
+ * The run loop asks for a cursor shape every frame, which is the right thing
+ * for it to do — it does not know what the last frame asked for. Calling
+ * `SetCursor` every frame is not: Windows re-sends `WM_SETCURSOR` to the
+ * window under the pointer when the shape is re-established, so the frame
+ * woke the wait that drew the frame. It only happened while the pointer was
+ * over the window, which is the only time `WM_SETCURSOR` is sent at all, and
+ * it did not care about focus or about which part of the window — the title
+ * bar is non-client and gets one too. */
 void kvp_set_cursor(int64_t shape) {
     if (shape < 0 || shape > 4) shape = 0;
+    if ((int)shape == cursor_now) return;
     cursor_now = (int)shape;
     SetCursor(cursors[cursor_now]);
 }

@@ -385,10 +385,13 @@ proc paintField(var ui: Ui, v: View) {
         }
         ui.fonts.draw(c, shown, inner.x - shift, baseline, st, ui.inkFor(v))
         if (focused) {
-            // A caret that blinks means a frame that has to be drawn without
-            // anything having happened, so the loop is told to expect one.
-            ui.animate()
-            val phase = (ui.time / 530.0).toInt() % 2
+            // A caret that blinks means a frame drawn with nothing having
+            // happened — so the loop is told to expect one, and told **when**.
+            // Asking for "soon" gets sixteen full repaints a second to move one
+            // bar; asking for the moment the bar next changes gets two.
+            val period = 530.0
+            ui.wakeIn(period - (ui.time % period))
+            val phase = (ui.time / period).toInt() % 2
             if (phase == 0) {
                 c.fillRect(Rect(inner.x + cx - shift, inner.y + (inner.h - lh) / 2.0 + 1.0,
                                 t.hairline * 1.4, lh - 2.0), t.accent)
