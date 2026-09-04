@@ -269,13 +269,24 @@ rather than failing silently — which was the failure mode worth fearing. What
 remains is one pair of eyes on a screen at 125 % or more, confirming that
 everything is larger and still sharp.
 
-Three things remain unverified, and they are recorded rather than glossed:
-display scaling **as it looks** on Windows (both testers had screens at 100 %
-and changing someone's display settings is not a tester's call), tearing
-during a fast resize (repeated screen capture tops out near sixty milliseconds
-and a tear lives inside one frame), and the pointer's *shape* under XWayland,
-where the compositor decides and a control window written the same way fails
-the same way.
+Four things remain unverified, and they are recorded rather than glossed —
+each of them unverifiable by the person who would have to do it:
+
+* **display scaling as it looks**, on Windows. Both testers had screens at
+  100 %, and changing someone's display settings is not a tester's call. The
+  mechanism is confirmed: the window really is `PER_MONITOR_AWARE_V2`.
+* **tearing during a fast resize.** Repeated screen capture tops out near
+  sixty milliseconds and a tear lives inside one frame. It would take a
+  capture card or a camera.
+* **the pointer's shape under XWayland**, where the compositor decides and a
+  control window written exactly as this backend is fails exactly as it does.
+* **the idle cost with a real mouse resting on the window**, on Linux. This is
+  the half of the measurement that was perfect on Windows for two days while
+  the other half held a whole core, so it is the half that matters — and under
+  XWayland it cannot be synthesised at all: `XTestFakeMotionEvent` is inert
+  behind the portal, and `XWarpPointer` moves the pointer without the server
+  emitting the motion that would follow. It needs a hand on a mouse. The
+  tester asked their user, who preferred not to, and that is an answer.
 
 The framebuffer format is the same on all three — `0xAARRGGBB` in a
 `uint32_t` — because that is what CoreGraphics, a 32-bit BI_RGB DIB and an

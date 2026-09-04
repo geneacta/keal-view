@@ -150,7 +150,16 @@ Look for, in `frame.png`:
     away from the window, and once with the pointer resting *over* it and not
     moving. Both should be **0,0 %**; a stationary cursor is not an event.
     The second case was broken on Windows for two days while the first was
-    perfect, so one reading here says almost nothing. Take it from accumulated
+    perfect, so one reading here says almost nothing.
+
+    **Under XWayland the second case cannot be synthesised, and this step is
+    then half done.** `XTestFakeMotionEvent` is advertised and inert behind the
+    input portal, and `XWarpPointer` moves the pointer without the server
+    emitting the motion that would follow — so a program cannot put the
+    compositor into the state where a cursor is resting on a surface. Only a
+    hand on a mouse can. If you cannot get that, **report this step as half
+    done rather than as passing**: the half you can measure is the half that
+    was perfect on Windows while the other one held a core. Take it from accumulated
     processor time over several seconds rather than from a one-second sample,
     and run the same measurement against a text editor as a control.
 
