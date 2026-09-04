@@ -86,9 +86,16 @@ Look for, in `frame.png`:
 3. **The colours are right.** The framebuffer is `0xAARRGGBB` in a
    `uint32_t`, and all three platforms are supposed to read that without
    conversion. Red and blue swapped means they do not, on yours.
-4. **Resizing** — drag a corner. It should redraw without lag, tearing or a
-   white flash. A white flash on Windows is `WM_ERASEBKGND`, which the
-   backend does not handle yet.
+4. **Resizing** — drag a corner. It should redraw without lag or a white
+   flash. A white flash on Windows is `WM_ERASEBKGND`, which the backend does
+   not handle yet.
+
+   **Tearing during a fast drag is not testable this way, and saying so is
+   better than guessing.** Repeated screen capture tops out around sixty
+   milliseconds between frames, and a tear lives inside one frame; `--trace`
+   counts frames rather than looking at them. A report that says "neither seen
+   nor ruled out" is worth more here than one that says "looks fine". It would
+   take a capture card or a camera, and nobody has needed it enough yet.
 5. **Scale.** On a display at 125 %, 150 % or 2×, everything should be
    *larger and still sharp*, never stretched and soft. If your screen is at
    100 % you cannot see this, and **you must not change the setting to find
