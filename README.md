@@ -249,6 +249,15 @@ them were being *hidden* by it: the assertions patched the state up between
 events by hand, which is the rebuild the loop does, so they tested a world
 that had already caught up.
 
+That is not an argument against the suite, and the Windows tester was right to
+say so. A person at a machine sees one screen, one keyboard layout and one way
+of injecting events, and proves nothing about what they did not look at; the
+176 assertions run tomorrow, on every platform, without anybody. What the
+week actually showed is narrower and more useful: **a test that arranges the
+world for the code will pass whatever the code does.** The fix was to make the
+test call `deliver` — the thing the run loop calls — rather than a convenient
+sequence of its parts.
+
 Display scaling is the one thing still short of a full answer, and it is worth
 saying exactly how short. Both Windows testers had screens at 100 %, and
 changing someone's display settings is not a tester's call to make. But the

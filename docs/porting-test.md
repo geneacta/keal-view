@@ -187,6 +187,27 @@ So: if input seems to be lost or ignored, send the same input to a text editor
 first. If it is lost there as well, the report is about your injection and not
 about this framework.
 
+## 2¾. Measure by comparing, not by reading a number
+
+The two measurements that cut through this project's hardest defect both did
+the same thing, and it is worth copying the shape rather than the numbers.
+
+**User time against kernel time, in the same process.** An idle window held
+most of a core; 97 % of it was user time and 0.3 % kernel. That one ratio
+eliminated the wait, the message pump and every system call in a single line,
+while the person who wrote the code was looking straight at them.
+
+**Two windows of exactly the same size, holding different amounts.** A
+calculator with twenty buttons and a gallery with a scrolling document, both
+at 336×509: 0.93 % against 20.53 %. Same pixels, twenty-two times the cost —
+which eliminates the surface, the rasteriser and the platform at once and
+leaves only the content.
+
+Both are ratios rather than readings, and that is what makes them survive a
+crooked harness: when the tester's `INPUT` struct was the wrong size, the
+comparison was wrong on both sides, so it went quiet instead of lying. A
+single number from a broken instrument is a number you will believe.
+
 ## 3. Reporting
 
 What helps, in order: the exact error text if there is one; otherwise **what
