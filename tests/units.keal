@@ -196,6 +196,33 @@ proc layoutTests() {
     layout(ui, column([b2again]), page)
     eqI("with a key, state belongs to the thing", ui.caretOf(b2again.id, 99), 3)
 
+    // A view that paints itself is told whether the pointer is over it —
+    // whether or not it would take a click. It never was: `hit` answers only
+    // for views that take the pointer, so `Paint.hot` was false for ever and
+    // two examples demonstrated a hover that did nothing. Same family as the
+    // tooltip, found the same way, a week apart.
+    val chart = custom({ p -> }).sized(200.0, 100.0)
+    val over = column([chart])
+    layout(ui, over, page)
+    val path: List<Int> = []
+    hoverPath(over, centerX(chart.frame), centerY(chart.frame), path)
+    ok("the pointer's chain reaches a plain custom", path.contains(chart.id))
+    ok("and it is not a click target", hit(over, centerX(chart.frame), centerY(chart.frame)) == null)
+    val away: List<Int> = []
+    hoverPath(over, 900.0, 900.0, away)
+    ok("and outside it, nothing", away.size == 0)
+
+    // What is drawn on top wins: a menu over a chart means the chart is not
+    // under the pointer, whatever the rectangles say.
+    val under = custom({ p -> }).sized(200.0, 100.0)
+    val overlaid = custom({ p -> }).sized(200.0, 100.0)
+    val layers = stack([under, overlaid])
+    layout(ui, layers, page)
+    val both: List<Int> = []
+    hoverPath(layers, centerX(overlaid.frame), centerY(overlaid.frame), both)
+    ok("the layer on top is on the chain", both.contains(overlaid.id))
+    ok("the one beneath it is not", not both.contains(under.id))
+
     // A tooltip is not a target. A label carrying one must show it without
     // becoming clickable, taking hover, or swallowing the click meant for
     // whatever is behind it.

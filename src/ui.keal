@@ -22,6 +22,12 @@ public class Ui(public var canvas: Canvas, public var fonts: Fonts, public var t
     public var hot: Int = 0
     /// The node the pointer went down on and has not let go of.
     public var active: Int = 0
+    /// Every node the pointer is inside, root first, following the child drawn
+    /// last at each step. `hot` above is the *target* — the innermost thing
+    /// willing to be clicked — and these are everything the pointer is over,
+    /// which is a different question and the one a view that paints itself
+    /// asks.
+    public var hoverIds: List<Int> = []
     /// The node that keyboard input goes to.
     public var focus: Int = 0
     /// True while the focus was reached by Tab rather than by a click — a
@@ -70,6 +76,15 @@ public class Ui(public var canvas: Canvas, public var fonts: Fonts, public var t
     // ------------------------------------------------------------- helpers
 
     public func isHot(v: View): Bool { return (v.id == this.hot) and v.enabled }
+
+    /// Is the pointer over this view — whether or not the view would take a
+    /// click? What a `custom` is told, and the reason it is a separate
+    /// question from `isHot`: a chart is under the pointer whether or not it
+    /// is willing to be clicked, and a menu drawn over it is not.
+    public func pointerOver(v: View): Bool {
+        if (not this.pointer.inside) { return false }
+        return this.hoverIds.contains(v.id)
+    }
     public func isActive(v: View): Bool { return (v.id == this.active) and v.enabled }
     public func isFocused(v: View): Bool { return v.id == this.focus }
 

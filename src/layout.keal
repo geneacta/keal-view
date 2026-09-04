@@ -377,6 +377,27 @@ public func nodeById(v: View, id: Int): View? {
     return null
 }
 
+/// The chain of views under the point, root first, following at each step the
+/// child drawn last — which is the one a viewer sees.
+///
+/// This is not `hit`: it answers for every kind, not only for the ones that
+/// take the pointer. A view that paints itself is told whether the pointer is
+/// over it, and it is over a chart whether or not the chart is willing to be
+/// clicked. Following the last-drawn child at each step is what makes a menu
+/// over the chart stop the chart from being hovered — the menu is on the
+/// chain and the chart is not.
+public proc hoverPath(v: View, x: Float, y: Float, var out: List<Int>) {
+    if (not holds(v.frame, x, y)) { return }
+    out.add(v.id)
+    var i = v.kids.size - 1
+    while (i >= 0) {
+        val before = out.size
+        hoverPath(v.kids[i], x, y, out)
+        if (out.size > before) { return }
+        i--
+    }
+}
+
 /// The deepest view under the point that has a note to show.
 ///
 /// This is its own walk rather than a use of `hit`, because a tooltip is not a

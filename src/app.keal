@@ -300,6 +300,15 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
     if (k == evMove()) {
         val h = hit(root, e.x, e.y)
         val newHot = if (h == null) { 0 } else { h.id }
+        // Everything the pointer is inside, not only what it can click: a view
+        // that paints itself is told whether it is under the pointer, and a
+        // chart is under it whether or not it takes a click.
+        val path: List<Int> = []
+        hoverPath(root, e.x, e.y, path)
+        val deepBefore = if (ui.hoverIds.size == 0) { 0 } else { ui.hoverIds[ui.hoverIds.size - 1] }
+        val deepNow = if (path.size == 0) { 0 } else { path[path.size - 1] }
+        ui.hoverIds = path
+        if (deepNow != deepBefore) { invalidate() }
         if (newHot != ui.hot) {
             ui.hot = newHot
             invalidate()
