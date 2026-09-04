@@ -1,4 +1,5 @@
 import "./geom.keal"
+import "./color.keal"
 import "./text.keal"
 import "./theme.keal"
 import "./ui.keal"
@@ -387,15 +388,51 @@ public func nodeById(v: View, id: Int): View? {
 /// over the chart stop the chart from being hovered — the menu is on the
 /// chain and the chart is not.
 public proc hoverPath(v: View, x: Float, y: Float, var out: List<Int>) {
-    if (not holds(v.frame, x, y)) { return }
+    if (not claimsPointer(v, x, y)) { return }
     out.add(v.id)
     var i = v.kids.size - 1
     while (i >= 0) {
-        val before = out.size
-        hoverPath(v.kids[i], x, y, out)
-        if (out.size > before) { return }
+        if (claimsPointer(v.kids[i], x, y)) {
+            hoverPath(v.kids[i], x, y, out)
+            return
+        }
         i--
     }
+}
+
+/// Does this subtree put anything an eye can see under the point?
+///
+/// The question exists because of what the run loop builds. Every frame is
+/// `stack([the application, its overlay, the popup layer])`, and both of the
+/// last two are `nothing()` almost all the time — a spacer, which a layered
+/// container gives the whole window to. A chain that stopped at the first
+/// child containing the point therefore stopped at an empty layer, every
+/// time, everywhere in the window, and never reached the application at all.
+///
+/// A layer that paints is an obstacle; a layer that paints nothing is not.
+/// That is the difference `nothing()` already claimed to have — "no size, no
+/// ink, no answer to the pointer" — and did not.
+public func claimsPointer(v: View, x: Float, y: Float): Bool {
+    if (not holds(v.frame, x, y)) { return false }
+    if (hasInk(v)) { return true }
+    var i = 0
+    while (i < v.kids.size) {
+        if (claimsPointer(v.kids[i], x, y)) { return true }
+        i++
+    }
+    return false
+}
+
+/// Does this view itself put anything on the screen — before asking what its
+/// children do? A background or a border counts whatever the kind; otherwise
+/// the containers answer no and everything that draws answers yes.
+public func hasInk(v: View): Bool {
+    if (alphaOf(v.fill) > 0) { return true }
+    if ((v.strokeW > 0.0) and (alphaOf(v.stroke) > 0)) { return true }
+    if (v.kind == kSpacer) { return false }
+    if (v.kind == kBox) { return false }
+    if (v.kind == kScroll) { return false }
+    return true
 }
 
 /// The deepest view under the point that has a note to show.

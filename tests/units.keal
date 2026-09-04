@@ -223,6 +223,35 @@ proc layoutTests() {
     ok("the layer on top is on the chain", both.contains(overlaid.id))
     ok("the one beneath it is not", not both.contains(under.id))
 
+    // The tree the run loop actually builds, which is not the tree the
+    // assertions below build. Every frame is
+    // `stack([the application, its overlay, the popup layer])`, and the last
+    // two are `nothing()` almost always — spacers, which a layered container
+    // hands the whole window to. A chain that stopped at the first child
+    // containing the point stopped there, everywhere, and never reached the
+    // application. Two rounds of assertions passed while that was true,
+    // because both built a shape `runApp` never builds.
+    var reached = false
+    val deep = custom({ p -> reached = p.hot }).sized(200.0, 100.0)
+    val asRunLoopBuildsIt = stack([column([deep]), nothing(), nothing()])
+    layout(ui, asRunLoopBuildsIt, page)
+    ui.pointer.inside = true
+    ui.pointer.buttons = 0
+    ui.hoverIds = []
+    hoverPath(asRunLoopBuildsIt, centerX(deep.frame), centerY(deep.frame), ui.hoverIds)
+    ok("an empty layer does not swallow the chain", ui.hoverIds.contains(deep.id))
+    paint(ui, asRunLoopBuildsIt)
+    ok("and the view underneath is told", reached)
+
+    // A layer that paints *is* an obstacle — a menu over a chart means the
+    // chart is not under the pointer.
+    reached = false
+    val covered = stack([column([deep]), custom({ p -> }).sized(0.0, 0.0)])
+    layout(ui, covered, page)
+    ui.hoverIds = []
+    hoverPath(covered, centerX(deep.frame), centerY(deep.frame), ui.hoverIds)
+    ok("a layer with ink does swallow it", not ui.hoverIds.contains(deep.id))
+
     // And now the half the last attempt missed: what a `custom` is actually
     // handed. The assertions above check `hoverPath`, which is the machinery —
     // they would still pass if `paint.keal` never read it, and that is exactly
