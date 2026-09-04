@@ -51,6 +51,10 @@ build/gallery --snapshot frame.bmp 2 900 1900
 python3 tools/bmp2png.py frame.bmp frame.png
 ```
 
+`units` prints how many checks it ran; the number grows, so compare it against
+what it says on a machine that works rather than against a number written
+down here.
+
 Neither touches the window, the event queue or the platform's drawing at all.
 The first asserts 131 things about colour, geometry, layout, docking, fonts
 and input dispatch. The second exercises the rasteriser, the TrueType engine
@@ -86,7 +90,16 @@ Look for, in `frame.png`:
    white flash. A white flash on Windows is `WM_ERASEBKGND`, which the
    backend does not handle yet.
 5. **Scale.** On a display at 125 %, 150 % or 2×, everything should be
-   *larger and still sharp*, never stretched and soft. Windows asks
+   *larger and still sharp*, never stretched and soft. If your screen is at
+   100 % you cannot see this, and **you must not change the setting to find
+   out** — it is not your machine. You can still check the half that does not
+   need eyes, and it is the half worth checking: ask the live window whether
+   it is DPI-aware at all. On Windows,
+   `AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(hwnd), (void*)-4)`
+   answers whether `PER_MONITOR_AWARE_V2` took. Beware
+   `GetAwarenessFromDpiAwarenessContext`, which answers `2` for both V1 and
+   V2 — the enumeration has no value for V2, and only the comparison
+   distinguishes them. Windows asks
    `GetDpiForWindow` after `SetProcessDpiAwarenessContext`; X11 reads
    `Xft.dpi` from the resource database. Soft, stretched output means the
    process was not made DPI-aware and the system is scaling the window for
@@ -95,7 +108,13 @@ Look for, in `frame.png`:
    text fields in the gallery's *Saisie* section, and **↔** over the dividers
    in the studio. Flicker, or a shape that never changes, is the cursor path.
 7. **Hover.** Buttons lighten under the pointer. This is the whole mouse-move
-   path in one glance.
+   path in one glance — with the window **focused**, which is the case to
+   test. Whether hover also works while the window is *not* focused is left
+   to the platform and is not a defect either way: Windows and X11 deliver
+   pointer motion to an unfocused window and so it does, macOS delivers none
+   to an inactive application and so it does not. Making them agree would mean
+   overriding one platform's own convention, which is a worse answer than
+   this sentence.
 8. **Typing.** Click a field and type. Then type an accented character, and
    one outside Latin-1 if your keyboard has one. Both backends decode to
    UTF-8 by hand — Windows folds surrogate pairs, X11 takes what

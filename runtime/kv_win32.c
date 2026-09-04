@@ -359,17 +359,49 @@ void kvp_set_cursor(int64_t shape) {
  * `kvp_open` applies this between creating the window and showing it. */
 void kvp_prefer_dark(int64_t dark) { want_dark = dark ? 1 : 0; }
 
+/* The real build number. `GetVersionEx` lies to a process with no manifest —
+ * it answers 6.2 for everything since Windows 8 — and `RtlGetVersion` does
+ * not. Windows 11 is build 22000 and up, whatever the registry's `ProductName`
+ * says about itself. */
+static int windows_build(void) {
+    static int cached = -1;
+    if (cached >= 0) return cached;
+    cached = 0;
+    HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+    if (nt) {
+        typedef LONG (WINAPI * RtlGetVersion_t)(void *);
+        RtlGetVersion_t f = (RtlGetVersion_t)(void *)GetProcAddress(nt, "RtlGetVersion");
+        if (f) {
+            struct {
+                ULONG size, major, minor, build, platform;
+                WCHAR csd[128];
+            } v;
+            memset(&v, 0, sizeof v);
+            v.size = sizeof v;
+            if (f(&v) == 0) cached = (int)v.build;
+        }
+    }
+    return cached;
+}
+
 /* Windows has no system-wide dark title bar before build 17763, and telling
  * it about one after that is a documented-but-undocumented attribute. Both
  * cases are handled by asking and ignoring a refusal.
  *
- * The attribute takes effect immediately on a window that has not been shown,
- * and not at all on one that has: `RedrawWindow(RDW_FRAME)` and
- * `SetWindowPos(SWP_FRAMECHANGED)` both leave the old caption in place, and a
- * real change of size is the only thing that makes the desktop manager
- * rebuild it. So a window already on screen is nudged one pixel and back —
- * which is a hack, and is here because the alternative is a light caption over
- * a dark application every time the theme is switched. */
+ * On **Windows 10** the attribute takes effect immediately on a window that
+ * has not been shown, and not at all on one that has: `RedrawWindow(RDW_FRAME)`
+ * and `SetWindowPos(SWP_FRAMECHANGED)` both leave the old caption in place,
+ * and only a real change of size makes the desktop manager rebuild it. So a
+ * window already on screen is nudged one pixel and back — a hack, and here
+ * because the alternative is a light caption over a dark application every
+ * time the theme is switched.
+ *
+ * On **Windows 11** the desktop manager repaints the caption by itself, both
+ * ways, with no resize at all — measured on 22621 by setting the attribute
+ * from outside the process and watching the title bar change. So the nudge is
+ * skipped there: it took two `SetWindowPos` calls and about two milliseconds
+ * during which `SWP_NOCOPYBITS` invalidates the client area, for no effect
+ * anyone can name. Build 22000 is the line. */
 void kvp_set_dark(int64_t dark) {
     if (!win) return;
     want_dark = dark ? 1 : 0;
@@ -384,7 +416,7 @@ void kvp_set_dark(int64_t dark) {
         else if (f(win, 19, &v, sizeof v) == S_OK) applied = 1;
     }
     FreeLibrary(dwm);
-    if (applied && IsWindowVisible(win)) {
+    if (applied && IsWindowVisible(win) && windows_build() < 22000) {
         RECT r;
         if (GetWindowRect(win, &r)) {
             int w = r.right - r.left, h = r.bottom - r.top;

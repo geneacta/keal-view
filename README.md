@@ -187,7 +187,7 @@ cd keal && cargo build --release && cd ../keal-view
 tools/build.sh examples/gallery.keal    && build/gallery      # every widget
 tools/build.sh examples/calculator.keal && build/calculator
 tools/build.sh examples/studio.keal     && build/studio
-tools/test.sh                                    # 131 checks, no display
+tools/test.sh                                    # every check, no display
 ```
 
 `tools/build.sh` picks this platform's backend, compiles it once, and hands
@@ -212,7 +212,7 @@ window without capturing anything else on the screen.
 | | | |
 |---|---|---|
 | macOS | `runtime/kv_cocoa.m` | Cocoa. **Verified** — developed here |
-| Windows | `runtime/kv_win32.c` | Win32 and a BI_RGB DIB. **Verified** on Windows 10 22H2 (19045), MinGW-w64. Everything in [`docs/porting-test.md`](docs/porting-test.md) except display scaling, which was not tested |
+| Windows | `runtime/kv_win32.c` | Win32 and a BI_RGB DIB. **Verified** on Windows 10 22H2 (19045) and Windows 11 22H2 (22621), MinGW-w64. Everything in [`docs/porting-test.md`](docs/porting-test.md); of display scaling, the mechanism is confirmed and only the look of it is outstanding — see below |
 | Linux | `runtime/kv_x11.c` | Xlib only, no toolkit. **Builds and runs its whole test suite in CI; the window has never opened** |
 
 All three were written against the same dozen functions, and nothing above
@@ -227,11 +227,21 @@ bar), and then a fifth that only a race could show — `OpenClipboard` losing to
 the system's clipboard-history service about 6 % of the time, which the
 backend now retries through.
 
-Linux is where Windows was a day ago: the framework builds there, the 160
-assertions pass there, and every example draws a frame there, all in CI with
-no display. The window itself is untested. If you have a Linux machine,
-[`docs/porting-test.md`](docs/porting-test.md) is the checklist, and the first
-report is welcome.
+Display scaling is the one thing still short of a full answer, and it is worth
+saying exactly how short. Both Windows testers had screens at 100 %, and
+changing someone's display settings is not a tester's call to make. But the
+mechanism was checked from outside the process on a live window:
+`AreDpiAwarenessContextsEqual` says the window really is
+`PER_MONITOR_AWARE_V2`, so `SetProcessDpiAwarenessContext` is taking effect
+rather than failing silently — which was the failure mode worth fearing. What
+remains is one pair of eyes on a screen at 125 % or more, confirming that
+everything is larger and still sharp.
+
+Linux is where Windows was a day ago: the framework builds there, the
+assertions pass there, and every example draws a frame there — in CI with no
+display, and now also on an ARM machine, where the offscreen frame is correct
+pixel for pixel. The window itself is untested. If you have a Linux machine,
+[`docs/porting-test.md`](docs/porting-test.md) is the checklist.
 
 The framebuffer format is the same on all three — `0xAARRGGBB` in a
 `uint32_t` — because that is what CoreGraphics, a 32-bit BI_RGB DIB and an
