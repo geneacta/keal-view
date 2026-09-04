@@ -114,7 +114,7 @@ silent.
 | `p.canvas` | a `Canvas`, already clipped to this view |
 | `p.area` | this view's rectangle, in points |
 | `p.theme` `p.fonts` | what everything else is drawn with |
-| `p.hot` `p.pressed` | whether the pointer is over it, and pressed |
+| `p.hot` `p.pressed` | whether the pointer is over it, and over it with a button down. "Over" does not require the view to take clicks — but it is false wherever something that *does* has the pointer instead, so while a popup is open nothing beneath it is under the pointer |
 | `p.text(s, r, align, style, col)` | one line in a box, cut with an ellipsis if it must be |
 | `p.line(s, x, baseline, style, col)` | one line on a baseline; answers where the pen ended |
 | `p.width(s, st)` `p.lineHeight(st)` `p.ascent(st)` | measuring |

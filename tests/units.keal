@@ -243,14 +243,24 @@ proc layoutTests() {
     paint(ui, asRunLoopBuildsIt)
     ok("and the view underneath is told", reached)
 
-    // A layer that paints *is* an obstacle — a menu over a chart means the
-    // chart is not under the pointer.
+    // A layer that claims the pointer *is* an obstacle. A `custom` always
+    // claims it, because nothing outside one can tell whether its `onDraw`
+    // puts anything down — so a popup makes everything beneath it not under
+    // the pointer, wherever the popup happens to be. That is consistent with
+    // what a click does there, which is close the popup rather than reach
+    // through it, and it is the rule rather than an accident.
     reached = false
     val covered = stack([column([deep]), custom({ p -> }).sized(0.0, 0.0)])
     layout(ui, covered, page)
     ui.hoverIds = []
     hoverPath(covered, centerX(deep.frame), centerY(deep.frame), ui.hoverIds)
-    ok("a layer with ink does swallow it", not ui.hoverIds.contains(deep.id))
+    ok("a layer that claims the pointer does swallow it", not ui.hoverIds.contains(deep.id))
+    ok("a custom claims it whether or not it draws", opaqueToPointer(custom({ p -> })))
+    ok("and a view that takes a click claims it",
+       opaqueToPointer(underlay({ p -> }).tappable({ -> })))
+    ok("a bare container does not", not opaqueToPointer(column([])))
+    ok("nor does nothing()", not opaqueToPointer(nothing()))
+    ok("but a container with a background does", opaqueToPointer(column([]).bg(rgb(1, 2, 3))))
 
     // And now the half the last attempt missed: what a `custom` is actually
     // handed. The assertions above check `hoverPath`, which is the machinery —

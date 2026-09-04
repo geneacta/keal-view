@@ -400,7 +400,7 @@ public proc hoverPath(v: View, x: Float, y: Float, var out: List<Int>) {
     }
 }
 
-/// Does this subtree put anything an eye can see under the point?
+/// Does anything in this subtree claim the pointer at this point?
 ///
 /// The question exists because of what the run loop builds. Every frame is
 /// `stack([the application, its overlay, the popup layer])`, and both of the
@@ -408,13 +408,9 @@ public proc hoverPath(v: View, x: Float, y: Float, var out: List<Int>) {
 /// container gives the whole window to. A chain that stopped at the first
 /// child containing the point therefore stopped at an empty layer, every
 /// time, everywhere in the window, and never reached the application at all.
-///
-/// A layer that paints is an obstacle; a layer that paints nothing is not.
-/// That is the difference `nothing()` already claimed to have — "no size, no
-/// ink, no answer to the pointer" — and did not.
 public func claimsPointer(v: View, x: Float, y: Float): Bool {
     if (not holds(v.frame, x, y)) { return false }
-    if (hasInk(v)) { return true }
+    if (opaqueToPointer(v)) { return true }
     var i = 0
     while (i < v.kids.size) {
         if (claimsPointer(v.kids[i], x, y)) { return true }
@@ -423,12 +419,27 @@ public func claimsPointer(v: View, x: Float, y: Float): Bool {
     return false
 }
 
-/// Does this view itself put anything on the screen — before asking what its
-/// children do? A background or a border counts whatever the kind; otherwise
-/// the containers answer no and everything that draws answers yes.
-public func hasInk(v: View): Bool {
+/// Does this view claim the pointer itself, before asking what its children
+/// do?
+///
+/// A background or a border claims it, whatever the kind. So does a view that
+/// takes a click or a drag, whether or not it draws — a popup's scrim is how
+/// a click outside a menu closes it, so what is under the scrim really is out
+/// of reach and really is not under the pointer.
+///
+/// **And so does every `custom`, always.** Nothing outside a `custom` can tell
+/// whether its `onDraw` puts anything down: it is a lambda, and asking it
+/// would mean drawing. So it is taken at its word. The consequence is worth
+/// stating rather than discovering — while a popup is open, *nothing beneath
+/// it is under the pointer*, even where the popup is not covering it and even
+/// where its scrim is not dimming anything. That is consistent with what a
+/// click does there, which is close the popup rather than reach through it.
+///
+/// The plain containers answer no and let their children speak.
+public func opaqueToPointer(v: View): Bool {
     if (alphaOf(v.fill) > 0) { return true }
     if ((v.strokeW > 0.0) and (alphaOf(v.stroke) > 0)) { return true }
+    if (v.clickable or v.draggable) { return true }
     if (v.kind == kSpacer) { return false }
     if (v.kind == kBox) { return false }
     if (v.kind == kScroll) { return false }
