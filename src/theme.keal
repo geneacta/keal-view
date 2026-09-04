@@ -174,8 +174,13 @@ public class Paint(
     public val area: Rect,
     public val fonts: Fonts,
     public val theme: Theme,
-    /// Whether the pointer is over this view, and whether it is pressed on
-    /// it — so a view that paints itself can react like the built-in ones.
+    /// Whether the pointer is over this view, and whether it is over it with a
+    /// button held — so a view that paints itself can react like the built-in
+    /// ones.
+    ///
+    /// "Over" means over: it does not require the view to take clicks, and it
+    /// is false when something drawn on top of it has the pointer instead. A
+    /// `custom` that does take clicks gets these as well as `onTap`.
     public val hot: Bool,
     public val pressed: Bool
 ) {

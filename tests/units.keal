@@ -223,6 +223,44 @@ proc layoutTests() {
     ok("the layer on top is on the chain", both.contains(overlaid.id))
     ok("the one beneath it is not", not both.contains(under.id))
 
+    // And now the half the last attempt missed: what a `custom` is actually
+    // handed. The assertions above check `hoverPath`, which is the machinery —
+    // they would still pass if `paint.keal` never read it, and that is exactly
+    // what happened. This one paints, and reads the flag out of the `Paint`
+    // that arrived.
+    var sawHot = false
+    var sawPressed = false
+    val watcher = custom({ p ->
+        sawHot = p.hot
+        sawPressed = p.pressed
+    }).sized(200.0, 100.0)
+    val watched = column([watcher])
+    layout(ui, watched, page)
+    ui.pointer.inside = true
+    ui.pointer.buttons = 0
+    ui.hoverIds = []
+    hoverPath(watched, centerX(watcher.frame), centerY(watcher.frame), ui.hoverIds)
+    paint(ui, watched)
+    ok("a custom is told the pointer is over it", sawHot)
+    ok("and that no button is down", not sawPressed)
+
+    ui.pointer.buttons = 1
+    paint(ui, watched)
+    ok("and told when one is", sawPressed)
+
+    ui.pointer.buttons = 0
+    ui.hoverIds = []
+    hoverPath(watched, 900.0, 900.0, ui.hoverIds)
+    paint(ui, watched)
+    ok("and told when the pointer is elsewhere", not sawHot)
+
+    ui.pointer.inside = false
+    ui.hoverIds = []
+    hoverPath(watched, centerX(watcher.frame), centerY(watcher.frame), ui.hoverIds)
+    paint(ui, watched)
+    ok("and when the pointer has left the window", not sawHot)
+    ui.pointer.inside = true
+
     // A tooltip is not a target. A label carrying one must show it without
     // becoming clickable, taking hover, or swallowing the click meant for
     // whatever is behind it.

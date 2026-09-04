@@ -89,7 +89,12 @@ proc paintNode(var ui: Ui, v: View) {
     if (v.kind == kPanel) { paintPanel(ui, v); return }
     if (v.kind == kCustom) {
         c.push(r)
-        v.onDraw(Paint(c, r, ui.fonts, t, ui.isHot(v), ui.isActive(v)))
+        // `pointerOver`, not `isHot`: `isHot` compares against the click
+        // target, and a `custom` that never asked to be clicked is never it.
+        // Being under the pointer and being willing to take a click are
+        // different questions, and this is the one the drawing asked.
+        val over = ui.pointerOver(v)
+        v.onDraw(Paint(c, r, ui.fonts, t, over, over and ui.pointer.down()))
         c.pop()
         return
     }
