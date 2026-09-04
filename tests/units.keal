@@ -196,6 +196,19 @@ proc layoutTests() {
     layout(ui, column([b2again]), page)
     eqI("with a key, state belongs to the thing", ui.caretOf(b2again.id, 99), 3)
 
+    // A tooltip is not a target. A label carrying one must show it without
+    // becoming clickable, taking hover, or swallowing the click meant for
+    // whatever is behind it.
+    val tipped = label("hover me").tip("here it is").sized(120.0, 24.0)
+    val tipTree = column([tipped])
+    layout(ui, tipTree, page)
+    val onTip = tipAt(tipTree, centerX(tipped.frame), centerY(tipped.frame))
+    ok("a plain label can carry a note", onTip != null)
+    if (onTip != null) { ok("and it is the right one", onTip.tipText == "here it is") }
+    ok("without becoming a target", hit(tipTree, centerX(tipped.frame), centerY(tipped.frame)) == null)
+    ok("and nothing is offered where there is no note",
+       tipAt(column([label("plain").sized(120.0, 24.0)]), 10.0, 10.0) == null)
+
     // A key overrides the path, so a node keeps its identity when it moves.
     val k1 = column([label("x").keyed("mine")])
     val k2 = column([label("a"), label("b"), label("x").keyed("mine")])
@@ -690,6 +703,14 @@ proc numberTests() {
     ok("a fraction keeps what it needs", shortNumber(0.5) == "0.5")
     ok("and no more than that", shortNumber(1.0 / 3.0).length <= 5)
     ok("a negative keeps its sign", shortNumber(-2.0) == "-2")
+
+    // A mantissa that rounds up to ten is not a mantissa. `999999999 squared`
+    // is 9.99999998e17, which rounds to 10.0 — and `10e17` is not how anybody
+    // writes 1e18. Found on a calculator on Linux.
+    ok("a carrying mantissa moves into the exponent",
+       scientific(999999999.0 * 999999999.0) == "1e18")
+    ok("an ordinary one does not", scientific(1.5242e16).startsWith("1.5242e16"))
+    ok("and a small one goes the other way", scientific(0.000000123).startsWith("1.23e-7"))
 }
 
 // ------------------------------------------------------- state in an object

@@ -504,6 +504,36 @@ public func shortNumber(v: Float): String {
     return ((v * 100.0).round().toFloat() / 100.0).toString()
 }
 
+/// A number in the form `1.2345e18`, for when the digits stop fitting.
+///
+/// `toString` on a `Float` prints every digit the value has, which is right
+/// and is three hundred characters for ten to the three hundredth. Anything
+/// with a fixed width has to decide for itself where to stop, so this is here
+/// rather than in each application that needs it. The exponent is found by
+/// dividing, because the standard library has no logarithm.
+public func scientific(v: Float): String {
+    if (v.isNaN()) { return "NaN" }
+    if (v == 0.0) { return "0" }
+    if (v.abs() > 1.0e308) { return "inf" }
+    val neg = v < 0.0
+    var m = v.abs()
+    var e = 0
+    while (m >= 10.0) { m = m / 10.0; e++ }
+    while (m < 1.0) { m = m * 10.0; e-- }
+    // Rounding the mantissa can carry: 9.99999998 becomes 10.0, and `10e17` is
+    // not how anybody writes 1e18. The carry goes where it belongs.
+    var r = (m * 10000.0).round().toFloat() / 10000.0
+    if (r >= 10.0) {
+        r = r / 10.0
+        e++
+    }
+    var d = r.toString()
+    while (d.endsWith("0")) { d = d.take(d.length - 1) }
+    if (d.endsWith(".")) { d = d.take(d.length - 1) }
+    val sign = if (neg) { "-" } else { "" }
+    return sign + d + "e" + e.toString()
+}
+
 /// A shape drawn from a name rather than a font, so that an application has
 /// icons without carrying a file: `check` `close` `plus` `minus` `chevron-down`
 /// `chevron-right` `chevron-left` `chevron-up` `search` `menu` `dot` `gear`

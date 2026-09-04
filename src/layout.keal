@@ -377,6 +377,24 @@ public func nodeById(v: View, id: Int): View? {
     return null
 }
 
+/// The deepest view under the point that has a note to show.
+///
+/// This is its own walk rather than a use of `hit`, because a tooltip is not a
+/// target. Making a label interactive so that it could carry one would give it
+/// hover, a hit that swallows the click meant for whatever is behind it, and a
+/// place in the focus order — three lies to tell one truth.
+public func tipAt(v: View, x: Float, y: Float): View? {
+    if (not holds(v.frame, x, y)) { return null }
+    var i = v.kids.size - 1
+    while (i >= 0) {
+        val f = tipAt(v.kids[i], x, y)
+        if (f != null) { return f }
+        i--
+    }
+    if (v.tipText != "") { return v }
+    return null
+}
+
 /// The innermost scrolling region under the point — where a wheel event goes.
 public func scrollUnder(v: View, x: Float, y: Float): View? {
     if (not holds(v.frame, x, y)) { return null }

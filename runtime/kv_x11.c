@@ -16,6 +16,7 @@
 #include <X11/keysym.h>
 #include <X11/cursorfont.h>
 #include <X11/Xresource.h>
+#include <locale.h>
 #include <sys/select.h>
 #include <sys/time.h>
 #include <time.h>
@@ -37,6 +38,12 @@ static int64_t  pxw = 0, pxh = 0;
 static Atom     wm_delete, wm_protocols, a_clipboard, a_utf8, a_targets, a_kvsel, a_wake;
 static Cursor   cursors[5];
 static char    *clipboard_own = NULL;   /* what we last put on the clipboard */
+static XIM      xim = NULL;
+static XIC      xic = NULL;
+/* Click counting, which X11 does not do for anybody. */
+static Time     click_time = 0;
+static int      click_x = 0, click_y = 0, click_run = 0;
+static unsigned click_button = 0;
 static struct timespec t0;
 
 static void push(KvEv e) {
@@ -112,9 +119,12 @@ static void answer_selection(XSelectionRequestEvent *req) {
     out.property = None;
     if (clipboard_own) {
         if (req->target == a_targets) {
-            Atom offer[2] = { a_targets, a_utf8 };
+            /* `STRING` as well as `UTF8_STRING`: an application that asks only
+             * for the older name — xterm, anything built on Motif — would
+             * otherwise be told we have nothing. */
+            Atom offer[3] = { a_targets, a_utf8, XA_STRING };
             XChangeProperty(dpy, req->requestor, req->property, XA_ATOM, 32,
-                            PropModeReplace, (unsigned char *)offer, 2);
+                            PropModeReplace, (unsigned char *)offer, 3);
             out.property = req->property;
         } else if (req->target == a_utf8 || req->target == XA_STRING) {
             XChangeProperty(dpy, req->requestor, req->property, req->target, 8,
@@ -175,7 +185,24 @@ static void translate(XEvent *ev) {
             }
             e = blank(KV_EV_DOWN);
             e.button = ev->xbutton.button == 1 ? 1 : ev->xbutton.button == 3 ? 2 : 3;
-            e.clicks = 1;
+            /* X11 counts clicks for nobody, so this does. Four hundred
+             * milliseconds and five pixels are the numbers every toolkit on
+             * this platform picks, for want of a system setting to read. */
+            {
+                Time t = ev->xbutton.time;
+                int dx = ev->xbutton.x - click_x, dy = ev->xbutton.y - click_y;
+                if (ev->xbutton.button == click_button && click_run > 0
+                    && (t - click_time) <= 400 && (dx * dx + dy * dy) <= 25) {
+                    if (click_run < 3) click_run++;
+                } else {
+                    click_run = 1;
+                }
+                click_time = t;
+                click_x = ev->xbutton.x;
+                click_y = ev->xbutton.y;
+                click_button = ev->xbutton.button;
+                e.clicks = click_run;
+            }
             e.x = ev->xbutton.x;
             e.y = ev->xbutton.y;
             e.mods = mods_of(ev->xbutton.state);
@@ -193,7 +220,23 @@ static void translate(XEvent *ev) {
         case KeyPress: {
             char buf[32];
             KeySym ks = 0;
-            int n = XLookupString(&ev->xkey, buf, sizeof buf - 1, &ks, NULL);
+            /* `XLookupString` answers ISO-8859-1, whatever the locale: one
+             * byte 0xE9 for `é`, and *nothing at all* for anything outside
+             * Latin-1 — no Greek, no Cyrillic, no CJK, no emoji. Bytes like
+             * that are not UTF-8, and this framework hands what it collects
+             * straight to the clipboard, so every other application on the
+             * machine received an invalid string. `Xutf8LookupString` against
+             * an input context answers UTF-8 and covers the whole of Unicode.
+             * Found by someone typing `é`, copying it, and looking at the
+             * bytes that came out. */
+            int n = 0;
+            if (xic) {
+                Status st = 0;
+                n = Xutf8LookupString(xic, &ev->xkey, buf, sizeof buf - 1, &ks, &st);
+                if (st == XBufferOverflow) n = 0;
+            } else {
+                n = XLookupString(&ev->xkey, buf, sizeof buf - 1, &ks, NULL);
+            }
             e = blank(KV_EV_KEYDOWN);
             e.key = named_key(ks);
             e.mods = mods_of(ev->xkey.state);
@@ -238,9 +281,16 @@ static void translate(XEvent *ev) {
 }
 
 int64_t kvp_open(const char *title, int64_t w, int64_t h) {
+    /* The locale first, or `Xutf8LookupString` has nothing to convert to. */
+    setlocale(LC_CTYPE, "");
     XInitThreads();
     dpy = XOpenDisplay(NULL);
     if (!dpy) return 0;
+    XSetLocaleModifiers("");
+    /* Before the window, not after: `w` and `h` are logical points, and a
+     * window created as though they were pixels opens at half the size on a
+     * 2× display and shows a quarter of what was asked for. */
+    read_scale();
     int screen = DefaultScreen(dpy);
     vis = DefaultVisual(dpy, screen);
     depth = DefaultDepth(dpy, screen);
@@ -252,8 +302,12 @@ int64_t kvp_open(const char *title, int64_t w, int64_t h) {
     at.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask
                   | ButtonPressMask | ButtonReleaseMask | PointerMotionMask
                   | StructureNotifyMask | FocusChangeMask;
+    unsigned pw = (unsigned)((double)w * scale + 0.5);
+    unsigned ph = (unsigned)((double)h * scale + 0.5);
+    if (pw < 1) pw = 1;
+    if (ph < 1) ph = 1;
     win = XCreateWindow(dpy, RootWindow(dpy, screen), 0, 0,
-                        (unsigned)w, (unsigned)h, 0, depth, InputOutput, vis,
+                        pw, ph, 0, depth, InputOutput, vis,
                         CWBackPixel | CWEventMask, &at);
     if (!win) { XCloseDisplay(dpy); dpy = NULL; return 0; }
 
@@ -272,8 +326,8 @@ int64_t kvp_open(const char *title, int64_t w, int64_t h) {
     XSizeHints hints;
     memset(&hints, 0, sizeof hints);
     hints.flags = PMinSize;
-    hints.min_width = 240;
-    hints.min_height = 160;
+    hints.min_width = (int)(240.0 * scale);
+    hints.min_height = (int)(160.0 * scale);
     XSetWMNormalHints(dpy, win, &hints);
 
     cursors[KV_CURSOR_ARROW]    = XCreateFontCursor(dpy, XC_left_ptr);
@@ -282,13 +336,23 @@ int64_t kvp_open(const char *title, int64_t w, int64_t h) {
     cursors[KV_CURSOR_RESIZE_H] = XCreateFontCursor(dpy, XC_sb_h_double_arrow);
     cursors[KV_CURSOR_RESIZE_V] = XCreateFontCursor(dpy, XC_sb_v_double_arrow);
 
+    /* An input context, so that key presses answer UTF-8 rather than
+     * Latin-1. A display without an input method still runs; it falls back to
+     * `XLookupString` and loses everything outside Latin-1, which is worse
+     * than this and better than not starting. */
+    xim = XOpenIM(dpy, NULL, NULL, NULL);
+    if (xim) {
+        xic = XCreateIC(xim, XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+                        XNClientWindow, win, XNFocusWindow, win, NULL);
+        if (xic) XSetICFocus(xic);
+    }
+
     gc = XCreateGC(dpy, win, 0, NULL);
     XMapRaised(dpy, win);
     XFlush(dpy);
 
-    read_scale();
-    pxw = w;
-    pxh = h;
+    pxw = (int64_t)pw;
+    pxh = (int64_t)ph;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     alive = 1;
     return 1;
@@ -297,6 +361,8 @@ int64_t kvp_open(const char *title, int64_t w, int64_t h) {
 void kvp_close(void) {
     alive = 0;
     if (!dpy) return;
+    if (xic) { XDestroyIC(xic); xic = NULL; }
+    if (xim) { XCloseIM(xim); xim = NULL; }
     if (gc) { XFreeGC(dpy, gc); gc = 0; }
     if (win) { XDestroyWindow(dpy, win); win = 0; }
     XCloseDisplay(dpy);
@@ -311,6 +377,9 @@ static void pump(void) {
     XEvent ev;
     while (dpy && XPending(dpy)) {
         XNextEvent(dpy, &ev);
+        /* The input method gets first refusal: a compose sequence or a dead
+         * key is several events that must not be read one at a time. */
+        if (XFilterEvent(&ev, None)) continue;
         translate(&ev);
         if (((qtail + 1) % QN) == qhead) break;
     }

@@ -268,7 +268,26 @@ int64_t kvp_open(const char *title, int64_t w, int64_t h) {
                                 wtitle, 511);
     if (n <= 0) wcscpy(wtitle, L"keal-view");
 
-    RECT want = { 0, 0, (LONG)w, (LONG)h };
+    /* The requested size is in logical points, so it has to be scaled before
+     * the window is created — `GetDpiForWindow` cannot be asked about a window
+     * that does not exist yet, and creating it at pixel size opens it at half
+     * the size on a 150 % display. `GetDpiForSystem` is Windows 10 1607 and
+     * up; older systems are at 96 anyway. Found on X11, where the same mistake
+     * was in the same place. */
+    UINT sysdpi = 96;
+    {
+        HMODULE u3 = GetModuleHandleW(L"user32.dll");
+        if (u3) {
+            typedef UINT (WINAPI * GetDpiForSystem_t)(void);
+            GetDpiForSystem_t g = (GetDpiForSystem_t)(void *)
+                GetProcAddress(u3, "GetDpiForSystem");
+            if (g) sysdpi = g();
+        }
+    }
+    if (sysdpi < 48) sysdpi = 96;
+    double open_scale = (double)sysdpi / 96.0;
+    RECT want = { 0, 0, (LONG)((double)w * open_scale + 0.5),
+                        (LONG)((double)h * open_scale + 0.5) };
     AdjustWindowRectEx(&want, WS_OVERLAPPEDWINDOW, FALSE, 0);
     win = CreateWindowExW(0, L"KealViewWindow", wtitle, WS_OVERLAPPEDWINDOW,
                           CW_USEDEFAULT, CW_USEDEFAULT,

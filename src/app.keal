@@ -190,6 +190,14 @@ public proc run(var app: App) {
         val stale = (revision() != lastDrawn) or (sizeChanged or ui.animating())
         ui.nextFrameIn = -1.0
         if (stale) {
+            // The theme, again, here. A handler may have changed it during
+            // this very frame — the tree was then rebuilt in the new one while
+            // `ui.theme`, read at the top of the loop, still held the old.
+            // Colours resolved at build time came out right and colours
+            // resolved at paint time came out wrong: white text on white. And
+            // because a window at rest is not woken, the wrong image was the
+            // one the user kept looking at.
+            ui.theme = theme()
             canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
             canvas.clear(theme().bg)
             paint(ui, root)
@@ -433,9 +441,8 @@ proc drag(var ui: Ui, var root: View, e: Event) {
 /// Show the note attached to whatever the pointer is resting on, and take it
 /// away as soon as the pointer is somewhere else.
 proc tipUnder(var ui: Ui, root: View, e: Event) {
-    val h = hit(root, e.x, e.y)
+    val h = tipAt(root, e.x, e.y)
     if (h == null) { hideTip(); return }
-    if (h.tipText == "") { hideTip(); return }
     showTip(e.x + 14.0, e.y + 18.0, h.tipText)
 }
 
