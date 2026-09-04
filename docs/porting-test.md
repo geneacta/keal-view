@@ -197,6 +197,25 @@ So: if input seems to be lost or ignored, send the same input to a text editor
 first. If it is lost there as well, the report is about your injection and not
 about this framework.
 
+## 2⅝. The two things in this repository that did the finding
+
+Worth knowing before you build anything of your own, because both were here
+already and both were used by people who had not written them.
+
+**The control (§2½) caught seven false starts** across two testers and two
+platforms — a wrong-sized `INPUT` struct, arrow keys without
+`KEYEVENTF_EXTENDEDKEY`, a dropped keystroke burst, an inert
+`XTestFakeMotionEvent`, captures a beat behind the window manager, a layout
+believed reset, and a stale window photographed instead of the fresh one. Not
+one reached the code.
+
+**`--trace` found three causes.** A hover defect took four rounds to fix, and
+three of those rounds ended with the tester able to say *where* it had stopped
+rather than that it still did not work. `wakes=1 frames=0` on a pointer moving
+onto a chart is a fact no screenshot gives — a screenshot says only that
+nothing changed — and no amount of reading the source would have produced it
+either.
+
 ## 2¾. Measure by comparing, not by reading a number
 
 The two measurements that cut through this project's hardest defect both did
@@ -227,6 +246,27 @@ is not delivering anything sits on neither — it is upstream, and it will hand
 you two perfectly consistent numbers describing an experiment that never
 happened. Nothing about the shape of a measurement protects you from that.
 Only §2½ does.
+
+## 2⅞. Seen once and not reproduced
+
+Two things were observed exactly once during the verification of this
+framework, could not be reproduced deliberately, and are recorded here rather
+than fixed or forgotten. If you meet one in a clean state, it exists; until
+then it does not.
+
+* **12.9 % of a processor, held continuously, with 190 wake-ups a second**, on
+  a gallery under XWayland. Five configurations built to provoke it again
+  produced nothing. The state at the time was untidy — two galleries running
+  and an editor starting — and the measurement was aimed loosely.
+* **A first click on a dropdown producing only a hover**, on a freshly opened
+  window; the second click opened it. Three relaunches with that click as the
+  very first event all opened it, and a first click on an ordinary button
+  landed. So it is neither "the first click is lost" nor "the dropdown is
+  broken", and there is nothing else.
+
+Both were reported *as* unreproduced by the tester who saw them, with the
+hypotheses they had already eliminated. That is what makes them useful to the
+next person rather than noise.
 
 ## 3. Reporting
 

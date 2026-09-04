@@ -200,7 +200,7 @@ tools/build.sh examples/tour.keal       && build/tour         # start here
 tools/build.sh examples/gallery.keal    && build/gallery      # every widget
 tools/build.sh examples/calculator.keal && build/calculator
 tools/build.sh examples/studio.keal     && build/studio
-tools/test.sh                                    # every check, no display
+tools/test.sh                                    # 194 checks, no display
 ```
 
 `tools/build.sh` picks this platform's backend, compiles it once, and hands
@@ -234,8 +234,9 @@ drawn the boundary where it is.
 
 Windows and Linux were each verified by someone on a real machine, going
 through [`docs/porting-test.md`](docs/porting-test.md) line by line, and
-between them it cost eleven defects — **six of which were above the backend**
-and so were on every platform including the one this was written on. A
+between them it cost nineteen defects — **twelve of which were above the
+backend** and so were on every platform including the one this was written
+on. A
 tooltip on a plain label never appeared. Changing the theme left the previous
 frame's ink, permanently, because a window at rest is not woken. Two
 keystrokes in three were lost above a certain typing speed. A blinking caret
