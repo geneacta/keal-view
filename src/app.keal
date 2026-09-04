@@ -134,6 +134,8 @@ public proc run(var app: App) {
     var lastDrawn = -1
     var lastW = -1
     var lastH = -1
+    var haveTree = false
+    var root = nothing()
     while (running) {
         ui.time = kvNow() - t0
         ui.theme = theme()
@@ -161,15 +163,30 @@ public proc run(var app: App) {
         kvSurface(kvWidth(), kvHeight())
         canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
         val area = canvas.bounds()
+        val sizeChanged = (kvSurfaceW() != lastW) or (kvSurfaceH() != lastH)
 
-        var root = stack([app.build(), app.overlay(), popupLayer()])
-        layout(ui, root, area)
-        root = deliver(ui, app, root, area, events)
-        if (revision() != lastRev) {
+        // Build and lay out only when the answer would differ.
+        //
+        // The tree is a function of the state and of the room it has, so if
+        // neither moved since the last time round, the tree from last time is
+        // the tree this time — including every rectangle in it, which is what
+        // the pointer is about to be tested against. Rebuilding it anyway was
+        // the whole of the residual cost: a wake-up that changed nothing still
+        // walked the application's view function and laid the result out, at a
+        // price set by how much content there is. Two windows of exactly the
+        // same size, a calculator and a scrolling document, differed by
+        // twenty-two times — which is what says it is the tree and not the
+        // pixels.
+        if ((not haveTree) or ((revision() != lastRev) or sizeChanged)) {
             root = stack([app.build(), app.overlay(), popupLayer()])
             layout(ui, root, area)
             lastRev = revision()
+            haveTree = true
         }
+        // `deliver` rebuilds inside itself whenever a handler changes anything,
+        // so what it answers is current whatever happened during it.
+        root = deliver(ui, app, root, area, events)
+        lastRev = revision()
 
         // Draw only when there is something different to draw.
         //
@@ -186,7 +203,6 @@ public proc run(var app: App) {
         // state moved (hover, focus, a caret), when the window changed size,
         // or when something asked to be woken. All of those go through
         // `invalidate` or `wakeIn`, so this one comparison covers them.
-        val sizeChanged = (kvSurfaceW() != lastW) or (kvSurfaceH() != lastH)
         val stale = (revision() != lastDrawn) or (sizeChanged or ui.animating())
         ui.nextFrameIn = -1.0
         if (stale) {
