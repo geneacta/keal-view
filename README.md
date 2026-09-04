@@ -303,6 +303,16 @@ something to say. **An idle keal-view window uses no processor at all** — not
 a low duty cycle, none — and on a laptop that is worth more than any amount
 of drawing speed.
 
+That sentence sat in this README for two days before anyone measured it, and
+when someone did it was false on Windows: with the pointer resting anywhere
+over the window, the wait returned instantly for ever and the process held
+96 % of a core. `MWMO_INPUTAVAILABLE` returns for input that has already been
+seen, `QS_ALLINPUT` includes mouse movement, and Windows holds that bit while
+the cursor is over the window — so a cursor that never moved kept waking a
+wait with nothing to collect. It is fixed, and
+[`docs/porting-test.md`](docs/porting-test.md) now asks for the measurement
+twice, because the case with the pointer away was perfect throughout.
+
 ## What the language decided, and what the language changed
 
 One place where keal-view's shape is chosen by Keal rather than by the design:

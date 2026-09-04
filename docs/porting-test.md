@@ -138,7 +138,16 @@ Look for, in `frame.png`:
     light bar over a dark window there is **correct**, not a bug. X11 has no
     title bar of its own at all; the window manager draws it, and
     `_GTK_THEME_VARIANT` is a hint it may ignore.
-13. **Closing.** The close box ends the process, with nothing left running.
+13. **The processor at rest.** Window open, nothing animating, and — this is
+    the part that matters — measure it **twice**: once with the pointer well
+    away from the window, and once with the pointer resting *over* it and not
+    moving. Both should be **0,0 %**; a stationary cursor is not an event.
+    The second case was broken on Windows for two days while the first was
+    perfect, so one reading here says almost nothing. Take it from accumulated
+    processor time over several seconds rather than from a one-second sample,
+    and run the same measurement against a text editor as a control.
+
+14. **Closing.** The close box ends the process, with nothing left running.
 
 Then the two real applications:
 
