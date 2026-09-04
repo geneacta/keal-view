@@ -311,10 +311,33 @@ int64_t kvp_poll(void) {
     return kv_ev.kind;
 }
 
+/* Wait for the system to have something to say.
+ *
+ * This used to pass `MWMO_INPUTAVAILABLE`, and that flag is the whole story of
+ * why an idle window burned a core. It tells the wait to return for input that
+ * is *already available* — including input a previous `PeekMessage` has
+ * already looked at. `QS_ALLINPUT` includes `QS_MOUSEMOVE`, and Windows holds
+ * that bit while the cursor sits over a window of this thread. A stationary
+ * cursor generates no `WM_MOUSEMOVE`, so `pump` removes nothing and clears
+ * nothing, and the wait returns instantly, for ever. Measured at 96–100 % of a
+ * core with the pointer resting anywhere over the window — the title bar
+ * included, which is not even ours to draw — and 0.00 % the moment it moved
+ * off, or the window was minimised, or another window covered it.
+ *
+ * The flag was there to close a race: a message arriving between the last
+ * `PeekMessage` and the wait would otherwise be slept through, and this loop
+ * waits for ever when nothing is animating, so a lost wake-up is a frozen
+ * window rather than a late frame. So the race is closed the other way, which
+ * is the ordinary pattern: ask whether anything is queued, and if something is,
+ * do not wait at all. A message arriving after that question sets the wake bit
+ * and the wait returns on it. */
 void kvp_wait(int64_t ms) {
     if (qhead != qtail) return;
-    DWORD t = ms < 0 ? INFINITE : (DWORD)ms;
-    MsgWaitForMultipleObjectsEx(0, NULL, t, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    MSG peek;
+    if (!PeekMessageW(&peek, NULL, 0, 0, PM_NOREMOVE)) {
+        DWORD t = ms < 0 ? INFINITE : (DWORD)ms;
+        MsgWaitForMultipleObjectsEx(0, NULL, t, QS_ALLINPUT, 0);
+    }
     pump();
 }
 
