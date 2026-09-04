@@ -123,6 +123,7 @@ public proc run(var app: App) {
     }
     var traceMark = 0.0
     var traceFrames = 0
+    var traceWakes = 0
     var traceAnimated = 0
     val traceKinds: List<Int> = []
     var ki = 0
@@ -130,6 +131,9 @@ public proc run(var app: App) {
 
     var running = true
     var lastRev = -1
+    var lastDrawn = -1
+    var lastW = -1
+    var lastH = -1
     while (running) {
         ui.time = kvNow() - t0
         ui.theme = theme()
@@ -167,15 +171,38 @@ public proc run(var app: App) {
             lastRev = revision()
         }
 
+        // Draw only when there is something different to draw.
+        //
+        // The loop wakes for anything the system has to say, and most of what
+        // it says changes nothing: a pointer crossing a window over a static
+        // interface used to repaint every pixel of it, which on a large window
+        // is a hundred milliseconds of work to produce the identical image. On
+        // Windows that had a second consequence — the frame woke the wait that
+        // drew the frame, and an idle window under a stationary pointer held a
+        // whole core — but the waste was there on every platform, unnoticed
+        // because it only cost battery.
+        //
+        // A frame is stale when a `Cell` was written, when a widget's own
+        // state moved (hover, focus, a caret), when the window changed size,
+        // or when something asked to be woken. All of those go through
+        // `invalidate` or `wakeIn`, so this one comparison covers them.
+        val sizeChanged = (kvSurfaceW() != lastW) or (kvSurfaceH() != lastH)
+        val stale = (revision() != lastDrawn) or (sizeChanged or ui.animating())
         ui.nextFrameIn = -1.0
-        canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
-        canvas.clear(theme().bg)
-        paint(ui, root)
-        kvSetCursor(ui.cursor)
-        kvFlush()
+        if (stale) {
+            canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
+            canvas.clear(theme().bg)
+            paint(ui, root)
+            kvSetCursor(ui.cursor)
+            kvFlush()
+            lastDrawn = revision()
+            lastW = kvSurfaceW()
+            lastH = kvSurfaceH()
+        }
 
         if (tracePath != "") {
-            traceFrames = traceFrames + 1
+            if (stale) { traceFrames = traceFrames + 1 }
+            traceWakes = traceWakes + 1
             if (ui.animating()) { traceAnimated = traceAnimated + 1 }
             var ei = 0
             while (ei < events.size) {
@@ -183,11 +210,13 @@ public proc run(var app: App) {
                 traceKinds[k] = traceKinds[k] + 1
                 ei++
             }
-            if ((ui.time - traceMark) >= 1000.0) {
-                traceLog = traceLog + traceLine(traceFrames, traceAnimated, traceKinds) + "\n"
+            if (((ui.time - traceMark) >= 1000.0) and (traceWakes > 0)) {
+                traceLog = traceLog +
+                    traceLine(traceWakes, traceFrames, traceAnimated, traceKinds) + "\n"
                 writeFile(tracePath, traceLog)
                 traceMark = ui.time
                 traceFrames = 0
+                traceWakes = 0
                 traceAnimated = 0
                 var zi = 0
                 while (zi < traceKinds.size) { traceKinds[zi] = 0; zi++ }
@@ -250,6 +279,16 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         if (newHot != ui.hot) {
             ui.hot = newHot
             invalidate()
+        } else {
+            // Two widgets draw from where the pointer *is*, not merely from
+            // which node it is over: a tab strip and a segmented control each
+            // light the one segment under it. Moving inside them changes what
+            // should be on screen without changing what is hot, so they have
+            // to say so or the highlight would stick to whichever segment the
+            // pointer entered by.
+            if (h != null) {
+                if ((h.kind == kTabs) or (h.kind == kSegmented)) { invalidate() }
+            }
         }
         if (ui.active != 0) { drag(ui, root, e) }
         setCursor(ui, root, e)
@@ -343,7 +382,13 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         return
     }
 
-    if ((k == evBlur()) or (k == evResize())) { invalidate() }
+    // Everything that changes what is on the screen without changing the
+    // application's own state: the window came back from behind another one,
+    // it changed size, it gained or lost the focus ring. Each has to mark the
+    // frame stale itself, because nothing else will.
+    if ((k == evBlur()) or ((k == evFocus()) or ((k == evResize()) or (k == evExpose())))) {
+        invalidate()
+    }
 }
 
 /// What a click on a finished press means, per kind. A checkbox and a toggle
@@ -647,10 +692,15 @@ public proc runApp(title: String, w: Int, h: Int, build: () -> View) {
     run(app)
 }
 
-/// One line of the trace: frames, how many of them an animation asked for, and
-/// the events that arrived, by name. Kinds with no events are left out, so a
-/// quiet second is a short line and a flood names itself.
-func traceLine(frames: Int, animated: Int, kinds: List<Int>): String {
+/// One line of the trace: how many times the loop woke, how many of those
+/// wakes drew anything, how many frames an animation asked for, and the events
+/// that arrived, by name. Kinds with no events are left out, so a quiet second
+/// is a short line and a flood names itself.
+///
+/// `wakes` far above `frames` is the loop being woken for things that change
+/// nothing — which is fine and costs almost nothing. `frames` climbing with
+/// `events` one for one is a loop feeding itself.
+func traceLine(wakes: Int, frames: Int, animated: Int, kinds: List<Int>): String {
     val names = ["none", "close", "resize", "move", "down", "up", "scroll",
                  "keydown", "keyup", "text", "focus", "blur", "expose"]
     var evs = ""
@@ -664,6 +714,6 @@ func traceLine(frames: Int, animated: Int, kinds: List<Int>): String {
         i++
     }
     if (total == 0) { evs = " (no events)" }
-    return "frames=" + frames.toString() + " animated=" + animated.toString() +
-           " events=" + total.toString() + evs
+    return "wakes=" + wakes.toString() + " frames=" + frames.toString() +
+           " animated=" + animated.toString() + " events=" + total.toString() + evs
 }
