@@ -179,9 +179,19 @@ the same thing to a program that is known to work.
 Arrow keys sent with `SendInput` and no `KEYEVENTF_EXTENDEDKEY` are treated as
 the numeric keypad's, and Windows then cancels the Shift around them — so
 Shift+Arrow selected nothing, in a way that looked exactly like a missing
-selection. And a burst of synthesised keystrokes dropped characters, which
-looked exactly like a full event queue, until the same burst was sent to
-Notepad and dropped them there too.
+selection. A burst of synthesised keystrokes dropped characters, which looked
+exactly like a full event queue, until the same burst was sent to Notepad and
+dropped them there too. An `INPUT` struct built at 56 bytes instead of 40 made
+`SendInput` refuse in silence, so a click simply did not happen and the window
+looked like it was ignoring input. And on X11 under XWayland, `XTestFakeMotionEvent`
+is advertised and does nothing at all, so the first report of "hover does not
+work" was about the injector.
+
+Four, from two people, on two platforms. In each case what caught it was the
+same: an observable that should have moved and did not, checked against a
+program known to work — or, where no such program would answer synthetic
+events, against a control window written to do exactly what the framework
+does.
 
 So: if input seems to be lost or ignored, send the same input to a text editor
 first. If it is lost there as well, the report is about your injection and not
@@ -203,10 +213,20 @@ at 336×509: 0.93 % against 20.53 %. Same pixels, twenty-two times the cost —
 which eliminates the surface, the rasteriser and the platform at once and
 leaves only the content.
 
-Both are ratios rather than readings, and that is what makes them survive a
-crooked harness: when the tester's `INPUT` struct was the wrong size, the
-comparison was wrong on both sides, so it went quiet instead of lying. A
-single number from a broken instrument is a number you will believe.
+What a ratio buys is that it can contradict a reading. The same tester tried
+to price a frame with `--snapshot`, read 1009 milliseconds flat from 0.18 to
+9.9 megapixels, concluded that drawing was cheap, and sent that on — the
+instrument had a start-up floor that swallowed everything it claimed to
+measure. A second reading would have agreed with the first. The ratio did not:
+processor against window size at a known wake rate said 125 milliseconds a
+frame, flatly contradicting it, and that number is what decided the fix.
+
+**And what a ratio does not buy, which matters more.** It only goes quiet when
+the faulty instrument sits on *both* sides of the division. An injector that
+is not delivering anything sits on neither — it is upstream, and it will hand
+you two perfectly consistent numbers describing an experiment that never
+happened. Nothing about the shape of a measurement protects you from that.
+Only §2½ does.
 
 ## 3. Reporting
 
