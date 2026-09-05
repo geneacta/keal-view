@@ -465,15 +465,22 @@ it to `app.overlay` or the drag has no feedback.
 Every keal-view program understands two flags for free:
 
 ```sh
-build/app --snapshot frame.bmp 2            # one frame to a file, no window
-build/app --snapshot frame.bmp 2 900 1900   # …at a size of your choosing
+build/app --snapshot frame.png 2            # one frame to a file, no window
+build/app --snapshot frame.png 2 900 1900   # …at a size of your choosing
 build/app --window-id /tmp/id               # its own window number
 ```
 
 The first needs no display at all, which is how this framework is tested in
-continuous integration. `tools/bmp2png.py` turns the result into a PNG, and
-`tools/shot.sh build/app out.png` uses the second to photograph a running
-window without capturing anything else on the screen.
+continuous integration. The extension picks the format — `.png` is written by
+`src/png.keal`, in Keal; anything else is a BMP, written by nine lines of C.
+The PNG is a true PNG that every reader opens, but it is *stored* rather than
+compressed, so expect a file about the size of the pixels; `optipng` or any
+other tool will shrink it if that matters.
+
+`tools/shot.sh build/app out.png` uses the second flag to photograph a
+*running* window without capturing anything else on the screen — which is a
+different picture from a snapshot: it has the platform's own title bar and
+shadow around it.
 
 ---
 

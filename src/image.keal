@@ -10,9 +10,10 @@ import "./view.keal"
 /// keal-view draws everything itself, so a picture is not a thing the platform
 /// hands over — it is bytes this file turns into colours and the rasteriser
 /// puts down like any other. What it reads is **BMP**, uncompressed, 24 or 32
-/// bits a pixel, which is deliberately the format `--snapshot` writes: a
-/// keal-view program's own output goes back into a keal-view program without
-/// a second decoder to keep in agreement with the first.
+/// bits a pixel — one of the two formats `--snapshot` writes, the other being
+/// the PNG of `png.keal`: a keal-view program's own output goes back into a
+/// keal-view program without a second decoder to keep in agreement with the
+/// first, whichever of the two it was written as.
 ///
 /// Anything else — a run-length BMP, a palette, sixteen bits — is refused by
 /// name rather than drawn wrong. A picture that comes out as noise is a bug
@@ -311,4 +312,33 @@ public func fitInside(img: Image, r: Rect): Rect {
     val w = iw * k
     val h = ih * k
     return Rect(r.x + ((r.w - w) / 2.0), r.y + ((r.h - h) / 2.0), w, h)
+}
+
+/// The frame as it stands, copied out of the surface.
+///
+/// The rasteriser draws into a buffer the C side owns; this is how a picture
+/// of that buffer becomes an ordinary `Image` — to be written to a file, or
+/// drawn again somewhere else. It is a copy, because the surface is about to
+/// be drawn on again.
+public func surfaceImage(): Image {
+    val w = kvSurfaceW()
+    val h = kvSurfaceH()
+    if ((w <= 0) or (h <= 0)) { return noImage("there is no surface to copy") }
+    val b = kvBlobNew(w * h * 4)
+    if (b == 0) { return noImage("no room to copy the surface") }
+    var y = 0
+    while (y < h) {
+        var x = 0
+        while (x < w) {
+            val p = kvPxGet(x, y)
+            val o = ((y * w) + x) * 4
+            kvBlobSet(b, o, alphaOf(p))
+            kvBlobSet(b, o + 1, redOf(p))
+            kvBlobSet(b, o + 2, greenOf(p))
+            kvBlobSet(b, o + 3, blueOf(p))
+            x++
+        }
+        y++
+    }
+    return Image(w, h, b, "")
 }

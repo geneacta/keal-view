@@ -6,6 +6,7 @@ import "./font.keal"
 import "./geom.keal"
 import "./layout.keal"
 import "./paint.keal"
+import "./png.keal"
 import "./popup.keal"
 import "./state.keal"
 import "./text.keal"
@@ -50,7 +51,8 @@ public class App(public var title: String, public var width: Int, public var hei
 /// Open the window and run until it is closed.
 ///
 /// Every keal-view program also understands
-/// `--snapshot <file.bmp> [scale] [width height]` on its command line, which
+/// `--snapshot <file> [scale] [width height]` on its command line — a `.png`
+/// name gets a PNG, any other gets a BMP — which
 /// draws one frame to a file and exits without opening anything. That is how the examples in the README are made and how
 /// the widgets are checked on a machine with no display — the same code path
 /// the window uses, minus the window.
@@ -705,7 +707,13 @@ public proc snapshot(var app: App, w: Int, h: Int, scale: Float, path: String) {
     layout(ui, root, area)
     canvas.clear(theme().bg)
     paint(ui, root)
-    if (kvSaveBmp(path) == 0) { println("keal-view: could not write ${path}") }
+    // Which format is the caller's to say, and here the name *is* the saying
+    // — the opposite of reading one, where the extension is a claim the file
+    // makes about itself and the first bytes are the truth.
+    val wrote = if (path.toLower().endsWith(".png")) {
+                    if (writePng(surfaceImage(), path)) { 1 } else { 0 }
+                } else { kvSaveBmp(path) }
+    if (wrote == 0) { println("keal-view: could not write ${path}") }
     app.onStop()
 }
 

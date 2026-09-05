@@ -47,18 +47,22 @@ strangely. `tools/test.sh` prints the compiler it used, for the same reason.
 
 ```sh
 build/units                                        # or build/units.exe
-build/gallery --snapshot frame.bmp 2 900 1900
-python3 tools/bmp2png.py frame.bmp frame.png
+build/gallery --snapshot frame.png 2 900 1900
 ```
+
+Two commands and nothing else installed: the PNG is written by `src/png.keal`,
+in Keal, so this step needs no Python and no image library on a machine you
+are still porting to.
 
 `units` prints how many checks it ran; the number grows, so compare it against
 what it says on a machine that works rather than against a number written
 down here.
 
 Neither touches the window, the event queue or the platform's drawing at all.
-The first asserts 131 things about colour, geometry, layout, docking, fonts
-and input dispatch. The second exercises the rasteriser, the TrueType engine
-and the layout, and writes the result to a file.
+The first asserts several hundred things about colour, geometry, layout,
+docking, fonts, pictures and input dispatch. The second exercises the
+rasteriser, the TrueType engine and the layout, and writes the result to a
+file.
 
 **This is the bisection.** If `frame.png` is right and the window is wrong,
 the fault is in the backend and nowhere else. If `frame.png` is wrong, the

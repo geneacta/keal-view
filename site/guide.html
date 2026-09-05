@@ -237,12 +237,17 @@ app.overlay = { -&gt; dockOverlay(dock) }</code></pre><p><code>beside(a, b, f)</
 <code>above(a, b, f)</code> stacks them. A panel is an ordinary view function and does
 not know it is docked. <code>dock.reveal(&quot;files&quot;)</code> brings one to the front;
 <code>dock.detach(&quot;files&quot;)</code> takes it out.</p><p>The overlay is what draws the highlight while a panel is being dragged. Give
-it to <code>app.overlay</code> or the drag has no feedback.</p><hr><h2 id="10-seeing-what-you-built">10. Seeing what you built</h2><p>Every keal-view program understands two flags for free:</p><pre><code>build/app --snapshot frame.bmp 2            # one frame to a file, no window
-build/app --snapshot frame.bmp 2 900 1900   # …at a size of your choosing
+it to <code>app.overlay</code> or the drag has no feedback.</p><hr><h2 id="10-seeing-what-you-built">10. Seeing what you built</h2><p>Every keal-view program understands two flags for free:</p><pre><code>build/app --snapshot frame.png 2            # one frame to a file, no window
+build/app --snapshot frame.png 2 900 1900   # …at a size of your choosing
 build/app --window-id /tmp/id               # its own window number</code></pre><p>The first needs no display at all, which is how this framework is tested in
-continuous integration. <code>tools/bmp2png.py</code> turns the result into a PNG, and
-<code>tools/shot.sh build/app out.png</code> uses the second to photograph a running
-window without capturing anything else on the screen.</p><hr><h2 id="where-to-look-next">Where to look next</h2><ul><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/tour.keal"><code>../examples/tour.keal</code></a> — all of this, running,
+continuous integration. The extension picks the format — <code>.png</code> is written by
+<code>src/png.keal</code>, in Keal; anything else is a BMP, written by nine lines of C.
+The PNG is a true PNG that every reader opens, but it is <em>stored</em> rather than
+compressed, so expect a file about the size of the pixels; <code>optipng</code> or any
+other tool will shrink it if that matters.</p><p><code>tools/shot.sh build/app out.png</code> uses the second flag to photograph a
+<em>running</em> window without capturing anything else on the screen — which is a
+different picture from a snapshot: it has the platform&#x27;s own title bar and
+shadow around it.</p><hr><h2 id="where-to-look-next">Where to look next</h2><ul><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/tour.keal"><code>../examples/tour.keal</code></a> — all of this, running,
 each chapter beside the code that made it</li><li><a href="widgets.html"><code>widgets.md</code></a> — every constructor and modifier</li><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/gallery.keal"><code>examples/gallery.keal</code></a> — all of it, running</li><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/calculator.keal"><code>examples/calculator.keal</code></a> — a small whole app</li><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/studio.keal"><code>examples/studio.keal</code></a> — docking, and two views
 that draw themselves</li></ul></div><div class="dtoc"><div class="h">ON THIS PAGE</div><div class="dtoc-items"><a href="#1-a-window">1. A window</a><a href="#2-state">2. State</a><a href="#2-where-the-state-lives">2¾. Where the state lives</a><a href="#2-what-persists-and-the-one-trap-in-it">2½. What persists, and the one trap in it</a><a href="#3-laying-things-out">3. Laying things out</a><a href="#4-widgets">4. Widgets</a><a href="#5-style">5. Style</a><a href="#6-menus-dialogs-and-tooltips">6. Menus, dialogs and tooltips</a><a href="#7-a-view-that-draws-itself">7. A view that draws itself</a><a href="#8-keyboard">8. Keyboard</a><a href="#9-docking">9. Docking</a><a href="#10-seeing-what-you-built">10. Seeing what you built</a><a href="#where-to-look-next">Where to look next</a></div></div></div>
 <footer>

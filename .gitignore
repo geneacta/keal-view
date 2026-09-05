@@ -6,6 +6,10 @@ tests/out/
 out/
 *.bmp
 *.png.tmp
+# And now that `--snapshot` writes PNGs too, the same line for them — but only
+# at the root, where nothing is tracked. `docs/` and `site/assets/` are full of
+# PNGs that belong to the repository.
+/*.png
 
 # Python leaves this behind every time the site generator runs. Untracked
 # noise is where a real change hides, so it is named rather than swept up by

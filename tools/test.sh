@@ -67,3 +67,15 @@ for f in shapes text calculator studio gallery todo tour; do
   [ -s "$f.bmp" ] || { echo "FAIL  $f drew nothing" >&2; exit 1; }
 done
 echo "frames drawn: $(ls -1 ./*.bmp | tr '\n' ' ')"
+
+# The same frame again as a PNG, because the writer is Keal and a full window
+# is the only thing that puts it over a stored block's 65535 bytes. The
+# assertions in `units` write pictures of a few hundred pixels; this writes
+# one of a few million, and checks that what came out begins the way a PNG
+# begins rather than only that something was written.
+run calculator --snapshot calculator.png 1
+[ -s calculator.png ] || { echo "FAIL  no PNG was written" >&2; exit 1; }
+head -c 8 calculator.png | od -An -tu1 | tr -s ' ' \
+  | grep -q '137 80 78 71 13 10 26 10' \
+  || { echo "FAIL  what --snapshot wrote does not begin like a PNG" >&2; exit 1; }
+echo "and one of them again as a PNG: $(wc -c < calculator.png | tr -d ' ') bytes"

@@ -1439,6 +1439,89 @@ proc pngTests() {
     eqI("Paeth: last", f.at(3, 4), rgb(34, 72, 145))
 }
 
+/// A picture with something in every channel, made rather than read.
+func madePicture(w: Int, h: Int): Image {
+    val b = kvBlobNew(w * h * 4)
+    var y = 0
+    while (y < h) {
+        var x = 0
+        while (x < w) {
+            val o = ((y * w) + x) * 4
+            kvBlobSet(b, o, 255 - ((x + y) % 256))
+            kvBlobSet(b, o + 1, (x * 7) % 256)
+            kvBlobSet(b, o + 2, (y * 5) % 256)
+            kvBlobSet(b, o + 3, (x * y) % 256)
+            x++
+        }
+        y++
+    }
+    return Image(w, h, b, "")
+}
+
+proc pngWriteTests() {
+    makeDir("out")
+
+    // One pixel. The length is arithmetic — signature, IHDR, one stored block
+    // of five bytes of pixels plus its five of header, the zlib wrapper and
+    // its checksum, IEND — so it is asserted: a file a byte longer or shorter
+    // than the sum means the block bookkeeping and the size calculation
+    // disagree, and nothing else here would notice.
+    val one = madePicture(1, 1)
+    ok("one pixel writes", writePng(one, "out/one.png"))
+    val oneBack = readPng("out/one.png")
+    ok("and reads back", oneBack.ok())
+    eqI("the same pixel", oneBack.at(0, 0), one.at(0, 0))
+    val oneFile = kvBlobRead("out/one.png")
+    eqI("in a file of exactly the length the arithmetic said", kvBlobSize(oneFile), 73)
+    kvBlobFree(oneFile)
+
+    // Everything at once: two rows, three columns, all four channels moving.
+    val small = madePicture(3, 2)
+    ok("a small picture writes", writePng(small, "out/small.png"))
+    val smallBack = readPng("out/small.png")
+    ok("and reads back", smallBack.ok())
+    eqI("its width", smallBack.w, 3)
+    eqI("its height", smallBack.h, 2)
+    var bad = 0
+    var y = 0
+    while (y < 2) {
+        var x = 0
+        while (x < 3) {
+            if (smallBack.at(x, y) != small.at(x, y)) { bad++ }
+            x++
+        }
+        y++
+    }
+    eqI("with every pixel intact", bad, 0)
+
+    // Eighty thousand bytes of rows is more than a stored block holds, so
+    // this one spans two — and the second block is where a length written
+    // once too often, or a final-block bit set too early, would show.
+    val big = madePicture(200, 100)
+    ok("a picture larger than one stored block writes", writePng(big, "out/big.png"))
+    val bigBack = readPng("out/big.png")
+    ok("and reads back", bigBack.ok())
+    eqI("at its full width", bigBack.w, 200)
+    eqI("and height", bigBack.h, 100)
+    var wrong = 0
+    var j = 0
+    while (j < 100) {
+        var i = 0
+        while (i < 200) {
+            if (bigBack.at(i, j) != big.at(i, j)) { wrong++ }
+            i++
+        }
+        j++
+    }
+    eqI("with every one of its twenty thousand pixels intact", wrong, 0)
+
+    // The reader checks each chunk's CRC, so a round trip that reads is a
+    // round trip whose checksums were computed right — which is the half of
+    // the writing this suite can prove on its own. That the file is a PNG to
+    // anybody else was checked against PIL, outside.
+    ok("a picture that failed to decode is not written", not writePng(readPng("out/nothing.png"), "out/never.png"))
+}
+
 proc pngRefusalTests() {
     val i = png(pAdam7)
     ok("an interlaced picture is refused", not i.ok())
@@ -1471,6 +1554,7 @@ imageTests()
 inflateTests()
 inflateRefusalTests()
 pngTests()
+pngWriteTests()
 pngRefusalTests()
 interactionTests()
 textTests()
