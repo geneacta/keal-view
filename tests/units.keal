@@ -923,6 +923,13 @@ proc dockSaveTests() {
     val b = sampleDock()
     b.root = leaf(["files"])          // a different arrangement to overwrite
     ok("and read back", dockLoad(b, text))
+
+    // Written down again, it is the same text. This is the property that
+    // catches a save and a load drifting apart without either of them looking
+    // wrong on its own — a fraction that does not survive its own printing,
+    // say. It is worth an assertion because the failure is silent: the layout
+    // would come back subtly different every time it was reopened.
+    ok("and writing it down again gives the same text", dockSave(b) == text)
     val after = layDock(ui, b, area)
     // Only the tab that is showing has a body in the tree, so those are the
     // ones a rectangle can be compared for. `preview` is the second tab of
