@@ -1,0 +1,312 @@
+import "./canvas.keal"
+import "./color.keal"
+import "./ffi.keal"
+import "./geom.keal"
+import "./theme.keal"
+import "./view.keal"
+
+/// Pictures: reading one, and putting it on a canvas.
+///
+/// keal-view draws everything itself, so a picture is not a thing the platform
+/// hands over — it is bytes this file turns into colours and the rasteriser
+/// puts down like any other. What it reads is **BMP**, uncompressed, 24 or 32
+/// bits a pixel, which is deliberately the format `--snapshot` writes: a
+/// keal-view program's own output goes back into a keal-view program without
+/// a second decoder to keep in agreement with the first.
+///
+/// Anything else — a run-length BMP, a palette, sixteen bits — is refused by
+/// name rather than drawn wrong. A picture that comes out as noise is a bug
+/// somebody chases for an afternoon; a picture that says "BMP: 8 bits a pixel,
+/// which this does not read" is a decision.
+
+/// A decoded picture: ARGB pixels in a blob outside Keal's heap, four bytes
+/// each, in the order alpha, red, green, blue.
+///
+/// The blob is outside the heap for the same reason a glyph's coverage is: a
+/// picture is a per-pixel loop, and a `List<Int>` of a million entries is a
+/// million counted references. It is freed when the last reference to this
+/// goes, and `deinit` is where that happens — the same discipline the glyph
+/// cache is held to.
+public class Image(public val w: Int, public val h: Int, public val pixels: Int,
+                   /// Empty when the picture was read. Otherwise what stopped
+                   /// it, in a sentence somebody can be shown.
+                   public val problem: String) {
+    proc deinit() { if (this.pixels != 0) { kvBlobFree(this.pixels) } }
+
+    public func ok(): Bool { return this.problem == "" }
+
+    /// The colour at a pixel, or transparent outside. Bounds are checked here
+    /// rather than by the caller: every caller is a loop, and a loop that
+    /// checks its own bounds writes them twice.
+    public func at(x: Int, y: Int): Int {
+        if ((x < 0) or ((y < 0) or ((x >= this.w) or (y >= this.h)))) { return 0 }
+        val o = ((y * this.w) + x) * 4
+        return rgba(kvBlobGet(this.pixels, o + 1), kvBlobGet(this.pixels, o + 2),
+                    kvBlobGet(this.pixels, o + 3), kvBlobGet(this.pixels, o))
+    }
+}
+
+func noImage(why: String): Image { return Image(0, 0, 0, why) }
+
+// ------------------------------------------------------------------ reading
+
+/// Read a BMP file. The picture it answers always exists; ask `ok()` whether
+/// it holds anything, and `problem` why it does not.
+public func readBmp(path: String): Image {
+    val b = kvBlobRead(path)
+    if (b == 0) { return noImage("no file at " + path) }
+    val n = kvBlobSize(b)
+    if (n < 54) { kvBlobFree(b); return noImage("not a BMP: shorter than a header") }
+    if ((kvBlobGet(b, 0) != 66) or (kvBlobGet(b, 1) != 77)) {
+        kvBlobFree(b)
+        return noImage("not a BMP: it does not begin BM")
+    }
+    val offset = u32(b, 10)
+    val dib = u32(b, 14)
+    if (dib < 40) { kvBlobFree(b); return noImage("BMP: a header this old is not read") }
+    val w = i32(b, 18)
+    val rawH = i32(b, 22)
+    val bpp = u16(b, 28)
+    val comp = u32(b, 30)
+    // A positive height means the rows were written bottom-up, which is the
+    // BMP most of the world writes and the one `kv_save_bmp` writes.
+    val topDown = rawH < 0
+    val h = if (topDown) { 0 - rawH } else { rawH }
+    if ((w <= 0) or (h <= 0)) { kvBlobFree(b); return noImage("BMP: no pixels in it") }
+    // A header can say anything, and two of the numbers in it are about to be
+    // multiplied together. `2000000000 by 2000000000` is fifty-four bytes of
+    // file and 1.6e19 of arithmetic — past a signed `Int`, and Keal's integers
+    // are checked, so they panic rather than wrap. The guard meant to refuse
+    // the file would then be the thing that killed the program, which is the
+    // one thing a decoder must never do: the bytes came from somewhere else.
+    //
+    // So the sides are bounded before anything is multiplied by anything.
+    // 65535 is past any BMP a tool writes, and small enough that every product
+    // below — `w * (bpp / 8)`, `stride * h`, `w * h * 4` — stays under 2^35.
+    // The allocation that follows may still fail, and that is already handled.
+    if ((w > 65535) or (h > 65535)) {
+        kvBlobFree(b)
+        return noImage("BMP: " + w.toString() + " by " + h.toString()
+                     + ", which is larger than this reads")
+    }
+    if ((bpp != 24) and (bpp != 32)) {
+        kvBlobFree(b)
+        return noImage("BMP: " + bpp.toString() + " bits a pixel, which this does not read")
+    }
+    if ((comp != 0) and (comp != 3)) {
+        kvBlobFree(b)
+        return noImage("BMP: compressed, which this does not read")
+    }
+
+    // Where each channel sits. `BI_BITFIELDS` says so in the header; plain
+    // `BI_RGB` is blue, green, red in that order, low byte first.
+    var rMask = 16711680
+    var gMask = 65280
+    var bMask = 255
+    var aMask = 0
+    if (comp == 3) {
+        if (n < 70) { kvBlobFree(b); return noImage("BMP: it promises masks and stops early") }
+        rMask = u32(b, 54)
+        gMask = u32(b, 58)
+        bMask = u32(b, 62)
+        if (dib >= 108) { aMask = u32(b, 66) }
+    }
+    val rSh = lowBit(rMask)
+    val gSh = lowBit(gMask)
+    val bSh = lowBit(bMask)
+    val aSh = lowBit(aMask)
+
+    // Rows are padded to four bytes. At 32 bits a pixel they already are.
+    val stride = (((w * (bpp / 8)) + 3) / 4) * 4
+    if ((offset + (stride * h)) > n) {
+        kvBlobFree(b)
+        return noImage("BMP: the file stops before its pixels do")
+    }
+
+    val out = kvBlobNew(w * h * 4)
+    if (out == 0) { kvBlobFree(b); return noImage("BMP: no room for it") }
+    var y = 0
+    while (y < h) {
+        // Bottom-up files put the last row first.
+        val src = offset + (stride * (if (topDown) { y } else { (h - 1) - y }))
+        var x = 0
+        var o = (y * w) * 4
+        while (x < w) {
+            val p = src + (x * (bpp / 8))
+            var r = 0
+            var g = 0
+            var bl = 0
+            var a = 255
+            if (bpp == 24) {
+                bl = kvBlobGet(b, p)
+                g = kvBlobGet(b, p + 1)
+                r = kvBlobGet(b, p + 2)
+            } else {
+                val v = u32(b, p)
+                r = channel(v, rMask, rSh)
+                g = channel(v, gMask, gSh)
+                bl = channel(v, bMask, bSh)
+                // A 32-bit BI_RGB BMP has a fourth byte that means nothing,
+                // and writers fill it with zero. Reading it as alpha would
+                // make every such picture invisible, so only a file that says
+                // it has alpha is believed to have it.
+                if (aMask != 0) { a = channel(v, aMask, aSh) }
+            }
+            kvBlobSet(out, o, a)
+            kvBlobSet(out, o + 1, r)
+            kvBlobSet(out, o + 2, g)
+            kvBlobSet(out, o + 3, bl)
+            o = o + 4
+            x++
+        }
+        y++
+    }
+    kvBlobFree(b)
+    return Image(w, h, out, "")
+}
+
+func u16(b: Int, o: Int): Int { return kvBlobGet(b, o) bor (kvBlobGet(b, o + 1) shl 8) }
+
+func u32(b: Int, o: Int): Int {
+    return kvBlobGet(b, o) bor ((kvBlobGet(b, o + 1) shl 8)
+       bor ((kvBlobGet(b, o + 2) shl 16) bor (kvBlobGet(b, o + 3) shl 24)))
+}
+
+/// The same four bytes read as signed, which is how a height says top-down.
+func i32(b: Int, o: Int): Int {
+    val v = u32(b, o)
+    if (v >= 2147483648) { return v - 4294967296 }
+    return v
+}
+
+/// Where a mask's lowest set bit is. A mask of nothing answers zero, which is
+/// never asked for because `channel` refuses an empty mask first.
+func lowBit(mask: Int): Int {
+    if (mask == 0) { return 0 }
+    var m = mask
+    var s = 0
+    while ((m band 1) == 0) { m = m shr 1; s = s + 1 }
+    return s
+}
+
+/// One channel out of a packed pixel, widened to 0..255 whatever the mask's
+/// width — five bits or eight, the answer is a byte.
+func channel(v: Int, mask: Int, shift: Int): Int {
+    if (mask == 0) { return 0 }
+    val raw = (v band mask) shr shift
+    val top = mask shr shift
+    if (top == 255) { return raw }
+    if (top <= 0) { return 0 }
+    return (raw * 255) / top
+}
+
+// ------------------------------------------------------------------ drawing
+
+/// Put a picture in a rectangle of points, filling it exactly.
+///
+/// Shrinking averages the source pixels that fall under each device pixel
+/// rather than picking one of them. That is not a quality setting: a snapshot
+/// of an interface is mostly text, and text sampled at one point in three
+/// comes back as gravel. Growing samples, because there is nothing to average.
+public proc drawImage(c: Canvas, img: Image, r: Rect) {
+    if (not img.ok()) { return }
+    val s = c.scale
+    val dx0 = r.x * s
+    val dy0 = r.y * s
+    val dw = r.w * s
+    val dh = r.h * s
+    if ((dw <= 0.0) or (dh <= 0.0)) { return }
+
+    val px0 = floorI(dx0).max(c.cx0)
+    val px1 = ceilI(dx0 + dw).min(c.cx1)
+    val py0 = floorI(dy0).max(c.cy0)
+    val py1 = ceilI(dy0 + dh).min(c.cy1)
+    if ((px1 <= px0) or (py1 <= py0)) { return }
+
+    val sx = img.w.toFloat() / dw
+    val sy = img.h.toFloat() / dh
+    val box = (sx >= 1.5) or (sy >= 1.5)
+
+    var y = py0
+    while (y < py1) {
+        val fy0 = ((y.toFloat() - dy0) * sy).max(0.0)
+        val fy1 = (((y + 1).toFloat() - dy0) * sy).min(img.h.toFloat())
+        var x = px0
+        while (x < px1) {
+            val fx0 = ((x.toFloat() - dx0) * sx).max(0.0)
+            val fx1 = (((x + 1).toFloat() - dx0) * sx).min(img.w.toFloat())
+            val col = if (box) { average(img, fx0, fy0, fx1, fy1) }
+                      else { img.at(floorI(fx0), floorI(fy0)) }
+            c.plot(x, y, col, 255)
+            x++
+        }
+        y++
+    }
+}
+
+/// The mean of the source pixels under one device pixel, alpha included so
+/// that a transparent edge stays an edge rather than becoming grey.
+func average(img: Image, fx0: Float, fy0: Float, fx1: Float, fy1: Float): Int {
+    val x0 = floorI(fx0).max(0)
+    val y0 = floorI(fy0).max(0)
+    val x1 = ceilI(fx1).min(img.w).max(x0 + 1)
+    val y1 = ceilI(fy1).min(img.h).max(y0 + 1)
+    var ar = 0
+    var ag = 0
+    var ab = 0
+    var aa = 0
+    var n = 0
+    var y = y0
+    while (y < y1) {
+        var x = x0
+        while (x < x1) {
+            val p = img.at(x, y)
+            ar = ar + redOf(p)
+            ag = ag + greenOf(p)
+            ab = ab + blueOf(p)
+            aa = aa + alphaOf(p)
+            n++
+            x++
+        }
+        y++
+    }
+    if (n == 0) { return 0 }
+    return rgba(ar / n, ag / n, ab / n, aa / n)
+}
+
+// -------------------------------------------------------------------- views
+
+/// A picture as a view, drawn to fill whatever room it is given.
+///
+/// It is a `custom`, not a kind of its own: a picture is a thing that draws
+/// itself in a rectangle, which is exactly what `custom` is for, and a new
+/// kind would have to be taught to the layout, the painter and the hit test
+/// for no behaviour any of them would treat differently.
+public func picture(img: Image): View {
+    val v = custom({ p -> drawImage(p.canvas, img, p.area) })
+    return v.sized(img.w.toFloat(), img.h.toFloat())
+}
+
+/// The same, kept to its own proportions inside the room it is given, and
+/// centred in what is left over. What a preview wants: a frame drawn at one
+/// size and shown at another must not be stretched, because a stretched
+/// preview is a preview that lies about the thing it is previewing.
+public func pictureFitted(img: Image): View {
+    return custom({ p ->
+        if (img.ok()) { drawImage(p.canvas, img, fitInside(img, p.area)) }
+    })
+}
+
+/// The largest rectangle with the picture's proportions that fits in `r`,
+/// centred.
+public func fitInside(img: Image, r: Rect): Rect {
+    if ((img.w <= 0) or ((img.h <= 0) or ((r.w <= 0.0) or (r.h <= 0.0)))) { return r }
+    val iw = img.w.toFloat()
+    val ih = img.h.toFloat()
+    val byW = r.w / iw
+    val byH = r.h / ih
+    val k = byW.min(byH)
+    val w = iw * k
+    val h = ih * k
+    return Rect(r.x + ((r.w - w) / 2.0), r.y + ((r.h - h) / 2.0), w, h)
+}

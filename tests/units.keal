@@ -1,5 +1,6 @@
 import "../src/app.keal"
 import "../src/dock.keal"
+import "../src/image.keal"
 
 /// What can be checked without a screen.
 ///
@@ -1029,9 +1030,167 @@ proc dockRestoreTests() {
     ok("by name", missing.size > 0 and (missing[0] == "debugger"))
 }
 
+
+// ------------------------------------------------------------------ images
+
+/// A picture is bytes from somewhere else, so every one of these is about
+/// what happens when the bytes are not what they claim.
+proc imageTests() {
+    makeDir("out")
+    val path = "out/round-trip.bmp"
+
+    // Draw something known, save it the way `--snapshot` does, read it back.
+    // The round trip is against the rasteriser itself rather than a file
+    // checked in, so it cannot drift from what the framework actually writes.
+    val c = canvasOffscreen(8, 6, 1.0)
+    c.clear(rgb(10, 20, 30))
+    c.fillRect(Rect(2.0, 1.0, 3.0, 2.0), rgb(200, 100, 50))
+    ok("a frame can be written", kvSaveBmp(path) == 1)
+
+    val img = readBmp(path)
+    ok("and read back", img.ok())
+    eqI("with its width", img.w, 8)
+    eqI("and its height", img.h, 6)
+    eqI("the ground came back", img.at(0, 0), rgb(10, 20, 30))
+    eqI("and so did the rectangle", img.at(3, 2), rgb(200, 100, 50))
+    eqI("right way up: the rectangle starts on the second row", img.at(3, 0), rgb(10, 20, 30))
+    eqI("and ends before the fourth", img.at(3, 3), rgb(10, 20, 30))
+    eqI("left edge", img.at(2, 1), rgb(200, 100, 50))
+    eqI("and one to the left of it", img.at(1, 1), rgb(10, 20, 30))
+    eqI("outside is nothing at all", img.at(-1, 0), 0)
+    eqI("past the end likewise", img.at(8, 6), 0)
+
+    // What comes back when the bytes are not a picture. None of these may
+    // stop the program, and each says which one it was.
+    val missing = readBmp("out/there-is-no-such-file.bmp")
+    ok("a file that is not there is not a picture", not missing.ok())
+    ok("and says so", missing.problem.startsWith("no file"))
+    eqI("a picture that failed has no pixels", missing.w, 0)
+    eqI("nor a blob to free", missing.pixels, 0)
+
+    writeFile("out/not-a-bmp.txt", "this is prose, not a picture, and quite long enough to have been one")
+    val prose = readBmp("out/not-a-bmp.txt")
+    ok("a file that is not a BMP is refused", not prose.ok())
+    ok("by the two letters it does not begin with", prose.problem.contains("BM"))
+
+    // A header that lies about its size. This one is fifty-four bytes and
+    // claims a picture of two billion by two billion, so the multiplication
+    // that decides whether the file is long enough is itself past what an Int
+    // holds. Keal's integers are checked and panic rather than wrap, so before
+    // the sides were bounded this did not refuse the file — it killed the
+    // program, taking this whole suite with it. Which is the failure a decoder
+    // is least allowed: the bytes came from somewhere else.
+    writeFile("out/huge.bmp", hugeHeader())
+    val huge = readBmp("out/huge.bmp")
+    ok("a header claiming more pixels than can be counted is refused", not huge.ok())
+    ok("by its size, and the guard does not overflow reaching that conclusion",
+       huge.problem.contains("larger than this reads"))
+
+    writeFile("out/big.bmp", sizedHeader(70000, 70000))
+    val big = readBmp("out/big.bmp")
+    ok("and so is one merely larger than this reads", not big.ok())
+    ok("named the same way", big.problem.contains("70000 by 70000"))
+
+    writeFile("out/tiny.bmp", "BM tiny")
+    val tiny = readBmp("out/tiny.bmp")
+    ok("a file shorter than a header is refused", not tiny.ok())
+    ok("and says which", tiny.problem.contains("shorter"))
+
+    // Fitting: the largest rectangle with the picture's proportions, centred.
+    // A preview that stretches is a preview that lies about what it previews.
+    val wide = Image(200, 100, 0, "")
+    val box = fitInside(wide, Rect(0.0, 0.0, 100.0, 100.0))
+    eqF("a wide picture fills the width", box.w, 100.0)
+    eqF("and keeps its proportions", box.h, 50.0)
+    eqF("centred in what is left", box.y, 25.0)
+    eqF("and flush at the left", box.x, 0.0)
+    val tall = Image(100, 200, 0, "")
+    val box2 = fitInside(tall, Rect(0.0, 0.0, 100.0, 100.0))
+    eqF("a tall picture fills the height", box2.h, 100.0)
+    eqF("and is centred across", box2.x, 25.0)
+
+    // Shrinking averages rather than samples. Four pixels of two colours
+    // under one device pixel come back as their mean — which is the whole
+    // reason a snapshot of an interface stays readable when it is shown
+    // smaller than it was drawn.
+    val small = canvasOffscreen(2, 2, 1.0)
+    small.clear(rgb(0, 0, 0))
+    drawImage(small, checkers(), Rect(0.0, 0.0, 2.0, 2.0))
+    ok("shrinking a chequerboard writes the frame", kvSaveBmp("out/shrunk.bmp") == 1)
+    val shrunk = readBmp("out/shrunk.bmp")
+    ok("which reads back", shrunk.ok())
+    // Two white and two black under each device pixel: a mean of 127.5, and
+    // the sum divides in integers, so 127. Half a level, and worth writing
+    // down rather than rounding — a picture is not judged on the half level,
+    // and a test that hid the truncation would hide a real change to it.
+    eqI("and every pixel is the mean of the four under it",
+        redOf(shrunk.at(0, 0)), 127)
+    eqI("not one of them", greenOf(shrunk.at(1, 1)), 127)
+}
+
+/// A BMP header claiming 0x7F7F7F7F pixels each way — two billion and some,
+/// which is enough that `stride * h` passes what an Int holds.
+func hugeHeader(): String { return sizedHeader(2139062143, 2139062143) }
+
+/// The fifty-four bytes of a BMP header saying whatever size is asked for.
+///
+/// Built here rather than checked in, so the suite carries its own attacker
+/// and a reader can see what the file says. It works because every byte it
+/// needs is under 128: a Keal string is UTF-8, so those encode as themselves,
+/// and `writeFile` puts down exactly these bytes. A size with a byte of 128 or
+/// more could not be written this way — which is a limit of the test, not of
+/// what the decoder is asked to survive.
+func sizedHeader(w: Int, h: Int): String {
+    val b: List<Int> = []
+    var i = 0
+    while (i < 54) { b.add(0); i++ }
+    b[0] = 66                      // B
+    b[1] = 77                      // M
+    b[10] = 54                     // where the pixels would start
+    b[14] = 40                     // a BITMAPINFOHEADER
+    var k = 0
+    while (k < 4) {
+        b[18 + k] = (w shr (k * 8)) band 255
+        b[22 + k] = (h shr (k * 8)) band 255
+        k++
+    }
+    b[26] = 1                      // one plane
+    b[28] = 32                     // thirty-two bits a pixel
+    var s = ""
+    for (v in b) {
+        if (v > 127) { return "" }
+        s = s + v.toChar()
+    }
+    return s
+}
+
+/// A four-by-four chequerboard of black and white, built by hand rather than
+/// read, so the averaging test does not depend on the decoder it is beside.
+func checkers(): Image {
+    val w = 4
+    val h = 4
+    val b = kvBlobNew(w * h * 4)
+    var y = 0
+    while (y < h) {
+        var x = 0
+        while (x < w) {
+            val o = ((y * w) + x) * 4
+            val v = if (((x + y) % 2) == 0) { 255 } else { 0 }
+            kvBlobSet(b, o, 255)
+            kvBlobSet(b, o + 1, v)
+            kvBlobSet(b, o + 2, v)
+            kvBlobSet(b, o + 3, v)
+            x++
+        }
+        y++
+    }
+    return Image(w, h, b, "")
+}
+
 dockTests()
 dockSaveTests()
 dockRestoreTests()
+imageTests()
 interactionTests()
 textTests()
 stateTests()
