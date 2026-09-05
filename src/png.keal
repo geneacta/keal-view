@@ -1,0 +1,354 @@
+import "./color.keal"
+import "./ffi.keal"
+import "./image.keal"
+import "./inflate.keal"
+
+/// PNG, read.
+///
+/// Chunks, `IHDR`, the zlib stream in the `IDAT`s, and the per-row filters —
+/// on top of `inflate.keal`, which is where the hard half lives. Nothing in
+/// `runtime/`: like a BMP and like a typeface, a PNG is bytes this file turns
+/// into colours.
+///
+/// **What it reads:** eight and sixteen bits a sample, in grey, grey with
+/// alpha, indexed, red-green-blue, and red-green-blue-alpha. All five row
+/// filters. Any number of `IDAT` chunks, which is how a large picture arrives.
+/// The `tRNS` chunk, so a transparent index in a palette is transparent.
+///
+/// **What it refuses, by name:** one, two and four bits a sample, which pack
+/// several pixels into a byte; Adam7 interlacing, because a picture decoded as
+/// though it were not interlaced is worse than a refusal; a chunk whose CRC
+/// does not match; anything the header says that the file then contradicts.
+///
+/// Sixteen-bit samples are read at eight, taking the high byte of each. The
+/// framebuffer holds eight, so the alternative is to carry precision as far as
+/// the last moment and drop it there — this drops it once, on the way in, and
+/// says so.
+
+/// Read a PNG file. The picture it answers always exists; ask `ok()` whether
+/// it holds anything and `problem` why it does not.
+public func readPng(path: String): Image {
+    val b = kvBlobRead(path)
+    if (b == 0) { return noPng("no file at " + path) }
+    val v = readPngBytes(b, kvBlobSize(b))
+    kvBlobFree(b)
+    return v
+}
+
+/// The same, from bytes already in hand — a blob and how much of it to read.
+///
+/// The blob belongs to the caller and is not freed here. Separated from the
+/// path because a PNG does not always come from a file: it may arrive down a
+/// socket, out of an archive, or — as it does in this repository's own tests
+/// — be built byte by byte by the thing checking the decoder.
+public func readPngBytes(b: Int, n: Int): Image {
+    if (n < 8) { return noPng("not a PNG: shorter than its signature") }
+    // 137 P N G \r \n 26 \n — the bytes that catch a file mangled by a
+    // transfer that thought it was text.
+    val sig = [137, 80, 78, 71, 13, 10, 26, 10]
+    var i = 0
+    while (i < 8) {
+        if (kvBlobGet(b, i) != sig[i]) {
+            return noPng("not a PNG: the signature does not match")
+        }
+        i++
+    }
+
+    var at = 8
+    var w = 0
+    var h = 0
+    var depth = 0
+    var colour = 0
+    var interlace = 0
+    var seenHeader = false
+    var palette = 0          // blob of r,g,b triples
+    var paletteN = 0
+    var alpha = 0            // blob of per-index alpha, from tRNS
+    var alphaN = 0
+    // The compressed pixels arrive in as many chunks as the writer felt like,
+    // and they are one stream: gathered before anything is decompressed.
+    val idatAt: List<Int> = []
+    val idatLen: List<Int> = []
+    var idatTotal = 0
+    var ended = false
+
+    while ((at + 8) <= n) {
+        val len = be32(b, at)
+        val tag = tagOf(b, at + 4)
+        if (len < 0) { break }
+        if ((at + 12 + len) > n) {
+            return noPng("PNG: a chunk runs past the end of the file")
+        }
+        // The CRC covers the type and the data, not the length.
+        val want = be32(b, at + 8 + len)
+        if (crc32(b, at + 4, 4 + len) != want) {
+            return noPng("PNG: the " + tag + " chunk does not match its checksum")
+        }
+
+        if (tag == "IHDR") {
+            if (len != 13) { return noPng("PNG: a header of the wrong size") }
+            w = be32(b, at + 8)
+            h = be32(b, at + 12)
+            depth = kvBlobGet(b, at + 16)
+            colour = kvBlobGet(b, at + 17)
+            val method = kvBlobGet(b, at + 18)
+            val filters = kvBlobGet(b, at + 19)
+            interlace = kvBlobGet(b, at + 20)
+            seenHeader = true
+            if ((w <= 0) or (h <= 0)) { return noPng("PNG: no pixels in it") }
+            // Bounded before either is multiplied by anything. Three files in
+            // this repository have now had the same shape of defect available
+            // to them; this is the one where it was known in advance.
+            if ((w > 65535) or (h > 65535)) {
+                return noPng("PNG: " + w.toString() + " by " + h.toString()
+                           + ", which is larger than this reads")
+            }
+            if (method != 0) { return noPng("PNG: a compression this does not read") }
+            if (filters != 0) { return noPng("PNG: a filtering this does not read") }
+            if (interlace == 1) {
+                return noPng("PNG: interlaced (Adam7), which this does not read")
+            }
+            if (interlace != 0) { return noPng("PNG: an interlacing this does not read") }
+            if ((depth != 8) and (depth != 16)) {
+                return noPng("PNG: " + depth.toString()
+                           + " bits a sample, which this does not read")
+            }
+            if (channelsOf(colour) == 0) {
+                return noPng("PNG: colour type " + colour.toString() + ", which this does not read")
+            }
+        } else { if (tag == "PLTE") {
+            if ((len % 3) != 0) { return noPng("PNG: a palette of partial colours") }
+            palette = at + 8
+            paletteN = len / 3
+        } else { if (tag == "tRNS") {
+            alpha = at + 8
+            alphaN = len
+        } else { if (tag == "IDAT") {
+            idatAt.add(at + 8)
+            idatLen.add(len)
+            idatTotal = idatTotal + len
+        } else { if (tag == "IEND") { ended = true } } } } }
+
+        at = at + 12 + len
+        if (ended) { break }
+    }
+
+    if (not seenHeader) { return noPng("PNG: no header in it") }
+    if (idatTotal == 0) { return noPng("PNG: no pixels in it") }
+    if (colour == 3) {
+        if (paletteN == 0) { return noPng("PNG: indexed, with no palette") }
+    }
+
+    val chans = channelsOf(colour)
+    val bpp = chans * (depth / 8)       // bytes a pixel, before filtering
+    val rowBytes = w * bpp
+    // The exact size of what the stream must produce: every row is its bytes
+    // and one byte saying how it was filtered. It comes from the header, so
+    // it is known before a bit is decompressed — which is what makes calling
+    // this on a file somebody sent you safe.
+    val limit = h * (1 + rowBytes)
+
+    // One stream, however many chunks carried it.
+    var stream = idatAt[0]
+    var streamLen = idatLen[0]
+    var joined = 0
+    if (idatAt.size > 1) {
+        joined = kvBlobNew(idatTotal)
+        if (joined == 0) { return noPng("PNG: no room to join its parts") }
+        var o = 0
+        var k = 0
+        while (k < idatAt.size) {
+            var j = 0
+            while (j < idatLen[k]) {
+                kvBlobSet(joined, o + j, kvBlobGet(b, idatAt[k] + j))
+                j++
+            }
+            o = o + idatLen[k]
+            k++
+        }
+        stream = 0
+        streamLen = idatTotal
+    }
+
+    val raw = if (joined != 0) { zlibInflate(joined, 0, streamLen, limit) }
+              else { zlibInflate(b, stream, streamLen, limit) }
+    if (joined != 0) { kvBlobFree(joined) }
+    if (not raw.ok()) { return noPng("PNG: " + raw.problem) }
+    if (raw.size != limit) {
+        return noPng("PNG: the pixels are " + raw.size.toString() + " bytes where "
+                   + limit.toString() + " were promised")
+    }
+
+    val out = kvBlobNew(w * h * 4)
+    if (out == 0) { return noPng("PNG: no room for it") }
+
+    // Undo the filters in place, row by row. Each row may refer to the one
+    // above it, so this walks forwards and keeps the previous row's start.
+    val line = kvBlobNew(rowBytes)
+    val prev = kvBlobNew(rowBytes)
+    if ((line == 0) or (prev == 0)) {
+        kvBlobFree(out)
+        if (line != 0) { kvBlobFree(line) }
+        if (prev != 0) { kvBlobFree(prev) }
+        return noPng("PNG: no room to unfilter it")
+    }
+    var z = 0
+    while (z < rowBytes) { kvBlobSet(prev, z, 0); z++ }
+
+    var y = 0
+    while (y < h) {
+        val src = y * (1 + rowBytes)
+        val kind = raw.at(src)
+        if ((kind < 0) or (kind > 4)) {
+            kvBlobFree(out); kvBlobFree(line); kvBlobFree(prev)
+            return noPng("PNG: a row filtered in a way this format does not have")
+        }
+        var x = 0
+        while (x < rowBytes) {
+            val cur = raw.at(src + 1 + x)
+            val a = if (x >= bpp) { kvBlobGet(line, x - bpp) } else { 0 }
+            val bb = kvBlobGet(prev, x)
+            val c = if (x >= bpp) { kvBlobGet(prev, x - bpp) } else { 0 }
+            var v = cur
+            if (kind == 1) { v = cur + a }
+            if (kind == 2) { v = cur + bb }
+            if (kind == 3) { v = cur + ((a + bb) / 2) }
+            if (kind == 4) { v = cur + paeth(a, bb, c) }
+            kvBlobSet(line, x, v band 255)
+            x++
+        }
+        emit(out, line, y, w, depth, colour, bpp, b, palette, paletteN, alpha, alphaN)
+        var t = 0
+        while (t < rowBytes) { kvBlobSet(prev, t, kvBlobGet(line, t)); t++ }
+        y++
+    }
+
+    kvBlobFree(line)
+    kvBlobFree(prev)
+    return Image(w, h, out, "")
+}
+
+func noPng(why: String): Image { return Image(0, 0, 0, why) }
+
+/// How many samples a colour type has, or zero for one this does not read.
+func channelsOf(colour: Int): Int {
+    if (colour == 0) { return 1 }      // grey
+    if (colour == 2) { return 3 }      // red, green, blue
+    if (colour == 3) { return 1 }      // an index into a palette
+    if (colour == 4) { return 2 }      // grey and alpha
+    if (colour == 6) { return 4 }      // red, green, blue, alpha
+    return 0
+}
+
+/// One unfiltered row, turned into the picture's ARGB.
+proc emit(out: Int, line: Int, y: Int, w: Int, depth: Int, colour: Int, bpp: Int,
+          file: Int, palette: Int, paletteN: Int, alpha: Int, alphaN: Int) {
+    val step = depth / 8               // 1 or 2 bytes a sample; the high one wins
+    var x = 0
+    while (x < w) {
+        val s = x * bpp
+        var r = 0
+        var g = 0
+        var bl = 0
+        var a = 255
+        if (colour == 0) {
+            r = kvBlobGet(line, s); g = r; bl = r
+        } else { if (colour == 4) {
+            r = kvBlobGet(line, s); g = r; bl = r
+            a = kvBlobGet(line, s + step)
+        } else { if (colour == 2) {
+            r = kvBlobGet(line, s)
+            g = kvBlobGet(line, s + step)
+            bl = kvBlobGet(line, s + (step * 2))
+        } else { if (colour == 6) {
+            r = kvBlobGet(line, s)
+            g = kvBlobGet(line, s + step)
+            bl = kvBlobGet(line, s + (step * 2))
+            a = kvBlobGet(line, s + (step * 3))
+        } else {
+            // Indexed. An index past the palette is a file contradicting
+            // itself; it draws as transparent rather than as whatever
+            // happened to be next in memory.
+            val idx = kvBlobGet(line, s)
+            if (idx < paletteN) {
+                r = kvBlobGet(file, palette + (idx * 3))
+                g = kvBlobGet(file, palette + (idx * 3) + 1)
+                bl = kvBlobGet(file, palette + (idx * 3) + 2)
+                if (idx < alphaN) { a = kvBlobGet(file, alpha + idx) }
+            } else {
+                a = 0
+            }
+        } } } }
+        val o = ((y * w) + x) * 4
+        kvBlobSet(out, o, a)
+        kvBlobSet(out, o + 1, r)
+        kvBlobSet(out, o + 2, g)
+        kvBlobSet(out, o + 3, bl)
+        x++
+    }
+}
+
+/// The predictor of filter 4: whichever of left, above and above-left the
+/// straightforward estimate lands nearest to.
+func paeth(a: Int, b: Int, c: Int): Int {
+    val p = (a + b) - c
+    val pa = (p - a).abs()
+    val pb = (p - b).abs()
+    val pc = (p - c).abs()
+    if ((pa <= pb) and (pa <= pc)) { return a }
+    if (pb <= pc) { return b }
+    return c
+}
+
+/// Four bytes, most significant first — PNG's order, and the other way round
+/// from a BMP's.
+func be32(b: Int, o: Int): Int {
+    return (kvBlobGet(b, o) shl 24) bor ((kvBlobGet(b, o + 1) shl 16)
+       bor ((kvBlobGet(b, o + 2) shl 8) bor kvBlobGet(b, o + 3)))
+}
+
+func tagOf(b: Int, o: Int): String {
+    var s = ""
+    var i = 0
+    while (i < 4) { s = s + kvBlobGet(b, o + i).toChar(); i++ }
+    return s
+}
+
+/// CRC-32 as PNG defines it, computed a bit at a time rather than from a
+/// table: a table is 1 KB of state to build and free, and this runs once per
+/// chunk rather than once per pixel.
+public func crc32(b: Int, at: Int, len: Int): Int {
+    var c = 4294967295
+    var i = 0
+    while (i < len) {
+        c = c bxor kvBlobGet(b, at + i)
+        var k = 0
+        while (k < 8) {
+            if ((c band 1) != 0) { c = 3988292384 bxor (c shr 1) }
+            else { c = c shr 1 }
+            k++
+        }
+        i++
+    }
+    return (c bxor 4294967295) band 4294967295
+}
+
+// ------------------------------------------------------------- either kind
+
+/// Read a picture, PNG or BMP, deciding from the file's own first bytes.
+///
+/// Not from the name. A decoder that trusts an extension is a decoder that can
+/// be told anything by whoever chose the filename, and the two formats
+/// announce themselves in their first two bytes precisely so that nobody has
+/// to guess.
+public func readPicture(path: String): Image {
+    val b = kvBlobRead(path)
+    if (b == 0) { return noPng("no file at " + path) }
+    val n = kvBlobSize(b)
+    if (n < 2) { kvBlobFree(b); return noPng("not a picture: two bytes long") }
+    val v = if ((kvBlobGet(b, 0) == 137) and (kvBlobGet(b, 1) == 80)) {
+                readPngBytes(b, n)
+            } else { readBmpBytes(b, n) }
+    kvBlobFree(b)
+    return v
+}
