@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """bmp2png.py — turn a frame keal-view rendered offscreen into a PNG.
 
-`kvSaveBmp` writes a BMP because a BMP is a header and the rows, and the
-runtime has no business linking a compressor. This turns one into a PNG for
-looking at, using nothing but the standard library.
+**Nothing here needs this any more.** `--snapshot frame.png` writes a PNG
+directly, from `src/png.keal`, in Keal; this script is kept for the reason
+`kvSaveBmp` is kept, which is the only reason either survives: it is an
+outside witness. Its PNGs come from Python's `zlib` — real deflate, dynamic
+Huffman, a filter chosen per row — and keal-view's come from stored blocks
+with no filter at all. Two implementations that share no line of code, so a
+picture both of them read the same way is a picture that is right.
+
+Which is what it was originally for: it predates `src/png.keal` by a week and
+was written without any thought of it, and that is exactly what makes it worth
+keeping now that it is redundant.
 """
 import struct, sys, zlib
 

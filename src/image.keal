@@ -10,9 +10,10 @@ import "./view.keal"
 /// keal-view draws everything itself, so a picture is not a thing the platform
 /// hands over — it is bytes this file turns into colours and the rasteriser
 /// puts down like any other. What it reads is **BMP**, uncompressed, 24 or 32
-/// bits a pixel, which is deliberately the format `--snapshot` writes: a
-/// keal-view program's own output goes back into a keal-view program without
-/// a second decoder to keep in agreement with the first.
+/// bits a pixel — one of the two formats `--snapshot` writes, the other being
+/// the PNG of `png.keal`: a keal-view program's own output goes back into a
+/// keal-view program without a second decoder to keep in agreement with the
+/// first, whichever of the two it was written as.
 ///
 /// Anything else — a run-length BMP, a palette, sixteen bits — is refused by
 /// name rather than drawn wrong. A picture that comes out as noise is a bug

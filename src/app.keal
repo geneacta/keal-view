@@ -51,7 +51,8 @@ public class App(public var title: String, public var width: Int, public var hei
 /// Open the window and run until it is closed.
 ///
 /// Every keal-view program also understands
-/// `--snapshot <file.bmp> [scale] [width height]` on its command line, which
+/// `--snapshot <file> [scale] [width height]` on its command line — a `.png`
+/// name gets a PNG, any other gets a BMP — which
 /// draws one frame to a file and exits without opening anything. That is how the examples in the README are made and how
 /// the widgets are checked on a machine with no display — the same code path
 /// the window uses, minus the window.

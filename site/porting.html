@@ -60,13 +60,15 @@ your machine is at fault.</p><p>And do not pipe <code>tools/build.sh</code> into
 the last command&#x27;s, so <code>tools/build.sh … | tail -2 &amp;&amp; ./units</code> runs the old
 binary after a failed build and tells you nothing about why it behaves
 strangely. <code>tools/test.sh</code> prints the compiler it used, for the same reason.</p><hr><h2 id="1-before-the-window-is-the-framework-itself-alright">1. Before the window: is the framework itself alright?</h2><pre><code>build/units                                        # or build/units.exe
-build/gallery --snapshot frame.bmp 2 900 1900
-python3 tools/bmp2png.py frame.bmp frame.png</code></pre><p><code>units</code> prints how many checks it ran; the number grows, so compare it against
+build/gallery --snapshot frame.png 2 900 1900</code></pre><p>Two commands and nothing else installed: the PNG is written by <code>src/png.keal</code>,
+in Keal, so this step needs no Python and no image library on a machine you
+are still porting to.</p><p><code>units</code> prints how many checks it ran; the number grows, so compare it against
 what it says on a machine that works rather than against a number written
 down here.</p><p>Neither touches the window, the event queue or the platform&#x27;s drawing at all.
-The first asserts 131 things about colour, geometry, layout, docking, fonts
-and input dispatch. The second exercises the rasteriser, the TrueType engine
-and the layout, and writes the result to a file.</p><p><strong>This is the bisection.</strong> If <code>frame.png</code> is right and the window is wrong,
+The first asserts several hundred things about colour, geometry, layout,
+docking, fonts, pictures and input dispatch. The second exercises the
+rasteriser, the TrueType engine and the layout, and writes the result to a
+file.</p><p><strong>This is the bisection.</strong> If <code>frame.png</code> is right and the window is wrong,
 the fault is in the backend and nowhere else. If <code>frame.png</code> is wrong, the
 fault is above the backend and every platform has it.</p><p>Look for, in <code>frame.png</code>:</p><ul><li><strong>letters, not empty rectangles.</strong> Rectangles mean <code>kvp_font_path</code> found no
 font. It tries <code>segoeui.ttf</code>, <code>tahoma.ttf</code>, <code>arial.ttf</code> under

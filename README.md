@@ -236,6 +236,14 @@ because it is the format that can still be read with four lines of `struct`
 when everything else is broken, and because one output being simple is what
 makes it useful for debugging the other.
 
+The PNG is a real PNG — every reader in the world opens it — but it uses
+DEFLATE's *stored* block, which carries its bytes behind a length and
+compresses nothing, so a frame comes out about the size of its pixels: a
+2360×1480 window is 14 MB where a compressing writer would spend 200 KB.
+That is the trade deliberately: the half of the format that is hard is the
+half only a reader needs, and `optipng frame.png` recovers the difference in
+one command for anyone who wants it.
+
 ## Platforms
 
 | | | |

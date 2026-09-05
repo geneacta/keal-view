@@ -2,9 +2,9 @@ import "../keal-view.keal"
 
 /// Show a picture — PNG or BMP, decided by the file's own first bytes.
 ///
-///     build/gallery --snapshot frame.bmp 2 900 1900
-///     build/picture frame.bmp
-///     python3 tools/bmp2png.py frame.bmp frame.png && build/picture frame.png
+///     build/gallery --snapshot frame.png 2 900 1900
+///     build/picture frame.png
+///     build/gallery --snapshot frame.bmp 2 900 1900 && build/picture frame.bmp
 ///
 /// Which is the whole of a preview: a keal-view program draws one frame to a
 /// file with no display at all, and another keal-view program shows it. There
