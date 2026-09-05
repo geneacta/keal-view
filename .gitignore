@@ -1,5 +1,9 @@
 build/
 tests/out/
+# `units` writes the pictures it reads back into `out/` beside wherever it
+# was launched — `build/` under tools/test.sh, the root if someone runs it
+# from there.
+out/
 *.bmp
 *.png.tmp
 

@@ -1,0 +1,34 @@
+import "../keal-view.keal"
+
+/// Show a BMP.
+///
+///     build/gallery --snapshot frame.bmp 2 900 1900
+///     build/picture frame.bmp
+///
+/// Which is the whole of a preview: a keal-view program draws one frame to a
+/// file with no display at all, and another keal-view program shows it. There
+/// is no second renderer to keep in agreement with the first, because what is
+/// on screen is the first one's own output.
+///
+/// A file that is not a picture is said so in words rather than drawn as
+/// noise — the point of a decoder that refuses by name.
+val path = if (args().size > 0) { args()[0] } else { "" }
+val pic = readBmp(path)
+
+func body(): View {
+    if (path == "") {
+        return centred("usage : picture fichier.bmp", theme().textMuted)
+    }
+    if (not pic.ok()) { return centred(pic.problem, theme().danger) }
+    return column([
+        pictureFitted(pic).grows(),
+        caption("${path} — ${pic.w} × ${pic.h}").color(theme().textMuted).centered()
+    ]).gaps(theme().gap(1.5)).padAll(theme().gap(2.0)).grows()
+}
+
+func centred(s: String, col: Int): View {
+    val c = column([spacer(), label(s).color(col).centered(), spacer()])
+    return c.padAll(theme().gap(4.0)).grows()
+}
+
+runApp("keal-view — image", 720, 560, { -> body() })
