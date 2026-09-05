@@ -202,12 +202,35 @@ static inline void kv_blob_set(int64_t h, int64_t i, int64_t v) {
         ((unsigned char *)h)[i] = (unsigned char)v;
 }
 
+/* Writing a blob back out. This is the only thing added to the boundary for
+ * writing a picture, and deliberately the only one: assembling a PNG is
+ * arithmetic over bytes — chunks, checksums, stored deflate blocks — and
+ * arithmetic belongs above this line. What only the operating system can do is
+ * put the bytes on a disc. */
+static inline int64_t kv_blob_write(int64_t h, const char *path) {
+    if (!h || !path) return 0;
+    FILE *f = fopen(path, "wb");
+    if (!f) return 0;
+    int64_t n = kv_blob_size(h);
+    size_t want = n > 0 ? (size_t)n : 0;
+    size_t put = want ? fwrite((const void *)h, 1, want, f) : 0;
+    int closed = fclose(f);
+    return (closed == 0 && put == want) ? 1 : 0;
+}
+
 static inline void kv_blob_free(int64_t h) {
     if (h) free((unsigned char *)h - 8);
 }
 
-/* Reading a file into a blob is the only file access keal-view adds, and it
- * exists because `readFile` answers a String and a font is not text. */
+/* Reading a file into a blob, and writing one back. These are the only file
+ * accesses keal-view adds, and they exist because `readFile` and `writeFile`
+ * answer and take a String — and a font, a picture and a compressed stream are
+ * not text.
+ *
+ * Writing is here and nothing else is: assembling a PNG is arithmetic over
+ * bytes — chunks, checksums, stored deflate blocks — and arithmetic belongs
+ * above this line. What only the operating system can do is put the bytes on a
+ * disc. */
 static inline int64_t kv_blob_read(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) return 0;

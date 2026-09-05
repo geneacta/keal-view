@@ -83,6 +83,12 @@ public extern func kvBlobSize(h: Int): Int = "kv_blob_size"
 public extern func kvBlobGet(h: Int, i: Int): Int = "kv_blob_get"
 public extern proc kvBlobSet(h: Int, i: Int, v: Int) = "kv_blob_set"
 public extern proc kvBlobFree(h: Int) = "kv_blob_free"
+/// Write a blob out whole. Answers 1 when every byte reached the file.
+///
+/// The only writing this boundary does, on purpose: assembling a picture is
+/// arithmetic over bytes, and arithmetic belongs in Keal. What only the system
+/// can do is put them on a disc.
+public extern func kvBlobWrite(h: Int, path: borrow String): Int = "kv_blob_write"
 
 // ------------------------------------------------------------------ host
 
