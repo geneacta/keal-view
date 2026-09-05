@@ -2,6 +2,7 @@ import "../src/app.keal"
 import "../src/dock.keal"
 import "../src/image.keal"
 import "../src/inflate.keal"
+import "../src/png.keal"
 
 /// What can be checked without a screen.
 ///
@@ -1338,12 +1339,139 @@ proc inflateRefusalTests() {
     ok("and named", notZlib.problem.contains("not deflate"))
 }
 
+
+// --------------------------------------------------------------------- png
+
+/// Every picture below was written by Python and **read back by PIL** — a
+/// third implementation — before its expected pixels were written here. That
+/// matters most for the filters: the encoder that made that vector uses the
+/// same arithmetic as the decoder being tested, so on its own it would agree
+/// with a shared misunderstanding. PIL is what says it does not.
+
+func png(h: String): Image {
+    val b = hexBlob(h)
+    val v = readPngBytes(b, h.length / 2)
+    kvBlobFree(b)
+    return v
+}
+
+/// 2x2, red green / blue yellow, eight bits, no filtering.
+val pRGB = "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000144944415478da63f8cfc0c000c20cffffff6700001eef04fc731c53cc0000000049454e44ae426082"
+/// The same with alpha: one pixel half transparent, one wholly.
+val pRGBA = "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d24000000174944415478da63f8cfc0f01f081b1880f47f4e4e4e06003b2d0597c4762bd70000000049454e44ae426082"
+/// Grey, and grey with alpha.
+val pGrey = "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e4944415478da6360086558f51f0003ad01ff7a93847f0000000049454e44ae426082"
+val pGreyA = "89504e470d0a1a0a0000000d4948445200000002000000020804000000d8bfc5af000000124944415478da63e0fa2fd2c020e7a0c100000d7002248a9fb30c0000000049454e44ae426082"
+/// Indexed, with a `tRNS` making the second entry transparent.
+val pPal = "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd1600000009504c5445ff000000ff000000ff2d4acd8a0000000274524e53ff00e5b7304a0000000e4944415478da6360606460620400000f000536b42a390000000049454e44ae426082"
+/// Sixteen bits a sample, read at eight.
+val pRGB16 = "89504e470d0a1a0a0000000d4948445200000002000000021002000000ad444630000000134944415478da63f8ff9f010c603490d10006006b3908fbb6f902050000000049454e44ae426082"
+/// The compressed pixels split across two `IDAT` chunks, which is how a large
+/// picture arrives and the reason they are gathered before anything is
+/// decompressed.
+val pSplit = "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000000b4944415478da63606462666165636037ad0b750000000b49444154e7e0e4e2e60100018f004fec7050bd0000000049454e44ae426082"
+/// Four by five, each row filtered differently: None, Sub, Up, Average,
+/// Paeth, in that order.
+val pFilters = "89504e470d0a1a0a0000000d4948445200000004000000050802000000edcfda8c0000002f4944415478da63606038c125b25f44639b9ccd5a4646e6835c22df21888991f9271c3133b185b1f1fc802016641900530a1311f0fe7ad60000000049454e44ae426082"
+/// Interlaced, a bad checksum, and four bits a sample — the three refusals.
+val pAdam7 = "89504e470d0a1a0a0000000d49484452000000020000000208020000018ad3aae5000000114944415478da63606462666165638050000111002b0512c78f0000000049454e44ae426082"
+val pBadCrc = "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000114944415478da63606462666165638050000111002b0512c7700000000049454e44ae426082"
+val pDepth4 = "89504e470d0a1a0a0000000d4948445200000002000000020400000000922dbff90000000c4944415478da63e067e007000040001fbcf5209a0000000049454e44ae426082"
+
+proc pngTests() {
+    val a = png(pRGB)
+    ok("a plain RGB picture reads", a.ok())
+    eqI("two across", a.w, 2)
+    eqI("two down", a.h, 2)
+    eqI("red", a.at(0, 0), rgb(255, 0, 0))
+    eqI("green", a.at(1, 0), rgb(0, 255, 0))
+    eqI("blue", a.at(0, 1), rgb(0, 0, 255))
+    eqI("yellow", a.at(1, 1), rgb(255, 255, 0))
+
+    val b = png(pRGBA)
+    ok("alpha reads", b.ok())
+    eqI("opaque where it says so", b.at(0, 0), rgba(255, 0, 0, 255))
+    eqI("half where it says half", b.at(1, 0), rgba(0, 255, 0, 128))
+    eqI("and gone where it says gone", b.at(1, 1), rgba(9, 9, 9, 0))
+
+    val g = png(pGrey)
+    ok("grey reads", g.ok())
+    eqI("black", g.at(0, 0), rgb(0, 0, 0))
+    eqI("a third of the way", g.at(1, 0), rgb(85, 85, 85))
+    eqI("white", g.at(1, 1), rgb(255, 255, 255))
+
+    val ga = png(pGreyA)
+    ok("grey with alpha reads", ga.ok())
+    eqI("its first", ga.at(0, 0), rgba(10, 10, 10, 255))
+    eqI("its last", ga.at(1, 1), rgba(40, 40, 40, 0))
+
+    val p = png(pPal)
+    ok("an indexed picture reads", p.ok())
+    eqI("through its palette", p.at(0, 0), rgba(255, 0, 0, 255))
+    eqI("and its transparency chunk", p.at(1, 0), rgba(0, 255, 0, 0))
+    eqI("an index with no entry in tRNS is opaque", p.at(0, 1), rgba(0, 0, 255, 255))
+
+    val s = png(pRGB16)
+    ok("sixteen bits a sample reads", s.ok())
+    eqI("at eight, taking the high byte", s.at(0, 0), rgb(255, 0, 0))
+    eqI("and the last one likewise", s.at(1, 1), rgb(128, 128, 128))
+
+    val sp = png(pSplit)
+    ok("pixels split across two IDAT chunks read", sp.ok())
+    eqI("as one stream", sp.at(0, 0), rgb(1, 2, 3))
+    eqI("across the join", sp.at(1, 1), rgb(10, 11, 12))
+
+    // The five filters, one per row. Sub, Up, Average and Paeth each refer to
+    // bytes already decoded, so a mistake in any of them shows as a row that
+    // drifts from the one above it — which is why the expected values here
+    // come from PIL and not from the arithmetic being tested.
+    val f = png(pFilters)
+    ok("all five row filters read", f.ok())
+    eqI("None: first", f.at(0, 0), rgb(0, 0, 200))
+    eqI("None: last", f.at(3, 0), rgb(30, 60, 173))
+    eqI("Sub: first", f.at(0, 1), rgb(1, 3, 193))
+    eqI("Sub: last", f.at(3, 1), rgb(31, 63, 166))
+    eqI("Up: first", f.at(0, 2), rgb(2, 6, 186))
+    eqI("Up: last", f.at(3, 2), rgb(32, 66, 159))
+    eqI("Average: first", f.at(0, 3), rgb(3, 9, 179))
+    eqI("Average: last", f.at(3, 3), rgb(33, 69, 152))
+    eqI("Paeth: first", f.at(0, 4), rgb(4, 12, 172))
+    eqI("Paeth: last", f.at(3, 4), rgb(34, 72, 145))
+}
+
+proc pngRefusalTests() {
+    val i = png(pAdam7)
+    ok("an interlaced picture is refused", not i.ok())
+    ok("by name, rather than decoded as though it were not",
+       i.problem.contains("Adam7"))
+
+    val c = png(pBadCrc)
+    ok("a chunk that does not match its checksum is refused", not c.ok())
+    ok("and named", c.problem.contains("checksum"))
+
+    val d = png(pDepth4)
+    ok("four bits a sample is refused", not d.ok())
+    ok("and named", d.problem.contains("4 bits a sample"))
+
+    ok("a file shorter than the signature is refused", not png("89504e47").ok())
+    val notPng = png("0000000000000000000000000000")
+    ok("a file that is not a PNG is refused", not notPng.ok())
+    ok("by its signature", notPng.problem.contains("signature"))
+    // The signature alone, with nothing after it: no header, so nothing to do.
+    val bare = png("89504e470d0a1a0a")
+    ok("the signature alone is refused", not bare.ok())
+    ok("for having no header", bare.problem.contains("no header"))
+    ok("and a file with no pixels at all", not readPng("out/there-is-no-png.png").ok())
+}
+
 dockTests()
 dockSaveTests()
 dockRestoreTests()
 imageTests()
 inflateTests()
 inflateRefusalTests()
+pngTests()
+pngRefusalTests()
 interactionTests()
 textTests()
 stateTests()

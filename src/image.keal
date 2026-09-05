@@ -55,15 +55,22 @@ func noImage(why: String): Image { return Image(0, 0, 0, why) }
 public func readBmp(path: String): Image {
     val b = kvBlobRead(path)
     if (b == 0) { return noImage("no file at " + path) }
-    val n = kvBlobSize(b)
-    if (n < 54) { kvBlobFree(b); return noImage("not a BMP: shorter than a header") }
+    val v = readBmpBytes(b, kvBlobSize(b))
+    kvBlobFree(b)
+    return v
+}
+
+/// The same, from bytes already in hand. The blob belongs to the caller and is
+/// not freed here — a picture does not always come from a file, and the reader
+/// that decides between the two formats holds one blob for both.
+public func readBmpBytes(b: Int, n: Int): Image {
+    if (n < 54) { return noImage("not a BMP: shorter than a header") }
     if ((kvBlobGet(b, 0) != 66) or (kvBlobGet(b, 1) != 77)) {
-        kvBlobFree(b)
         return noImage("not a BMP: it does not begin BM")
     }
     val offset = u32(b, 10)
     val dib = u32(b, 14)
-    if (dib < 40) { kvBlobFree(b); return noImage("BMP: a header this old is not read") }
+    if (dib < 40) { return noImage("BMP: a header this old is not read") }
     val w = i32(b, 18)
     val rawH = i32(b, 22)
     val bpp = u16(b, 28)
@@ -72,7 +79,7 @@ public func readBmp(path: String): Image {
     // BMP most of the world writes and the one `kv_save_bmp` writes.
     val topDown = rawH < 0
     val h = if (topDown) { 0 - rawH } else { rawH }
-    if ((w <= 0) or (h <= 0)) { kvBlobFree(b); return noImage("BMP: no pixels in it") }
+    if ((w <= 0) or (h <= 0)) { return noImage("BMP: no pixels in it") }
     // A header can say anything, and two of the numbers in it are about to be
     // multiplied together. `2000000000 by 2000000000` is fifty-four bytes of
     // file and 1.6e19 of arithmetic — past a signed `Int`, and Keal's integers
@@ -85,16 +92,13 @@ public func readBmp(path: String): Image {
     // below — `w * (bpp / 8)`, `stride * h`, `w * h * 4` — stays under 2^35.
     // The allocation that follows may still fail, and that is already handled.
     if ((w > 65535) or (h > 65535)) {
-        kvBlobFree(b)
         return noImage("BMP: " + w.toString() + " by " + h.toString()
                      + ", which is larger than this reads")
     }
     if ((bpp != 24) and (bpp != 32)) {
-        kvBlobFree(b)
         return noImage("BMP: " + bpp.toString() + " bits a pixel, which this does not read")
     }
     if ((comp != 0) and (comp != 3)) {
-        kvBlobFree(b)
         return noImage("BMP: compressed, which this does not read")
     }
 
@@ -105,7 +109,7 @@ public func readBmp(path: String): Image {
     var bMask = 255
     var aMask = 0
     if (comp == 3) {
-        if (n < 70) { kvBlobFree(b); return noImage("BMP: it promises masks and stops early") }
+        if (n < 70) { return noImage("BMP: it promises masks and stops early") }
         rMask = u32(b, 54)
         gMask = u32(b, 58)
         bMask = u32(b, 62)
@@ -119,12 +123,11 @@ public func readBmp(path: String): Image {
     // Rows are padded to four bytes. At 32 bits a pixel they already are.
     val stride = (((w * (bpp / 8)) + 3) / 4) * 4
     if ((offset + (stride * h)) > n) {
-        kvBlobFree(b)
         return noImage("BMP: the file stops before its pixels do")
     }
 
     val out = kvBlobNew(w * h * 4)
-    if (out == 0) { kvBlobFree(b); return noImage("BMP: no room for it") }
+    if (out == 0) { return noImage("BMP: no room for it") }
     var y = 0
     while (y < h) {
         // Bottom-up files put the last row first.
@@ -161,7 +164,6 @@ public func readBmp(path: String): Image {
         }
         y++
     }
-    kvBlobFree(b)
     return Image(w, h, out, "")
 }
 

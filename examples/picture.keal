@@ -1,9 +1,10 @@
 import "../keal-view.keal"
 
-/// Show a BMP.
+/// Show a picture — PNG or BMP, decided by the file's own first bytes.
 ///
 ///     build/gallery --snapshot frame.bmp 2 900 1900
 ///     build/picture frame.bmp
+///     python3 tools/bmp2png.py frame.bmp frame.png && build/picture frame.png
 ///
 /// Which is the whole of a preview: a keal-view program draws one frame to a
 /// file with no display at all, and another keal-view program shows it. There
@@ -13,11 +14,11 @@ import "../keal-view.keal"
 /// A file that is not a picture is said so in words rather than drawn as
 /// noise — the point of a decoder that refuses by name.
 val path = if (args().size > 0) { args()[0] } else { "" }
-val pic = readBmp(path)
+val pic = readPicture(path)
 
 func body(): View {
     if (path == "") {
-        return centred("usage : picture fichier.bmp", theme().textMuted)
+        return centred("usage : picture fichier.png|.bmp", theme().textMuted)
     }
     if (not pic.ok()) { return centred(pic.problem, theme().danger) }
     return column([
