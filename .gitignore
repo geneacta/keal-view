@@ -2,3 +2,8 @@ build/
 tests/out/
 *.bmp
 *.png.tmp
+
+# Python leaves this behind every time the site generator runs. Untracked
+# noise is where a real change hides, so it is named rather than swept up by
+# hand — the same line, for the same reason, as in the Keal repository.
+site/__pycache__/

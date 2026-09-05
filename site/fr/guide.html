@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keal-view — Le guide</title>
+<meta name="description" content="Le guide">
+<link rel="canonical" href="https://geneacta.github.io/keal-view/fr/guide.html">
+<link rel="alternate" hreflang="en" href="https://geneacta.github.io/keal-view/guide.html">
+<link rel="alternate" hreflang="fr" href="https://geneacta.github.io/keal-view/fr/guide.html">
+<link rel="alternate" hreflang="x-default" href="https://geneacta.github.io/keal-view/guide.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="keal-view">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:title" content="keal-view — Le guide">
+<meta property="og:description" content="Le guide">
+<meta property="og:url" content="https://geneacta.github.io/keal-view/fr/guide.html">
+<meta property="og:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="keal-view — Le guide">
+<meta name="twitter:description" content="Le guide">
+<meta name="twitter:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+<nav class="nav">
+  <div class="nav-left">
+    <a class="mark" href="index.html"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="1.6" y="3.6" width="22.8" height="18.8" rx="4.5" stroke="#3b82f6" stroke-width="2"/><path d="M2 9.6h22" stroke="#3b82f6" stroke-width="2"/><circle cx="6.2" cy="6.6" r="1.25" fill="#3b82f6"/></svg><span class="wm">keal-view</span></a>
+    <div class="nav-links"><a href="index.html">Accueil</a><a href="guide.html" class="tab-active">Le guide</a><a href="widgets.html">Référence</a><a href="gallery.html">Galerie</a><a href="architecture.html">Architecture</a><a href="coming-from.html">Je viens de…</a><a href="porting.html">Portage</a></div>
+  </div>
+  <div class="nav-right">
+    <span class="badge">v0.1</span>
+    <a class="btn-lang" href="../guide.html">English</a>
+    <a class="btn-keal" href="https://geneacta.github.io/keal/fr/">Keal</a>
+    <a class="btn-gh" href="https://github.com/geneacta/keal-view">GitHub</a>
+  </div>
+</nav>
+<div class="dgrid"><div class="dside"><div class="grp">GUIDE</div><a href="guide.html" class="on">Le guide</a><a href="widgets.html">La référence</a><a href="architecture.html">Architecture</a><div class="grp">PLATEFORMES</div><a href="porting.html">Tester un backend</a><div class="grp">AILLEURS</div><a href="gallery.html">Galerie</a><a href="coming-from.html">Je viens de…</a></div><div class="dmain prose"><div class="crumb"><a href="index.html">keal-view</a> <span class="sl">/</span> <span class="here">Le guide</span></div><div class="callout"><span class="st">✦</span><p>Ce document est rédigé en anglais, la langue de travail du dépôt, et il est converti tel quel depuis le fichier qui fait foi. Les pages que le site écrit lui-même — l'accueil, la galerie, l'architecture et les guides « je viens de… » — existent intégralement dans les deux langues.</p></div><h1>Le guide</h1><p>Everything you need to build an interface, in the order you need it. If you
+would rather see it than read it, <a href="https://github.com/geneacta/keal-view/blob/main/examples/tour.keal"><code>examples/tour.keal</code></a>
+covers the same ground with every chapter running beside its own source —
+<code>tools/build.sh examples/tour.keal &amp;&amp; build/tour</code>. There is
+one idea to hold on to and the rest follows from it:</p><blockquote><strong>An application is a function from its state to a tree of views.</strong> You never say <em>redraw</em>. You change a value, and the function runs again.</blockquote><hr><h2 id="1-a-window">1. A window</h2><pre><code>import &quot;keal-view/keal-view.keal&quot;
+
+runApp(&quot;Hello&quot;, 320, 200, { -&gt;
+    column([
+        label(&quot;Hello, keal-view&quot;)
+    ]).padAll(24.0)
+})</code></pre><pre><code>tools/build.sh hello.keal &amp;&amp; build/hello</code></pre><p>One import brings the whole framework into scope. <code>runApp</code> opens a window and
+runs until it is closed. The lambda is the interface — it is called whenever
+anything changes, and its job is to describe what should be on screen <em>now</em>,
+not to change what is there.</p><p>Note the <code>{ -&gt; …}</code>. A lambda with no arguments needs the arrow; <code>{ … }</code> on its
+own is an empty map in Keal.</p><hr><h2 id="2-state">2. State</h2><p>State lives in a <code>Cell</code>. Read it with <code>get()</code>, write it with <code>set()</code>. Writing
+is what makes the next frame happen.</p><pre><code>val clicks = state(0)
+
+runApp(&quot;Counter&quot;, 320, 200, { -&gt;
+    column([
+        label(&quot;Clicked ${clicks.get()} times&quot;).fontSize(20.0),
+        button(&quot;Click me&quot;, { -&gt; clicks.set(clicks.get() + 1) }).kindOf(primary)
+    ]).gaps(12.0).padAll(24.0).aligned(mainCenter, crossCenter).grows()
+})</code></pre><p>There is no diff and no dependency graph: a write rebuilds the whole tree.
+Building a few hundred nodes is tens of microseconds, and what you get for it
+is that the view function is a pure function of the state, with nothing to
+invalidate and nothing to forget to invalidate.</p><p><code>update</code> reads and writes in one go, and <code>invalidate()</code> says &quot;something
+changed&quot; for anything that does not live in a cell:</p><pre><code>clicks.update({ n -&gt; n + 1 })
+invalidate()                      // a timer fired, a file finished loading</code></pre><hr><h2 id="2-where-the-state-lives">2¾. Where the state lives</h2><p>Cells are one answer and they are the right one for a small program. Past a
+certain size an application usually wants its state and the things that change
+it in the same object — and a lambda can capture <code>this</code>, so it can:</p><pre><code>class TodoList {
+    var tasks: List&lt;Task&gt; = []
+    var draft: String = &quot;&quot;
+
+    proc add() {
+        if (this.draft != &quot;&quot;) { this.tasks.add(newTask(this.draft)); this.draft = &quot;&quot; }
+        invalidate()
+    }
+
+    func view(): View {
+        return column([
+            field(this.draft, &quot;what next?&quot;, { s -&gt; this.draft = s }),
+            button(&quot;Add&quot;, { -&gt; this.add() }).kindOf(primary)
+        ]).gaps(8.0).padAll(16.0)
+    }
+}
+
+val list = TodoList()
+runApp(&quot;Tasks&quot;, 460, 520, { -&gt; list.view() })</code></pre><p>The object holds the truth, <code>view()</code> is a pure function of it, and <code>invalidate()</code>
+says the frame is stale — the same contract a <code>Cell</code> has, written out by hand.
+<a href="https://github.com/geneacta/keal-view/blob/main/examples/todo.keal"><code>examples/todo.keal</code></a> is this, finished.</p><p>Two things the language decides for you here, and both are improvements:</p><p><strong>A parameter&#x27;s contents belong to whoever passed them.</strong> A <code>Task</code> received as
+an argument cannot be changed; only the list that owns it may. So things are
+addressed by identity — <code>toggle(id)</code>, not <code>toggle(task)</code> — and the question of
+who is allowed to write never comes up.</p><p><strong>Careful with a closure you keep.</strong> A lambda that captures <code>this</code> and is
+stored <em>inside</em> the object is a cycle, and reference counting will not collect
+it:</p><pre><code>this.render = { -&gt; this.name }        // the object holds the closure that holds it</code></pre><p>Handlers hung on a view are fine — the tree is thrown away every frame, so
+nothing survives to close the loop. It is caching a view, or a callback, in a
+long-lived object that does it. <code>weak</code> on the back edge breaks one, and
+<code>keal build --audit</code> names any that are left.</p><hr><h2 id="2-what-persists-and-the-one-trap-in-it">2½. What persists, and the one trap in it</h2><p>The tree is thrown away every frame, so anything a <em>widget</em> remembers by
+itself — a scroll position, a text caret, which end of a selection is which —
+cannot live in the tree. It lives beside it, in a map, keyed by <strong>where the
+node sits in the tree</strong>.</p><p>That is right almost always: the same tree is rebuilt sixty times a second and
+every node lands back on its own state. It is wrong exactly once, and it is
+worth knowing before it happens to you:</p><pre><code>column(tasks.get().map({ t -&gt; field(t.title, &quot;&quot;, { s -&gt; rename(t, s) }) }))</code></pre><p>Delete the first task. Everything below moves up a place — and the state moves
+with the <em>place</em>, not with the task. The caret, the selection and the
+keystroke you had not finished typing are now in the row underneath. Nothing
+crashes; the wrong row is simply focused, and you get to explain it to
+somebody.</p><p>Give the row a name of its own and the problem disappears:</p><pre><code>field(t.title, &quot;&quot;, { s -&gt; rename(t, s) }).keyed(t.id)</code></pre><p><strong>The rule: key anything in a list that can be reordered, inserted into or
+deleted from.</strong> A fixed layout — a toolbar, a form, a settings page — never
+needs one, because nothing ever moves.</p><hr><h2 id="3-laying-things-out">3. Laying things out</h2><p>Two containers do almost everything.</p><pre><code>column([a, b, c])     // stacked downwards
+row([a, b, c])        // stacked across</code></pre><p>Each child takes the size it asks for. <strong>What is left over goes to the
+children that asked for it:</strong></p><pre><code>row([
+    label(&quot;left&quot;),
+    spacer(),                 // takes everything left over
+    label(&quot;right&quot;)
+])</code></pre><pre><code>column([
+    header().h(48.0),         // a fixed height
+    body().grows(),           // everything else
+    footer().h(24.0)
+])</code></pre><p><code>grows()</code> is CSS&#x27;s <code>flex: 1</code> — take a share of the room, <strong>starting from
+nothing</strong>. Two views with <code>grows()</code> split the room evenly; <code>growsBy(2.0)</code>
+against <code>growsBy(1.0)</code> splits it two to one.</p><p>There is one trap and it is worth knowing now. <code>grows()</code> starts from nothing,
+so inside a container that is itself sized by its content there is nothing
+left over and a growing child gets zero height. When you want *&quot;at least my
+content, and more if there is room&quot;*, use <code>fills()</code>:</p><pre><code>card([
+    tabs([&quot;One&quot;, &quot;Two&quot;], tab.get(), { i -&gt; tab.set(i) }),
+    body().fills()            // grows() would collapse it to nothing here
+])</code></pre><p>Spacing and padding:</p><pre><code>column([…]).gaps(8.0)          // between children
+column([…]).padAll(16.0)       // inside the container
+column([…]).padXY(16.0, 8.0)   // across, then down
+column([…]).pads(Insets(8.0, 4.0, 8.0, 12.0))</code></pre><p>Alignment, along the stacking axis and across it:</p><pre><code>row([…]).aligned(mainCenter, crossCenter)
+// main:  mainStart  mainCenter  mainEnd  mainBetween
+// cross: crossStart crossCenter crossEnd crossStretch   (stretch is default)</code></pre><p>Sizes:</p><pre><code>.w(200.0)  .h(48.0)  .sized(200.0, 48.0)   // fixed
+.least(120.0, 0.0)                         // a floor, content may ask for more</code></pre><p><strong>Nothing shrinks.</strong> Content that does not fit is clipped, not squeezed. A
+layout that silently compresses fails only on small windows, which is the last
+place anyone looks.</p><h3 id="layers">Layers</h3><p><code>stack</code> puts children one on top of another in the same rectangle, last one
+nearest the viewer. It is how a badge sits on an avatar, and how anything gets
+over the interface:</p><pre><code>stack([
+    chart(),
+    row([spacer(), badge(&quot;live&quot;)]).padAll(8.0)
+])</code></pre><p>Inside a <code>stack</code>, <code>.at(x, y)</code> places a child absolutely, at its own size.</p><hr><h2 id="4-widgets">4. Widgets</h2><p>The full list is in <a href="widgets.html">widgets.md</a>; these are the ones you will
+reach for first.</p><pre><code>label(&quot;text&quot;)                 heading(&quot;Section&quot;)        title(&quot;Page&quot;)
+caption(&quot;small and quiet&quot;)    paragraph(&quot;wraps to its width&quot;)
+badge(&quot;3&quot;)                    icon(&quot;check&quot;)
+
+button(&quot;Save&quot;, { -&gt; save() }).kindOf(primary)
+iconButton(&quot;trash&quot;, { -&gt; del() }).tip(&quot;Delete&quot;)
+link(&quot;read more&quot;, { -&gt; open() })
+
+checkbox(&quot;I agree&quot;, agreed.get(), { v -&gt; agreed.set(v) })
+toggle(&quot;Live reload&quot;, live.get(), { v -&gt; live.set(v) })
+radio(&quot;Yearly&quot;, plan.get() == 1, { -&gt; plan.set(1) })
+segmented([&quot;S&quot;, &quot;M&quot;, &quot;L&quot;], size.get(), { i -&gt; size.set(i) })
+select([&quot;Small&quot;, &quot;Medium&quot;], size.get(), { i -&gt; size.set(i) })
+
+slider(volume.get(), 0.0, 1.0, { v -&gt; volume.set(v) })
+stepper(count.get(), 0.0, 10.0, 1.0, { v -&gt; count.set(v) })
+progress(0.62)
+
+field(name.get(), &quot;your name&quot;, { s -&gt; name.set(s) })
+secretField(pass.get(), &quot;password&quot;, { s -&gt; pass.set(s) })
+
+card([ … ])                   banner(2, &quot;Careful.&quot;)
+tabView(titles, tab.get(), { i -&gt; tab.set(i) }, body())
+scroll([ … ])                 divider()   spacer()   gapV(12.0)</code></pre><p>Every widget reports <strong>what it would become</strong>, not what it is: a checkbox
+hands you <code>true</code> when it is off and you were about to turn it on. It never
+flips itself — the tree is rebuilt from your state, so your state is the only
+thing that decides.</p><pre><code>checkbox(&quot;I agree&quot;, agreed.get(), { v -&gt; agreed.set(v) })
+//                  ↑ what it shows        ↑ what you do about it</code></pre><hr><h2 id="5-style">5. Style</h2><p>Any view can carry a background, a border, a corner and a shadow. That is what
+makes a plain <code>column</code> able to be a card without a card widget existing.</p><pre><code>column([ … ])
+    .bg(theme().surface)
+    .rounded(12.0)
+    .outline(theme().border, 1.0)
+    .raised(14.0)              // a shadow, this many points across
+    .padAll(16.0)</code></pre><p>Text:</p><pre><code>label(&quot;…&quot;).fontSize(20.0).bold().mono().color(theme().accent)
+label(&quot;…&quot;).centered()          // or .trailing()</code></pre><p>Colours come from the theme, or from you:</p><pre><code>theme().accent      theme().textSecondary     theme().surfaceHi
+web(&quot;#3b82f6&quot;)      rgb(59, 130, 246)         rgba(59, 130, 246, 128)
+mix(a, b, 0.5)      lighten(c, 0.1)           fade(c, 0.5)</code></pre><h3 id="themes">Themes</h3><p>There is one theme in force, and everything reads it:</p><pre><code>theme()                       // the one in use
+useTheme(lightTheme())        // change it — the next frame is in the new one
+flipTheme()                   // swap between dark and light</code></pre><p>To change how everything looks, change the theme rather than the widgets:</p><pre><code>val t = darkTheme()
+t.accent = web(&quot;#8b5cf6&quot;)
+t.radiusMd = 4.0
+t.fontBase = 14.0
+useTheme(t)</code></pre><p><strong>Everything measures in points, never pixels.</strong> The rasteriser is the only
+thing that knows what a pixel is, so one layout is correct on a Retina display
+and on a projector.</p><hr><h2 id="6-menus-dialogs-and-tooltips">6. Menus, dialogs and tooltips</h2><p>These appear <em>over</em> an interface rather than in it, so they are calls rather
+than nodes in your tree. Nothing needs installing.</p><pre><code>openMenu(x, y, [&quot;Open…&quot;, &quot;Save&quot;, &quot;Close&quot;], -1, { i -&gt; did(i) })
+openIconMenu(x, y, names, icons, selected, { i -&gt; … })
+
+openDialog(&quot;Delete the project?&quot;, { -&gt;
+    column([
+        paragraph(&quot;This cannot be undone.&quot;),
+        row([spacer(),
+             button(&quot;Cancel&quot;, { -&gt; closePopup() }).kindOf(quiet),
+             button(&quot;Delete&quot;, { -&gt; closePopup(); del() }).kindOf(danger)])
+    ])
+})
+
+openSheet(…)     // the same, but a click outside or Escape puts it away
+closePopup()</code></pre><p>A tooltip is a modifier, not a call:</p><pre><code>iconButton(&quot;trash&quot;, { -&gt; del() }).tip(&quot;Delete this file&quot;)</code></pre><hr><h2 id="7-a-view-that-draws-itself">7. A view that draws itself</h2><p>When no widget fits, draw. <code>custom</code> is handed a <code>Paint</code>: a canvas already
+clipped to its own rectangle, that rectangle in points, the fonts, the theme,
+and whether the pointer is on it.</p><pre><code>custom({ p -&gt;
+    val r = shrink(p.area, 8.0)
+    p.canvas.fillRound(r, 8.0, p.theme.surfaceHi)
+    p.canvas.line(r.x, bottom(r), right(r), r.y, 2.0, p.theme.accent)
+    p.text(&quot;a chart&quot;, Rect(r.x, r.y, r.w, 18.0), 0, p.theme.small(), p.theme.textMuted)
+    if (p.hot) { p.canvas.strokeRound(r, 8.0, 1.0, p.theme.accent) }
+}).h(120.0)</code></pre><p>The canvas has <code>fillRect</code> <code>fillRound</code> <code>strokeRound</code> <code>fillCircle</code> <code>line</code>
+<code>gradient</code> <code>shadow</code> <code>clear</code> <code>push</code>/<code>pop</code> (clipping) and <code>mask</code>. <code>Paint</code> adds
+<code>text</code> <code>line</code> <code>width</code> <code>lineHeight</code> <code>ascent</code> for anything with letters in it.</p><p>A custom view can take input too:</p><pre><code>custom({ p -&gt; … })
+    .tappable({ -&gt; chose() })
+    .dragged({ x, y -&gt; start(x, y) }, { x, y -&gt; moved(x, y) }, { x, y -&gt; dropped(x, y) })</code></pre><p><code>grab</code>, <code>move</code> and <code>drop</code> are all given window points. A press that never
+moved is a click and fires <code>onTap</code> instead — you never have to tell them
+apart yourself.</p><hr><h2 id="8-keyboard">8. Keyboard</h2><p>Tab walks the controls that can take focus, in the order you declared them.
+Text fields handle typing, selection, Home/End, and copy, cut and paste with
+the platform&#x27;s own modifier. Escape puts away a popup, then gives up focus.</p><p>For shortcuts of your own:</p><pre><code>val app = App(&quot;Editor&quot;, 900, 600)
+app.build = { -&gt; … }
+app.onKey = { e -&gt;
+    if (e.cmd() and (e.text == &quot;s&quot;)) { save(); true }
+    else { if (e.key == keyEscape()) { deselect(); true } else { false } }
+}
+run(app)</code></pre><p><code>e.cmd()</code> is Command on macOS and Control everywhere else, so one line covers
+both. Answer <code>true</code> to say you handled it.</p><hr><h2 id="9-docking">9. Docking</h2><p>For an application whose panels the user arranges: splits, tab groups, and
+dragging a panel from one to another.</p><pre><code>val dock = Dock(
+    beside(
+        leaf([&quot;files&quot;]),
+        above(leaf([&quot;editor&quot;]), leaf([&quot;terminal&quot;]), 0.7),
+        0.2))
+
+dock.add(panelOf(&quot;files&quot;,    &quot;Files&quot;,    { -&gt; filesPanel() }))
+dock.add(panelOf(&quot;editor&quot;,   &quot;main.keal&quot;, { -&gt; editorPanel() }))
+dock.add(panelOf(&quot;terminal&quot;, &quot;Terminal&quot;, { -&gt; terminalPanel() }))
+
+app.build   = { -&gt; column([toolbar(), dockView(dock).grows()]).grows() }
+app.overlay = { -&gt; dockOverlay(dock) }</code></pre><p><code>beside(a, b, f)</code> puts them side by side with <code>a</code> taking fraction <code>f</code>;
+<code>above(a, b, f)</code> stacks them. A panel is an ordinary view function and does
+not know it is docked. <code>dock.reveal(&quot;files&quot;)</code> brings one to the front;
+<code>dock.detach(&quot;files&quot;)</code> takes it out.</p><p>The overlay is what draws the highlight while a panel is being dragged. Give
+it to <code>app.overlay</code> or the drag has no feedback.</p><hr><h2 id="10-seeing-what-you-built">10. Seeing what you built</h2><p>Every keal-view program understands two flags for free:</p><pre><code>build/app --snapshot frame.bmp 2            # one frame to a file, no window
+build/app --snapshot frame.bmp 2 900 1900   # …at a size of your choosing
+build/app --window-id /tmp/id               # its own window number</code></pre><p>The first needs no display at all, which is how this framework is tested in
+continuous integration. <code>tools/bmp2png.py</code> turns the result into a PNG, and
+<code>tools/shot.sh build/app out.png</code> uses the second to photograph a running
+window without capturing anything else on the screen.</p><hr><h2 id="where-to-look-next">Where to look next</h2><ul><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/tour.keal"><code>../examples/tour.keal</code></a> — all of this, running,
+each chapter beside the code that made it</li><li><a href="widgets.html"><code>widgets.md</code></a> — every constructor and modifier</li><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/gallery.keal"><code>examples/gallery.keal</code></a> — all of it, running</li><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/calculator.keal"><code>examples/calculator.keal</code></a> — a small whole app</li><li><a href="https://github.com/geneacta/keal-view/blob/main/examples/studio.keal"><code>examples/studio.keal</code></a> — docking, and two views
+that draw themselves</li></ul></div><div class="dtoc"><div class="h">SUR CETTE PAGE</div><div class="dtoc-items"><a href="#1-a-window">1. A window</a><a href="#2-state">2. State</a><a href="#2-where-the-state-lives">2¾. Where the state lives</a><a href="#2-what-persists-and-the-one-trap-in-it">2½. What persists, and the one trap in it</a><a href="#3-laying-things-out">3. Laying things out</a><a href="#4-widgets">4. Widgets</a><a href="#5-style">5. Style</a><a href="#6-menus-dialogs-and-tooltips">6. Menus, dialogs and tooltips</a><a href="#7-a-view-that-draws-itself">7. A view that draws itself</a><a href="#8-keyboard">8. Keyboard</a><a href="#9-docking">9. Docking</a><a href="#10-seeing-what-you-built">10. Seeing what you built</a><a href="#where-to-look-next">Where to look next</a></div></div></div>
+<footer>
+  <div><p class="base">keal-view — des fenêtres d'application écrites en Keal, où le dessin est lui aussi du Keal. Apache 2.0.</p></div>
+  <div class="fcol"><span class="h">PROJET</span><a href="index.html">Accueil</a><a href="gallery.html">Galerie</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view sur GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">Le guide</a><a href="widgets.html">La référence</a><a href="porting.html">Porter sur une plateforme</a><a href="coming-from.html">Je viens d&#x27;une autre boîte à outils</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/fr/">Le site du langage</a><a href="https://github.com/geneacta/keal">Keal sur GitHub</a><a href="https://geneacta.github.io/keal/fr/docs.html">Docs du langage</a><a href="https://geneacta.github.io/keal/fr/tour.html">Le tour du langage</a></div>
+</footer>
+</div>
+<script src="../site.js"></script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keal-view — Coming from Electron</title>
+<meta name="description" content="The shape is not far off: a declarative description, rebuilt when state changes, laid out by a box model. What goes away is everything underneath — no browser engine, no renderer p">
+<link rel="canonical" href="https://geneacta.github.io/keal-view/from-electron.html">
+<link rel="alternate" hreflang="en" href="https://geneacta.github.io/keal-view/from-electron.html">
+<link rel="alternate" hreflang="fr" href="https://geneacta.github.io/keal-view/fr/from-electron.html">
+<link rel="alternate" hreflang="x-default" href="https://geneacta.github.io/keal-view/from-electron.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="keal-view">
+<meta property="og:locale" content="en_GB">
+<meta property="og:title" content="keal-view — Coming from Electron">
+<meta property="og:description" content="The shape is not far off: a declarative description, rebuilt when state changes, laid out by a box model. What goes away is everything underneath — no browser engine, no renderer p">
+<meta property="og:url" content="https://geneacta.github.io/keal-view/from-electron.html">
+<meta property="og:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="keal-view — Coming from Electron">
+<meta name="twitter:description" content="The shape is not far off: a declarative description, rebuilt when state changes, laid out by a box model. What goes away is everything underneath — no browser engine, no renderer p">
+<meta name="twitter:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<nav class="nav">
+  <div class="nav-left">
+    <a class="mark" href="index.html"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="1.6" y="3.6" width="22.8" height="18.8" rx="4.5" stroke="#3b82f6" stroke-width="2"/><path d="M2 9.6h22" stroke="#3b82f6" stroke-width="2"/><circle cx="6.2" cy="6.6" r="1.25" fill="#3b82f6"/></svg><span class="wm">keal-view</span></a>
+    <div class="nav-links"><a href="index.html">Home</a><a href="guide.html">Guide</a><a href="widgets.html">Reference</a><a href="gallery.html">Gallery</a><a href="architecture.html">Architecture</a><a href="coming-from.html" class="tab-active">Coming from…</a><a href="porting.html">Porting</a></div>
+  </div>
+  <div class="nav-right">
+    <span class="badge">v0.1</span>
+    <a class="btn-lang" href="fr/from-electron.html">Français</a>
+    <a class="btn-keal" href="https://geneacta.github.io/keal/">Keal</a>
+    <a class="btn-gh" href="https://github.com/geneacta/keal-view">GitHub</a>
+  </div>
+</nav>
+<section class="band"><h1>Coming from Electron</h1><p class="lede">The shape is not far off: a declarative description, rebuilt when state changes, laid out by a box model. What goes away is everything underneath — no browser engine, no renderer process, no bundler, and a binary that is measured in hundreds of kilobytes rather than hundreds of megabytes.</p><div class="tablewrap"><table><thead><tr><th>Electron</th><th>keal-view</th></tr></thead><tbody><tr><td><code>&lt;span&gt;Hi&lt;/span&gt;</code></td><td><code>label("Hi")</code></td></tr><tr><td><code>&lt;button onclick=…&gt;</code></td><td><code>button("Go", { -&gt; … })</code></td></tr><tr><td><code>display: flex; flex-direction: column</code></td><td><code>column([…])</code></td></tr><tr><td><code>flex: 1</code></td><td><code>.grows()</code></td></tr><tr><td><code>&lt;canvas&gt; + 2D context</code></td><td><code>custom({ p -&gt; p.canvas… })</code></td></tr><tr><td><code>a CSS variable theme</code></td><td><code>useTheme(darkTheme())</code></td></tr><tr><td><code>useState / a store</code></td><td><code>state(0) and .set(…)</code></td></tr></tbody></table></div></section><section class="band"><h2>What will surprise you</h2></section><section class="cards"><div class="card"><h3>There is no CSS, and there is no cascade</h3><p>Style is set on the node, by chained modifiers, or comes from the one theme in force. Nothing inherits from an ancestor by name and nothing is overridden by a more specific selector somewhere else in the program. Whether that is a loss depends entirely on how large your stylesheet had become.</p></div><div class="card"><h3>One process, one language, no bridge</h3><p>There is no main process talking to a renderer over IPC, and no serialising values to cross it. The interface and the work it does are the same program, and a handler is an ordinary call.</p></div><div class="card"><h3>You give up the web platform, all of it</h3><p>No DOM, no npm, no devtools, no accessibility tree, no complex-script text shaping, no images yet. Electron's weight buys an enormous amount and it is worth being honest about how much. What you get instead is a program you can read the whole of, and a window that costs nothing when nobody is touching it.</p></div></section><section class="band"><a class="cta-line" href="coming-from.html">← All the toolkits</a></section>
+<footer>
+  <div><p class="base">keal-view — application windows written in Keal, where the drawing is Keal too. Apache 2.0.</p></div>
+  <div class="fcol"><span class="h">PROJECT</span><a href="index.html">Home</a><a href="gallery.html">Gallery</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view on GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">The guide</a><a href="widgets.html">The reference</a><a href="porting.html">Porting to a new platform</a><a href="coming-from.html">Coming from another toolkit</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/">The language&#x27;s site</a><a href="https://github.com/geneacta/keal">Keal on GitHub</a><a href="https://geneacta.github.io/keal/docs.html">Language docs</a><a href="https://geneacta.github.io/keal/tour.html">The language tour</a></div>
+</footer>
+</div>
+<script src="site.js"></script>
+</body>
+</html>

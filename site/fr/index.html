@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keal-view — des fenêtres d&#x27;application, écrites en Keal</title>
+<meta name="description" content="Un framework d&#x27;interface graphique multiplateforme où le dessin est du Keal : le rasteriseur, le moteur TrueType, la mise en page, les widgets et le docking sont des fichiers .keal. Le C en dessous ouvre une fenêtre et pose une image finie.">
+<link rel="canonical" href="https://geneacta.github.io/keal-view/fr/index.html">
+<link rel="alternate" hreflang="en" href="https://geneacta.github.io/keal-view/index.html">
+<link rel="alternate" hreflang="fr" href="https://geneacta.github.io/keal-view/fr/index.html">
+<link rel="alternate" hreflang="x-default" href="https://geneacta.github.io/keal-view/index.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="keal-view">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:title" content="keal-view — des fenêtres d&#x27;application, écrites en Keal">
+<meta property="og:description" content="Un framework d&#x27;interface graphique multiplateforme où le dessin est du Keal : le rasteriseur, le moteur TrueType, la mise en page, les widgets et le docking sont des fichiers .keal. Le C en dessous ouvre une fenêtre et pose une image finie.">
+<meta property="og:url" content="https://geneacta.github.io/keal-view/fr/index.html">
+<meta property="og:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="keal-view — des fenêtres d&#x27;application, écrites en Keal">
+<meta name="twitter:description" content="Un framework d&#x27;interface graphique multiplateforme où le dessin est du Keal : le rasteriseur, le moteur TrueType, la mise en page, les widgets et le docking sont des fichiers .keal. Le C en dessous ouvre une fenêtre et pose une image finie.">
+<meta name="twitter:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+<nav class="nav">
+  <div class="nav-left">
+    <a class="mark" href="index.html"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="1.6" y="3.6" width="22.8" height="18.8" rx="4.5" stroke="#3b82f6" stroke-width="2"/><path d="M2 9.6h22" stroke="#3b82f6" stroke-width="2"/><circle cx="6.2" cy="6.6" r="1.25" fill="#3b82f6"/></svg><span class="wm">keal-view</span></a>
+    <div class="nav-links"><a href="index.html" class="tab-active">Accueil</a><a href="guide.html">Le guide</a><a href="widgets.html">Référence</a><a href="gallery.html">Galerie</a><a href="architecture.html">Architecture</a><a href="coming-from.html">Je viens de…</a><a href="porting.html">Portage</a></div>
+  </div>
+  <div class="nav-right">
+    <span class="badge">v0.1</span>
+    <a class="btn-lang" href="../index.html">English</a>
+    <a class="btn-keal" href="https://geneacta.github.io/keal/fr/">Keal</a>
+    <a class="btn-gh" href="https://github.com/geneacta/keal-view">GitHub</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div>
+    <div class="pill"><span class="dot"></span>Vérifié sur macOS, Windows et Linux</div>
+    <h1>Le dessin est du Keal.</h1>
+    <p class="sub">Pas des liaisons vers une boîte à outils, pas une enveloppe autour d'une toile écrite en C. Le rasteriseur, le moteur TrueType, la mise en page, les widgets, le thème et le docking sont des fichiers <code>.keal</code>. Le C en dessous ouvre une fenêtre, rapporte ce que l'utilisateur a fait, et pose à l'écran un tampon de pixels déjà fini. Il ne dessine rien.</p>
+    <div class="ctas"><a class="cta" href="guide.html">Lire le guide →</a>
+      <a class="cta-line" href="gallery.html">Tous les widgets qui existent</a></div>
+  </div>
+  <div><div class="cwin"><div class="cwin-bar"><span class="f">bonjour.keal</span></div><pre><span class="k">import</span> <span class="s">"keal-view/keal-view.keal"</span>
+
+<span class="k">val</span> clicks = state(<span class="s">0</span>)
+
+runApp(<span class="s">"Hello"</span>, <span class="s">320</span>, <span class="s">200</span>, { -&gt;
+    column([
+        label(<span class="s">"Clicked ${clicks.get()} times"</span>).fontSize(<span class="s">20.0</span>).centered(),
+        button(<span class="s">"Click me"</span>, { -&gt; clicks.set(clicks.get() + <span class="s">1</span>) }).kindOf(primary)
+    ]).gaps(<span class="s">12.0</span>).padAll(<span class="s">24.0</span>).aligned(mainCenter, crossCenter).grows()
+})</pre></div></div>
+</section>
+
+<section class="band"><div class="shot"><img src="../assets/studio.png" alt="Un espace de travail à panneaux construit avec keal-view" loading="lazy"><div class="cap"><b>Chaque pixel ci-dessus</b> — les coins arrondis, les bordures anti-crénelées, les ombres, les glyphes — est sorti d'une boucle écrite en Keal.</div></div></section>
+
+<section class="duo">
+  <div>
+    <h2>87 à 89 % d'un programme keal-view qui tourne est du Keal.</h2>
+    <p>Lequel des deux dépend du backend contre lequel il a été construit, et aucun des 11 à 13 % restants ne pose un pixel où que ce soit. Toute la surface C tient dans un en-tête : un tampon d'image, un bloc d'octets, une structure d'événement, et les accesseurs de chacun.</p>
+    <p class="barcap">Le côté Keal, c'est tout le framework : rasteriseur, polices, mise en page, widgets, thème, docking, menus, boucle d'exécution. Le côté C, c'est une fenêtre, une file d'événements et des accesseurs inlinés : kv.h à 281 lignes plus un backend sur trois — Cocoa 409, X11 567, Win32 573. La barre montre le plus gros des trois.</p>
+  </div>
+  <div class="bars"><div class="barrow"><span class="bl">Keal</span><span class="bar"><div data-w="100%"></div></span><span class="bv">5 598 lignes</span></div><div class="barrow"><span class="bl">C</span><span class="bar quiet"><div data-w="15.1%"></div></span><span class="bv">690-854 lignes</span></div></div>
+</section>
+
+<section class="band">
+  <h2>Pourquoi c'est seulement possible</h2>
+  <p class="lede">Un seul fait du compilateur décide de toute la conception. <code>native """…"""</code> colle son C dans <b>la même unité de traduction</b> que le programme compilé, donc une fonction <code>static inline</code> déclarée là est inlinée par le compilateur C dans le code de Keal lui-même. Un appel à travers la frontière n'est pas un appel — c'est l'instruction qu'il contient.</p>
+  <div class="cwin"><div class="cwin-bar"><span class="f">src/ffi.keal</span></div><pre><span class="k">extern func</span> kvPxSet(x: <span class="t">Int</span>, y: <span class="t">Int</span>, argb: <span class="t">Int</span>): <span class="t">Int</span> = <span class="s">"kv_set"</span></pre></div>
+  <p class="lede">Cette ligne est une seule écriture avec vérification de bornes. Mesurée à environ une demi-nanoseconde par pixel depuis une boucle Keal, ce qui est le prix d'un rasteriseur C, parce qu'après inlining <i>c'est</i> le rasteriseur C. Il n'y avait donc aucune raison d'écrire le dessin en C, et toutes les raisons de ne pas le faire.</p>
+</section>
+
+<section class="band"><h2>Ce qu'il y a dedans</h2></section>
+<section class="cards"><div class="card"><h3>Widgets</h3><p>Étiquettes, boutons, cases à cocher, boutons radio, interrupteurs, contrôles segmentés, listes déroulantes, curseurs, incréments, progression, champs, onglets, cartes, panneaux, zones défilantes — et <code>custom</code>, à qui l'on remet une toile déjà découpée, son rectangle, les polices, le thème et son propre état de survol.</p></div><div class="card"><h3>Menus, dialogues et bulles</h3><p><code>openMenu</code>, <code>openDialog</code>, <code>openSheet</code> et <code>.tip("…")</code>. Rien à installer : la boucle compose cette couche au-dessus de la surcouche de l'application.</p></div><div class="card"><h3>Mise en page</h3><p>Un axe de flexbox et pas davantage. Il n'y a pas de compression : ce qui ne rentre pas est découpé plutôt que serré, parce qu'une mise en page qui compresse en silence ne casse que sur les petites fenêtres, l'endroit où personne ne regarde.</p></div><div class="card"><h3>Texte</h3><p>Un analyseur et un rasteriseur TrueType écrits en Keal : formats <code>cmap</code> 0, 4, 6 et 12, <code>glyf</code> avec les glyphes composites, les collections. Les glyphes sont remplis par la méthode de l'aire signée et rasterisés à la taille où ils seront réellement dessinés.</p></div><div class="card"><h3>Dessin</h3><p>L'anti-crénelage est analytique, pas échantillonné : la couverture d'un bord droit est son recouvrement exact avec la cellule du pixel. Il n'y a pas de réglage de qualité, ni d'image discrètement moins chère que la précédente.</p></div><div class="card"><h3>Thème</h3><p>Sombre et clair, construits depuis une rampe de surfaces, un accent et trois teintes d'état plutôt qu'une liste de codes hexadécimaux. <code>useTheme(lightTheme())</code> est tout le changement, y compris pour les widgets écrits après.</p></div><div class="card"><h3>Des points, pas des pixels</h3><p>Le rasteriseur est la seule chose qui sache ce qu'est un pixel. Une mise en page est juste sur un écran Retina et sur un projecteur ; les nombres ne changent pas, l'échelle si.</p></div><div class="card"><h3>Une fenêtre au repos ne coûte rien</h3><p>Entre deux images, la boucle est dans <code>kvWait</code>, qui bloque jusqu'à ce que le système ait quelque chose à dire. Pas un faible taux d'activité — aucun. Sur un portable, ça vaut plus que la vitesse de dessin.</p></div></section>
+
+<section class="duo">
+  <div><h2>Un docking qui dit d'avance où ça va tomber</h2><p>L'agencement est un arbre binaire à exactement deux cas — une <b>feuille</b> qui tient des onglets, et une <b>coupe</b> qui tient deux enfants et une fraction — ce qui est assez peu pour que chaque état possible soit un état sur lequel on peut raisonner.</p><p>Un panneau se traîne par son onglet ; pendant le déplacement, la zone mise en évidence sous le pointeur dit où le lâcher le poserait — à gauche, à droite, au-dessus, en dessous, ou comme onglet de plus — <i>avant</i> qu'on lâche. Un panneau est une fonction de vue ordinaire et ignore qu'il est ancré.</p></div>
+  <div><div class="cwin"><div class="cwin-bar"><span class="f">examples/studio.keal</span></div><pre><span class="k">val</span> dock = Dock(
+    beside(
+        leaf([<span class="s">"files"</span>]),
+        above(
+            beside(leaf([<span class="s">"editor"</span>]), leaf([<span class="s">"props"</span>, <span class="s">"preview"</span>]), <span class="s">0.68</span>),
+            leaf([<span class="s">"terminal"</span>]),
+            <span class="s">0.72</span>),
+        <span class="s">0.19</span>))
+
+dock.add(panelOf(<span class="s">"files"</span>, <span class="s">"Files"</span>, { -&gt; filesPanel() }))</pre></div></div>
+</section>
+
+<section class="band">
+  <h2>Trois plateformes, une douzaine de fonctions</h2>
+  <p class="lede">Les trois backends ont été écrits contre la même douzaine de fonctions, et rien au-dessus de <code>runtime/</code> n'a changé pour ajouter le deuxième et le troisième — ce qui est tout l'intérêt d'avoir tracé la frontière là.</p>
+  <div class="tablewrap"><table><thead><tr><th>Plateforme</th><th>Backend</th><th>État</th></tr></thead><tbody><tr><td><b>macOS</b></td><td><code>runtime/kv_cocoa.m</code></td><td>Cocoa. <span class="ok">Vérifié</span> — développé ici</td></tr><tr><td><b>Windows</b></td><td><code>runtime/kv_win32.c</code></td><td>Win32 et un DIB BI_RGB. <span class="ok">Vérifié</span> sur Windows 10 22H2 et 11 22H2, MinGW-w64</td></tr><tr><td><b>Linux</b></td><td><code>runtime/kv_x11.c</code></td><td>Xlib seul, aucune boîte à outils. <span class="ok">Vérifié</span> sur Ubuntu 26.04 aarch64, sous Wayland à travers XWayland</td></tr></tbody></table></div>
+  <p class="lede">Windows et Linux ont chacun été vérifiés par quelqu'un sur une vraie machine, en suivant la liste de portage ligne à ligne, et à eux deux cela a coûté dix-neuf défauts — <b>dont douze au-dessus du backend</b>, donc présents sur toutes les plateformes, y compris celle où tout a été écrit. Quatre choses restent non vérifiées et sont consignées plutôt que passées sous silence.</p>
+  <p><a class="cta-line" href="porting.html">Ce que cette semaine a trouvé, et ce qu'elle n'a pas pu →</a></p>
+</section>
+
+<section class="duo">
+  <div><h2>Le faire tourner</h2><p>keal-view a besoin du compilateur Keal à côté de lui. Il n'y a pas de système de construction ici : <code>tools/build.sh</code> choisit le backend de la plateforme, le compile une fois, et remet le fichier objet à <code>keal build</code>.</p></div>
+  <div><div class="cwin"><div class="cwin-bar"><span class="f">dans un terminal</span></div><pre><span class="c"># the compiler, then the framework</span>
+git clone https://github.com/geneacta/keal
+git clone https://github.com/geneacta/keal-view
+<span class="k">cd</span> keal &amp;&amp; cargo build --release &amp;&amp; <span class="k">cd</span> ../keal-view
+
+tools/build.sh examples/tour.keal    &amp;&amp; build/tour       <span class="c"># start here</span>
+tools/build.sh examples/gallery.keal &amp;&amp; build/gallery    <span class="c"># every widget</span>
+tools/test.sh                                   <span class="c"># 194 checks, no display</span></pre></div></div>
+</section>
+
+<section class="band">
+  <h2>Deux choses que tout programme keal-view comprend gratuitement</h2>
+  <p class="lede">La première n'a besoin d'aucun écran, ce qui est la façon dont le framework est vérifié en intégration continue et dont chaque image de ce site a été faite.</p>
+  <div class="cwin"><div class="cwin-bar"><span class="f">dans un terminal</span></div><pre>build/studio --snapshot frame.bmp 2          <span class="c"># one frame to a file, then exit</span>
+build/studio --snapshot frame.bmp 2 900 1900 <span class="c"># …at a size of your choosing</span>
+build/studio --window-id /tmp/id             <span class="c"># write its own window number out</span></pre></div>
+</section>
+
+<footer>
+  <div><p class="base">keal-view — des fenêtres d'application écrites en Keal, où le dessin est lui aussi du Keal. Apache 2.0.</p></div>
+  <div class="fcol"><span class="h">PROJET</span><a href="index.html">Accueil</a><a href="gallery.html">Galerie</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view sur GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">Le guide</a><a href="widgets.html">La référence</a><a href="porting.html">Porter sur une plateforme</a><a href="coming-from.html">Je viens d&#x27;une autre boîte à outils</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/fr/">Le site du langage</a><a href="https://github.com/geneacta/keal">Keal sur GitHub</a><a href="https://geneacta.github.io/keal/fr/docs.html">Docs du langage</a><a href="https://geneacta.github.io/keal/fr/tour.html">Le tour du langage</a></div>
+</footer>
+</div>
+<script src="../site.js"></script>
+</body>
+</html>

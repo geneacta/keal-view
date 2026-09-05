@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keal-view — Je viens de Dear ImGui</title>
+<meta name="description" content="Dear ImGui reconstruit son interface à chaque image à partir d&#x27;appels, ce qui est le même instinct qu&#x27;ici. Deux choses diffèrent : keal-view décrit un arbre puis le met en page, au">
+<link rel="canonical" href="https://geneacta.github.io/keal-view/fr/from-imgui.html">
+<link rel="alternate" hreflang="en" href="https://geneacta.github.io/keal-view/from-imgui.html">
+<link rel="alternate" hreflang="fr" href="https://geneacta.github.io/keal-view/fr/from-imgui.html">
+<link rel="alternate" hreflang="x-default" href="https://geneacta.github.io/keal-view/from-imgui.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="keal-view">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:title" content="keal-view — Je viens de Dear ImGui">
+<meta property="og:description" content="Dear ImGui reconstruit son interface à chaque image à partir d&#x27;appels, ce qui est le même instinct qu&#x27;ici. Deux choses diffèrent : keal-view décrit un arbre puis le met en page, au">
+<meta property="og:url" content="https://geneacta.github.io/keal-view/fr/from-imgui.html">
+<meta property="og:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="keal-view — Je viens de Dear ImGui">
+<meta name="twitter:description" content="Dear ImGui reconstruit son interface à chaque image à partir d&#x27;appels, ce qui est le même instinct qu&#x27;ici. Deux choses diffèrent : keal-view décrit un arbre puis le met en page, au">
+<meta name="twitter:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+<nav class="nav">
+  <div class="nav-left">
+    <a class="mark" href="index.html"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="1.6" y="3.6" width="22.8" height="18.8" rx="4.5" stroke="#3b82f6" stroke-width="2"/><path d="M2 9.6h22" stroke="#3b82f6" stroke-width="2"/><circle cx="6.2" cy="6.6" r="1.25" fill="#3b82f6"/></svg><span class="wm">keal-view</span></a>
+    <div class="nav-links"><a href="index.html">Accueil</a><a href="guide.html">Le guide</a><a href="widgets.html">Référence</a><a href="gallery.html">Galerie</a><a href="architecture.html">Architecture</a><a href="coming-from.html" class="tab-active">Je viens de…</a><a href="porting.html">Portage</a></div>
+  </div>
+  <div class="nav-right">
+    <span class="badge">v0.1</span>
+    <a class="btn-lang" href="../from-imgui.html">English</a>
+    <a class="btn-keal" href="https://geneacta.github.io/keal/fr/">Keal</a>
+    <a class="btn-gh" href="https://github.com/geneacta/keal-view">GitHub</a>
+  </div>
+</nav>
+<section class="band"><h1>Je viens de Dear ImGui</h1><p class="lede">Dear ImGui reconstruit son interface à chaque image à partir d'appels, ce qui est le même instinct qu'ici. Deux choses diffèrent : keal-view décrit un arbre puis le met en page, au lieu d'émettre de la géométrie au fil de l'eau ; et il ne tourne pas à la cadence d'un jeu — il dort jusqu'à ce qu'il se passe quelque chose.</p><div class="tablewrap"><table><thead><tr><th>Dear ImGui</th><th>keal-view</th></tr></thead><tbody><tr><td><code>ImGui::Text("Hi")</code></td><td><code>label("Salut")</code></td></tr><tr><td><code>if (ImGui::Button("Go")) { … }</code></td><td><code>button("Go", { -&gt; … })</code></td></tr><tr><td><code>ImGui::SliderFloat(&amp;v, …)</code></td><td><code>slider(v, { x -&gt; … })</code></td></tr><tr><td><code>ImGui::SameLine()</code></td><td><code>row([…])</code></td></tr><tr><td><code>ImGui::PushStyleColor</code></td><td><code>le thème, lu par tout</code></td></tr><tr><td><code>ImDrawList</code></td><td><code>custom({ p -&gt; p.canvas… })</code></td></tr><tr><td><code>DockBuilder</code></td><td><code>Dock, leaf et split</code></td></tr></tbody></table></div></section><section class="band"><h2>Ce qui va vous surprendre</h2></section><section class="cards"><div class="card"><h3>Un gestionnaire s'exécute quand le clic a lieu, pas à l'image suivante</h3><p>En mode immédiat, un bouton rapporte le clic de l'image précédente comme valeur de retour de celle-ci. Ici l'arbre est construit, mis en page, <i>puis</i> on lui remet les événements, donc un gestionnaire s'exécute contre la mise en page sur laquelle l'utilisateur a réellement cliqué — y compris sur l'image où la fenêtre a changé de taille.</p></div><div class="card"><h3>Il n'y a pas de GPU, et c'est le propos</h3><p>Dear ImGui produit des tampons de sommets pour un moteur de rendu que vous fournissez. keal-view remplit un tampon de pixels <code>0xAARRGGBB</code> sur le processeur et le remet à la fenêtre. L'anti-crénelage est analytique plutôt que multi-échantillonné, donc une courbe coûte ce que coûte son bord et il n'y a pas de réglage de qualité.</p></div><div class="card"><h3>L'état survit à l'image sans que vous le teniez</h3><p>ImGui garde son état interne rangé par une pile d'identifiants sur laquelle il faut raisonner. Ici le même problème est résolu de la même manière — l'identité — mais l'identité est la position d'un nœud dans l'arbre, et <code>.keyed("…")</code> est la façon de dire que la position est la mauvaise réponse.</p></div></section><section class="band"><a class="cta-line" href="coming-from.html">← Toutes les boîtes à outils</a></section>
+<footer>
+  <div><p class="base">keal-view — des fenêtres d'application écrites en Keal, où le dessin est lui aussi du Keal. Apache 2.0.</p></div>
+  <div class="fcol"><span class="h">PROJET</span><a href="index.html">Accueil</a><a href="gallery.html">Galerie</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view sur GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">Le guide</a><a href="widgets.html">La référence</a><a href="porting.html">Porter sur une plateforme</a><a href="coming-from.html">Je viens d&#x27;une autre boîte à outils</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/fr/">Le site du langage</a><a href="https://github.com/geneacta/keal">Keal sur GitHub</a><a href="https://geneacta.github.io/keal/fr/docs.html">Docs du langage</a><a href="https://geneacta.github.io/keal/fr/tour.html">Le tour du langage</a></div>
+</footer>
+</div>
+<script src="../site.js"></script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keal-view — Architecture</title>
+<meta name="description" content="Where the boundary is, what a frame does, and what the language decided rather than the design.">
+<link rel="canonical" href="https://geneacta.github.io/keal-view/architecture.html">
+<link rel="alternate" hreflang="en" href="https://geneacta.github.io/keal-view/architecture.html">
+<link rel="alternate" hreflang="fr" href="https://geneacta.github.io/keal-view/fr/architecture.html">
+<link rel="alternate" hreflang="x-default" href="https://geneacta.github.io/keal-view/architecture.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="keal-view">
+<meta property="og:locale" content="en_GB">
+<meta property="og:title" content="keal-view — Architecture">
+<meta property="og:description" content="Where the boundary is, what a frame does, and what the language decided rather than the design.">
+<meta property="og:url" content="https://geneacta.github.io/keal-view/architecture.html">
+<meta property="og:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="keal-view — Architecture">
+<meta name="twitter:description" content="Where the boundary is, what a frame does, and what the language decided rather than the design.">
+<meta name="twitter:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<nav class="nav">
+  <div class="nav-left">
+    <a class="mark" href="index.html"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="1.6" y="3.6" width="22.8" height="18.8" rx="4.5" stroke="#3b82f6" stroke-width="2"/><path d="M2 9.6h22" stroke="#3b82f6" stroke-width="2"/><circle cx="6.2" cy="6.6" r="1.25" fill="#3b82f6"/></svg><span class="wm">keal-view</span></a>
+    <div class="nav-links"><a href="index.html">Home</a><a href="guide.html">Guide</a><a href="widgets.html">Reference</a><a href="gallery.html">Gallery</a><a href="architecture.html" class="tab-active">Architecture</a><a href="coming-from.html">Coming from…</a><a href="porting.html">Porting</a></div>
+  </div>
+  <div class="nav-right">
+    <span class="badge">v0.1</span>
+    <a class="btn-lang" href="fr/architecture.html">Français</a>
+    <a class="btn-keal" href="https://geneacta.github.io/keal/">Keal</a>
+    <a class="btn-gh" href="https://github.com/geneacta/keal-view">GitHub</a>
+  </div>
+</nav>
+
+<section class="band"><h1>Architecture</h1><p class="lede">Where the boundary is, what a frame does, and what the language decided rather than the design.</p></section>
+
+<section class="duo">
+  <div><h2>The boundary</h2><p>The C underneath does four things: open a window, report what the user did, hand over a buffer of pixels, and go to sleep until something happens. It does not draw. The whole C surface is <code>runtime/kv.h</code> — a framebuffer, a byte blob, an event struct, and accessors for each, every hot one <code>static inline</code> and so inlined into Keal.</p><p>That is why adding Windows and then Linux changed nothing above <code>runtime/</code>. A backend is one file against a dozen functions.</p></div>
+  <div><div class="cwin"><div class="cwin-bar"><span class="f">the files</span></div><pre>runtime/
+  kv.h            <span class="c">the whole C surface: framebuffer, blob, event, accessors</span>
+  kv_cocoa.m      <span class="c">macOS: NSWindow, a layer-backed view, a ring of events</span>
+  kv_win32.c      <span class="c">Windows: the same, through Win32 and GDI</span>
+  kv_x11.c        <span class="c">Linux: the same, through Xlib alone</span>
+src/
+  ffi.keal        <span class="c">the only file in keal-view that mentions C</span>
+  color.keal      <span class="c">colour packed in an Int — the per-pixel loop</span>
+  geom.keal       <span class="c">rectangles, insets, and the cell-coverage function</span>
+  canvas.keal     <span class="c">the rasteriser</span>
+  font.keal       <span class="c">TrueType, parsed and rasterised</span>
+  text.keal       <span class="c">measuring, wrapping, ellipsising, caret hit-testing</span>
+  theme.keal      <span class="c">the palettes, the metrics, and Paint</span>
+  view.keal       <span class="c">the tree an application describes</span>
+  layout.keal     <span class="c">measuring it and giving every node a rectangle</span>
+  paint.keal      <span class="c">every widget's appearance, and icons drawn from strokes</span>
+  ui.keal         <span class="c">what outlives a tree rebuilt every frame</span>
+  event.keal      <span class="c">what happened, in points</span>
+  state.keal      <span class="c">Cell&lt;T&gt; and one revision counter</span>
+  dock.keal       <span class="c">splits, tabs, and dragging a panel between them</span>
+  popup.keal      <span class="c">menus, dialogs and tooltips</span>
+  app.keal        <span class="c">the loop, and how input gets back to the application</span></pre></div></div>
+</section>
+
+<section class="band">
+  <h2>What a frame is</h2>
+  <p class="lede">Build the tree from the state, lay it out, hand it the events that arrived, and — if a handler changed anything — build and lay it out once more before drawing. Dispatching against a fresh layout rather than the last frame's is what keeps a click landing on what was under the pointer when it happened, even on the frame where the window was resized.</p>
+  <p class="lede">The tree is thrown away and made again. There is no diff, and so nothing to forget to invalidate. What outlives it — hover, focus, scroll offsets, carets — is keyed by identity in <code>ui.keal</code>, and a node's identity is where it is unless it was given a key.</p>
+  <p class="lede">Between frames the loop is inside <code>kvWait</code>, which blocks. An idle window uses no processor at all. That sentence sat in the README for two days before anyone measured it, and when someone did it was false on Windows: with the pointer resting anywhere over the window, the wait returned instantly for ever and the process held 96 % of a core. It is fixed, and the checklist now asks for the measurement twice.</p>
+</section>
+
+<section class="band">
+  <h2>What the language decided</h2>
+  <p class="lede">One place where keal-view's shape is chosen by Keal rather than by the design: a trait is not a type in Keal, so a <code>List&lt;Widget&gt;</code> of different implementations cannot exist. One <code>View</code> class with a <code>kind</code> is what the language offers. The constructors and the chained modifiers are the real interface, and nothing outside <code>view.keal</code> sets <code>kind</code> by hand.</p>
+  <h2 style="margin-top:44px">And what building it found</h2>
+  <p class="lede">This framework was the first real use anything had made of several corners of the compiler, and it found four defects in it — a call whose callee is a field of function type; a local that did not shadow an imported function of the same name; a lambda that could not capture a top-level binding; and <code>Int</code> having no bitwise operators. All four are fixed upstream, and this repository was rewritten to suit.</p>
+  <p><a class="cta-line" href="https://geneacta.github.io/keal/">The language they were fixed in →</a></p>
+</section>
+
+<section class="band">
+  <h2>What is not here yet</h2>
+  <div class="prose"><ul><li>multiple OS windows</li><li>a floating panel torn off a dock into a window of its own</li><li>text selection across lines</li><li>right-to-left and complex scripts — the font engine maps codepoints to glyphs one at a time, which is honest for Latin, Greek and Cyrillic and wrong for Arabic and Devanagari</li><li><code>CFF&nbsp;</code> outlines, so an OpenType font with cubic curves loads and reports that it has none</li><li>saving and restoring a dock arrangement</li><li>animation beyond a blinking caret</li><li>images</li></ul></div>
+</section>
+
+<footer>
+  <div><p class="base">keal-view — application windows written in Keal, where the drawing is Keal too. Apache 2.0.</p></div>
+  <div class="fcol"><span class="h">PROJECT</span><a href="index.html">Home</a><a href="gallery.html">Gallery</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view on GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">The guide</a><a href="widgets.html">The reference</a><a href="porting.html">Porting to a new platform</a><a href="coming-from.html">Coming from another toolkit</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/">The language&#x27;s site</a><a href="https://github.com/geneacta/keal">Keal on GitHub</a><a href="https://geneacta.github.io/keal/docs.html">Language docs</a><a href="https://geneacta.github.io/keal/tour.html">The language tour</a></div>
+</footer>
+</div>
+<script src="site.js"></script>
+</body>
+</html>

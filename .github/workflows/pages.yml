@@ -1,0 +1,48 @@
+# Deploys site/ to GitHub Pages. One-time setup in the repository settings:
+# Settings → Pages → Source: "GitHub Actions".
+#
+# The site is committed rather than built here: site/build.py has no
+# dependencies and its output is plain HTML, so the thing that is reviewed in
+# a pull request is the thing that is served. The check below is only there to
+# catch a commit where the HTML and the generator have drifted apart.
+name: pages
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "docs/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: The committed site is what the generator produces
+        run: |
+          python3 site/build.py
+          git diff --exit-code -- site/ || {
+            echo "::error::site/ is out of date — run 'python3 site/build.py' and commit the result"
+            exit 1
+          }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

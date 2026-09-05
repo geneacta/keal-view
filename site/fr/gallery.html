@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keal-view — Galerie</title>
+<meta name="description" content="Cinq programmes, photographiés par eux-mêmes. Chacune de ces images a été faite par le programme qui s&#x27;y trouve, avec &lt;code&gt;--snapshot&lt;/code&gt;, qui dessine une image dans un fichier">
+<link rel="canonical" href="https://geneacta.github.io/keal-view/fr/gallery.html">
+<link rel="alternate" hreflang="en" href="https://geneacta.github.io/keal-view/gallery.html">
+<link rel="alternate" hreflang="fr" href="https://geneacta.github.io/keal-view/fr/gallery.html">
+<link rel="alternate" hreflang="x-default" href="https://geneacta.github.io/keal-view/gallery.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="keal-view">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:title" content="keal-view — Galerie">
+<meta property="og:description" content="Cinq programmes, photographiés par eux-mêmes. Chacune de ces images a été faite par le programme qui s&#x27;y trouve, avec &lt;code&gt;--snapshot&lt;/code&gt;, qui dessine une image dans un fichier">
+<meta property="og:url" content="https://geneacta.github.io/keal-view/fr/gallery.html">
+<meta property="og:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="keal-view — Galerie">
+<meta name="twitter:description" content="Cinq programmes, photographiés par eux-mêmes. Chacune de ces images a été faite par le programme qui s&#x27;y trouve, avec &lt;code&gt;--snapshot&lt;/code&gt;, qui dessine une image dans un fichier">
+<meta name="twitter:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+<nav class="nav">
+  <div class="nav-left">
+    <a class="mark" href="index.html"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="1.6" y="3.6" width="22.8" height="18.8" rx="4.5" stroke="#3b82f6" stroke-width="2"/><path d="M2 9.6h22" stroke="#3b82f6" stroke-width="2"/><circle cx="6.2" cy="6.6" r="1.25" fill="#3b82f6"/></svg><span class="wm">keal-view</span></a>
+    <div class="nav-links"><a href="index.html">Accueil</a><a href="guide.html">Le guide</a><a href="widgets.html">Référence</a><a href="gallery.html" class="tab-active">Galerie</a><a href="architecture.html">Architecture</a><a href="coming-from.html">Je viens de…</a><a href="porting.html">Portage</a></div>
+  </div>
+  <div class="nav-right">
+    <span class="badge">v0.1</span>
+    <a class="btn-lang" href="../gallery.html">English</a>
+    <a class="btn-keal" href="https://geneacta.github.io/keal/fr/">Keal</a>
+    <a class="btn-gh" href="https://github.com/geneacta/keal-view">GitHub</a>
+  </div>
+</nav>
+<section class="band"><h1>Galerie</h1><p class="lede">Cinq programmes, photographiés par eux-mêmes. Chacune de ces images a été faite par le programme qui s'y trouve, avec <code>--snapshot</code>, qui dessine une image dans un fichier puis s'arrête — donc ce que vous regardez est la sortie du rasteriseur et pas une capture d'écran de celle-ci.</p></section><section class="grid2 wide"><div class="shot"><img src="../assets/studio.png" alt="L&#x27;atelier" loading="lazy"><div class="cap"><b>L'atelier</b> — <code>examples/studio.keal</code><br>Un espace de travail à panneaux : une liste de fichiers, un éditeur de code, un panneau de propriétés avec son onglet d'aperçu, et un terminal. L'agencement est un arbre binaire de feuilles et de coupes. L'éditeur et le graphique de couverture sont deux vues <code>custom</code> — on leur remet une toile découpée et on les laisse dessiner.</div></div><div class="shot"><img src="../assets/gallery.png" alt="La galerie de widgets" loading="lazy"><div class="cap"><b>La galerie de widgets</b> — <code>examples/gallery.keal</code><br>De la documentation qui tourne : tous les widgets qui existent, sur une seule page défilante. Si un contrôle n'y est pas, il n'existe pas.</div></div><div class="shot"><img src="../assets/tour.png" alt="La visite guidée" loading="lazy"><div class="cap"><b>La visite guidée</b> — <code>examples/tour.keal</code><br>Une visite de keal-view écrite en keal-view. Onze chapitres, chacun montrant une chose <i>en marche</i> à côté du code qui l'a faite — un compteur vivant, un curseur vivant, un dock vivant dans lequel on peut traîner un panneau.</div></div></section><section class="grid2"><div class="shot"><img src="../assets/calculator.png" alt="Une calculatrice" loading="lazy"><div class="cap"><b>Une calculatrice</b> — <code>examples/calculator.keal</code><br>Le tout de bout en bout — l'arithmétique, le clavier numérique, le clavier — en environ deux cents lignes. Le pavé est cinq rangées de quatre.</div></div><div class="shot"><img src="../assets/todo.png" alt="Une liste de tâches" loading="lazy"><div class="cap"><b>Une liste de tâches</b> — <code>examples/todo.keal</code><br>De l'état, une liste reconstruite depuis lui, et un champ qui garde son curseur d'insertion quand on supprime une ligne au-dessus — parce que les lignes ont une clé, et que l'identité est ce à quoi l'état retenu s'accroche.</div></div></section><section class="band"><h2>Comment les images sont faites</h2><p class="lede">Tout programme keal-view accepte <code>--snapshot</code> sans qu'on le lui ait appris. Il n'a besoin d'aucun écran, ce qui est la façon dont le framework est vérifié en intégration continue sur trois plateformes, et la raison pour laquelle ces images ne peuvent pas s'écarter en douce de ce que fait le code.</p><div class="cwin"><div class="cwin-bar"><span class="f">shell</span></div><pre>build/studio --snapshot frame.bmp 2          <span class="c"># one frame to a file, then exit</span>
+build/studio --snapshot frame.bmp 2 900 1900 <span class="c"># …at a size of your choosing</span>
+build/studio --window-id /tmp/id             <span class="c"># write its own window number out</span></pre></div></section>
+<footer>
+  <div><p class="base">keal-view — des fenêtres d'application écrites en Keal, où le dessin est lui aussi du Keal. Apache 2.0.</p></div>
+  <div class="fcol"><span class="h">PROJET</span><a href="index.html">Accueil</a><a href="gallery.html">Galerie</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view sur GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">Le guide</a><a href="widgets.html">La référence</a><a href="porting.html">Porter sur une plateforme</a><a href="coming-from.html">Je viens d&#x27;une autre boîte à outils</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/fr/">Le site du langage</a><a href="https://github.com/geneacta/keal">Keal sur GitHub</a><a href="https://geneacta.github.io/keal/fr/docs.html">Docs du langage</a><a href="https://geneacta.github.io/keal/fr/tour.html">Le tour du langage</a></div>
+</footer>
+</div>
+<script src="../site.js"></script>
+</body>
+</html>

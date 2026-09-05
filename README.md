@@ -7,16 +7,24 @@ widgets, the theme and the docking are all `.keal` files. The C underneath
 opens a window, reports what the user did, and puts a finished buffer of
 pixels on the screen. It does not draw anything.
 
+**[The site](https://geneacta.github.io/keal-view/)** — the guide, the widget
+reference, the gallery and the architecture, [also in
+French](https://geneacta.github.io/keal-view/fr/). · **The language it is
+written in:** [keal](https://github.com/geneacta/keal) ·
+[its site](https://geneacta.github.io/keal/).
+
 ```
               lines    what it is
-  Keal         5479   the whole framework: rasteriser, fonts, layout,
+  Keal          5598   the whole framework: rasteriser, fonts, layout,
                        widgets, theme, docking, menus, the run loop
-  C              690   one window, one event queue, and inline accessors
-                       (kv.h, plus one backend of three)
+  C          690-854   one window, one event queue, and inline accessors:
+                       kv.h (281) plus one backend of three — Cocoa 409,
+                       X11 567, Win32 573
 ```
 
-**89 % of a running keal-view program is Keal**, and none of the other 11 %
-puts a pixel anywhere.
+**87 to 89 % of a running keal-view program is Keal**, depending on which
+backend it was built against, and none of the other 11 to 13 % puts a pixel
+anywhere.
 
 <p align="center"><img src="docs/studio.png" alt="A docked workspace" width="900"></p>
 
@@ -127,7 +135,9 @@ is an ordinary view function and does not know it is docked.
 
 * **[The guide](docs/guide.md)** — the same ground in prose, in the order you
   need it: a window, state, layout, widgets, style, menus, drawing your own,
-  the keyboard, docking.
+  the keyboard, docking. It is on the site too,
+  [in English](https://geneacta.github.io/keal-view/guide.html) and
+  [in French](https://geneacta.github.io/keal-view/fr/guide.html).
 * **[The reference](docs/widgets.md)** — every constructor, modifier, theme
   field and canvas call, on one page.
 * **[`examples/gallery.keal`](examples/gallery.keal)** — documentation that
@@ -253,7 +263,7 @@ that had already caught up.
 That is not an argument against the suite, and the Windows tester was right to
 say so. A person at a machine sees one screen, one keyboard layout and one way
 of injecting events, and proves nothing about what they did not look at; the
-176 assertions run tomorrow, on every platform, without anybody. What the
+194 assertions run tomorrow, on every platform, without anybody. What the
 week actually showed is narrower and more useful: **a test that arranges the
 world for the code will pass whatever the code does.** The fix was to make the
 test call `deliver` — the thing the run loop calls — rather than a convenient
@@ -398,8 +408,7 @@ reason on its own and not the reason I asked for them.
 
 ## What is not here yet
 
-Menus and dialogs (the `stack` and `.at()` they need exist; the widgets do
-not) · multiple OS windows · a floating panel torn off a dock into a window of
+Multiple OS windows · a floating panel torn off a dock into a window of
 its own · text selection across lines · right-to-left and complex scripts —
 the font engine maps codepoints to glyphs one at a time, which is honest for
 Latin, Greek and Cyrillic and wrong for Arabic and Devanagari · `CFF ` outlines,
@@ -409,9 +418,13 @@ images.
 
 ## Taking part
 
-The tests run without a display: `tools/test.sh` builds everything and asserts
-131 things about colour, geometry, layout, docking surgery, fonts, state and
-input dispatch. Add to them before adding to the framework.
+The tests run without a display: `tools/test.sh` builds everything, reads the
+generated C under the three warnings that mean the backend slipped, asserts
+**194** things about colour, geometry, layout, docking surgery, fonts, state
+and input dispatch, and draws a frame from every example to a file. Two of
+those assertions ask the system for a clipboard, which needs a window, so a
+machine without one reports 192 and says which two it skipped. Add to them
+before adding to the framework.
 
 `docs/` holds the pictures, made by `tools/shot.sh` from the programs
 themselves. If you change how something looks, remake them.

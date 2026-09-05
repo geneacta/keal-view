@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keal-view — Coming from Dear ImGui</title>
+<meta name="description" content="Dear ImGui rebuilds its interface every frame from calls, which is the same instinct as here. Two things differ: keal-view describes a tree and then lays it out, rather than emitti">
+<link rel="canonical" href="https://geneacta.github.io/keal-view/from-imgui.html">
+<link rel="alternate" hreflang="en" href="https://geneacta.github.io/keal-view/from-imgui.html">
+<link rel="alternate" hreflang="fr" href="https://geneacta.github.io/keal-view/fr/from-imgui.html">
+<link rel="alternate" hreflang="x-default" href="https://geneacta.github.io/keal-view/from-imgui.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="keal-view">
+<meta property="og:locale" content="en_GB">
+<meta property="og:title" content="keal-view — Coming from Dear ImGui">
+<meta property="og:description" content="Dear ImGui rebuilds its interface every frame from calls, which is the same instinct as here. Two things differ: keal-view describes a tree and then lays it out, rather than emitti">
+<meta property="og:url" content="https://geneacta.github.io/keal-view/from-imgui.html">
+<meta property="og:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="keal-view — Coming from Dear ImGui">
+<meta name="twitter:description" content="Dear ImGui rebuilds its interface every frame from calls, which is the same instinct as here. Two things differ: keal-view describes a tree and then lays it out, rather than emitti">
+<meta name="twitter:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<nav class="nav">
+  <div class="nav-left">
+    <a class="mark" href="index.html"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="1.6" y="3.6" width="22.8" height="18.8" rx="4.5" stroke="#3b82f6" stroke-width="2"/><path d="M2 9.6h22" stroke="#3b82f6" stroke-width="2"/><circle cx="6.2" cy="6.6" r="1.25" fill="#3b82f6"/></svg><span class="wm">keal-view</span></a>
+    <div class="nav-links"><a href="index.html">Home</a><a href="guide.html">Guide</a><a href="widgets.html">Reference</a><a href="gallery.html">Gallery</a><a href="architecture.html">Architecture</a><a href="coming-from.html" class="tab-active">Coming from…</a><a href="porting.html">Porting</a></div>
+  </div>
+  <div class="nav-right">
+    <span class="badge">v0.1</span>
+    <a class="btn-lang" href="fr/from-imgui.html">Français</a>
+    <a class="btn-keal" href="https://geneacta.github.io/keal/">Keal</a>
+    <a class="btn-gh" href="https://github.com/geneacta/keal-view">GitHub</a>
+  </div>
+</nav>
+<section class="band"><h1>Coming from Dear ImGui</h1><p class="lede">Dear ImGui rebuilds its interface every frame from calls, which is the same instinct as here. Two things differ: keal-view describes a tree and then lays it out, rather than emitting geometry as it goes; and it does not run at the frame rate of a game — it sleeps until something happens.</p><div class="tablewrap"><table><thead><tr><th>Dear ImGui</th><th>keal-view</th></tr></thead><tbody><tr><td><code>ImGui::Text("Hi")</code></td><td><code>label("Hi")</code></td></tr><tr><td><code>if (ImGui::Button("Go")) { … }</code></td><td><code>button("Go", { -&gt; … })</code></td></tr><tr><td><code>ImGui::SliderFloat(&amp;v, …)</code></td><td><code>slider(v, { x -&gt; … })</code></td></tr><tr><td><code>ImGui::SameLine()</code></td><td><code>row([…])</code></td></tr><tr><td><code>ImGui::PushStyleColor</code></td><td><code>the theme, read by everything</code></td></tr><tr><td><code>ImDrawList</code></td><td><code>custom({ p -&gt; p.canvas… })</code></td></tr><tr><td><code>DockBuilder</code></td><td><code>Dock, leaf and split</code></td></tr></tbody></table></div></section><section class="band"><h2>What will surprise you</h2></section><section class="cards"><div class="card"><h3>A handler runs when the click happens, not on the next frame</h3><p>In immediate mode a button reports last frame's click as this frame's return value. Here the tree is built, laid out, and <i>then</i> handed the events, so a handler runs against the layout the user actually clicked on — including on the frame where the window was resized.</p></div><div class="card"><h3>There is no GPU, and that is the point</h3><p>Dear ImGui produces vertex buffers for a renderer you supply. keal-view fills a buffer of <code>0xAARRGGBB</code> pixels on the processor and hands it to the window. Anti-aliasing is analytic rather than multisampled, so a curve costs what its edge costs and there is no quality dial.</p></div><div class="card"><h3>State outlives the frame without you holding it</h3><p>ImGui keeps its own internal state keyed by an ID stack you have to reason about. Here the same problem is solved the same way — identity — but the identity is a node's position in the tree, and <code>.keyed("…")</code> is how you say when position is the wrong answer.</p></div></section><section class="band"><a class="cta-line" href="coming-from.html">← All the toolkits</a></section>
+<footer>
+  <div><p class="base">keal-view — application windows written in Keal, where the drawing is Keal too. Apache 2.0.</p></div>
+  <div class="fcol"><span class="h">PROJECT</span><a href="index.html">Home</a><a href="gallery.html">Gallery</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view on GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">The guide</a><a href="widgets.html">The reference</a><a href="porting.html">Porting to a new platform</a><a href="coming-from.html">Coming from another toolkit</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/">The language&#x27;s site</a><a href="https://github.com/geneacta/keal">Keal on GitHub</a><a href="https://geneacta.github.io/keal/docs.html">Language docs</a><a href="https://geneacta.github.io/keal/tour.html">The language tour</a></div>
+</footer>
+</div>
+<script src="site.js"></script>
+</body>
+</html>
