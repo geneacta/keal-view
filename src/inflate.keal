@@ -407,14 +407,19 @@ public func zlibInflate(src: Int, at: Int, len: Int, limit: Int): Inflated {
 }
 
 /// Adler-32 of what came out, as RFC 1950 defines it.
-public func adler32(v: Inflated): Int {
+public func adler32(v: Inflated): Int { return adlerBytes(v.bytes, 0, v.size) }
+
+/// The same over any run of a blob. Reading needs it to check a stream;
+/// writing needs it to end one, and one implementation is enough for both —
+/// a checksum written twice is a checksum that can disagree with itself.
+public func adlerBytes(b: Int, at: Int, len: Int): Int {
     var a = 1
-    var b = 0
+    var s = 0
     var i = 0
-    while (i < v.size) {
-        a = (a + kvBlobGet(v.bytes, i)) % 65521
-        b = (b + a) % 65521
+    while (i < len) {
+        a = (a + kvBlobGet(b, at + i)) % 65521
+        s = (s + a) % 65521
         i++
     }
-    return (b shl 16) bor a
+    return (s shl 16) bor a
 }

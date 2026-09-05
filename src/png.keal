@@ -352,3 +352,156 @@ public func readPicture(path: String): Image {
     kvBlobFree(b)
     return v
 }
+
+// ------------------------------------------------------------------ writing
+
+/// Write a picture as a PNG: eight bits a sample, red-green-blue-alpha, every
+/// row unfiltered.
+///
+/// **One shape and no choices.** A writer that picks among five filters to
+/// save a few per cent is a writer that has to be verified five times, and
+/// what it buys is a smaller file that `optipng` would have made smaller
+/// still. What matters here is that the bytes are right.
+///
+/// The compression is real DEFLATE and produces a file every reader in the
+/// world opens — it is simply DEFLATE's *stored* block, which carries its
+/// bytes behind a length and its complement and compresses nothing. So the
+/// file is a little larger than the pixels rather than smaller, and needs no
+/// Huffman coding, no window and no search for a good parse: the half of the
+/// format that is genuinely hard is the half only a reader needs.
+public func writePng(img: Image, path: String): Bool {
+    if (not img.ok()) { return false }
+    if ((img.w <= 0) or (img.h <= 0)) { return false }
+    if ((img.w > 65535) or (img.h > 65535)) { return false }
+
+    val rowBytes = img.w * 4
+    val raw = img.h * (1 + rowBytes)          // a filter byte, then the row
+    // A stored block carries at most 65535 bytes and costs five for its
+    // header, so the size of the whole file is arithmetic rather than a guess
+    // — which it has to be, because the blob is allocated once at exactly the
+    // length that will be written.
+    val blocks = ((raw + 65534) / 65535).max(1)
+    val zlibLen = 2 + (raw + (blocks * 5)) + 4
+    val total = 8 + (12 + 13) + (12 + zlibLen) + 12
+
+    val f = kvBlobNew(total)
+    if (f == 0) { return false }
+    var o = 0
+
+    val sig = [137, 80, 78, 71, 13, 10, 26, 10]
+    var i = 0
+    while (i < 8) { kvBlobSet(f, o, sig[i]); o++; i++ }
+
+    // IHDR: the size, eight bits a sample, colour type six, and zeros for the
+    // three things this format only has one of.
+    o = putBe32(f, o, 13)
+    val ihdr = o
+    o = putTag(f, o, "IHDR")
+    o = putBe32(f, o, img.w)
+    o = putBe32(f, o, img.h)
+    kvBlobSet(f, o, 8); o++
+    kvBlobSet(f, o, 6); o++
+    kvBlobSet(f, o, 0); o++
+    kvBlobSet(f, o, 0); o++
+    kvBlobSet(f, o, 0); o++
+    o = putBe32(f, o, crc32(f, ihdr, 4 + 13))
+
+    // IDAT: the zlib wrapper, the rows in stored blocks, the checksum.
+    o = putBe32(f, o, zlibLen)
+    val idat = o
+    o = putTag(f, o, "IDAT")
+    // 0x78 0x01: deflate, a 32K window, no preset dictionary, and the two
+    // bytes read as a number divide by 31, which is what the format asks.
+    kvBlobSet(f, o, 120); o++
+    kvBlobSet(f, o, 1); o++
+
+    // One byte at a time through a writer that opens a stored block when the
+    // current one is full. Written once: the filter byte and the four channel
+    // bytes go the same way, and a byte-assembler with the block bookkeeping
+    // spelled out twice is a byte-assembler with two places to get it wrong.
+    val w = Stored(f, o, raw)
+    var y = 0
+    while (y < img.h) {
+        w.put(0)                              // filter: None
+        var x = 0
+        while (x < img.w) {
+            val p = img.at(x, y)
+            w.put(redOf(p))
+            w.put(greenOf(p))
+            w.put(blueOf(p))
+            w.put(alphaOf(p))
+            x++
+        }
+        y++
+    }
+    o = w.o
+    val adlerA = w.a
+    val adlerB = w.b
+
+    o = putBe32(f, o, (adlerB shl 16) bor adlerA)
+    o = putBe32(f, o, crc32(f, idat, 4 + zlibLen))
+
+    o = putBe32(f, o, 0)
+    val iend = o
+    o = putTag(f, o, "IEND")
+    o = putBe32(f, o, crc32(f, iend, 4))
+
+    // The arithmetic at the top said how long this would be. If it did not,
+    // the file is wrong in a way no reader would report clearly, so it is
+    // caught here rather than written.
+    if (o != total) { kvBlobFree(f); return false }
+    val wrote = kvBlobWrite(f, path)
+    kvBlobFree(f)
+    return wrote == 1
+}
+
+/// A run of bytes going into DEFLATE stored blocks, checksummed on the way.
+///
+/// The blocks are opened as they are needed rather than counted first,
+/// because the count and the contents would then be two statements of the
+/// same thing — and the size of the file was already worked out from the same
+/// arithmetic, so a disagreement between them is caught where the blob is
+/// closed.
+class Stored(public val f: Int, public var o: Int, public var left: Int) {
+    public var inBlock: Int = 0
+    /// The two halves of an Adler-32, accumulated as the bytes pass rather
+    /// than read back afterwards: the checksum is over the rows, and by the
+    /// time they are written they are inside blocks.
+    public var a: Int = 1
+    public var b: Int = 0
+
+    public proc put(v: Int) {
+        if (this.inBlock == 0) {
+            val take = this.left.min(65535)
+            // The last block says so in its first bit; the length is written
+            // twice, the second time inverted, which is what a reader checks.
+            kvBlobSet(this.f, this.o, if (this.left <= 65535) { 1 } else { 0 })
+            kvBlobSet(this.f, this.o + 1, take band 255)
+            kvBlobSet(this.f, this.o + 2, (take shr 8) band 255)
+            kvBlobSet(this.f, this.o + 3, (take bxor 65535) band 255)
+            kvBlobSet(this.f, this.o + 4, ((take bxor 65535) shr 8) band 255)
+            this.o = this.o + 5
+            this.inBlock = take
+        }
+        kvBlobSet(this.f, this.o, v band 255)
+        this.o = this.o + 1
+        this.inBlock = this.inBlock - 1
+        this.left = this.left - 1
+        this.a = (this.a + (v band 255)) % 65521
+        this.b = (this.b + this.a) % 65521
+    }
+}
+
+func putBe32(f: Int, o: Int, v: Int): Int {
+    kvBlobSet(f, o, (v shr 24) band 255)
+    kvBlobSet(f, o + 1, (v shr 16) band 255)
+    kvBlobSet(f, o + 2, (v shr 8) band 255)
+    kvBlobSet(f, o + 3, v band 255)
+    return o + 4
+}
+
+func putTag(f: Int, o: Int, tag: String): Int {
+    var i = 0
+    while (i < 4) { kvBlobSet(f, o + i, tag[i].code()); i++ }
+    return o + 4
+}

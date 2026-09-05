@@ -220,8 +220,8 @@ system here.
 Two things every keal-view program understands for free:
 
 ```sh
-build/studio --snapshot frame.bmp 2          # draw one frame to a file and exit
-build/studio --snapshot frame.bmp 2 900 1900 # …at a size of your choosing
+build/studio --snapshot frame.png 2          # draw one frame to a file and exit
+build/studio --snapshot frame.bmp 2 900 1900 # …as a BMP, at a size you choose
 build/studio --window-id /tmp/id             # write its own window number out
 ```
 
@@ -229,6 +229,12 @@ The first needs no display at all, which is how the framework is checked in
 continuous integration and how the pictures above were made.
 `tools/shot.sh build/studio out.png` uses the second to photograph a running
 window without capturing anything else on the screen.
+
+The name says which format, and both are written by this repository: the PNG
+by `src/png.keal`, in Keal, and the BMP by nine lines of C. The BMP stays
+because it is the format that can still be read with four lines of `struct`
+when everything else is broken, and because one output being simple is what
+makes it useful for debugging the other.
 
 ## Platforms
 

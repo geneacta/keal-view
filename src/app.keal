@@ -6,6 +6,7 @@ import "./font.keal"
 import "./geom.keal"
 import "./layout.keal"
 import "./paint.keal"
+import "./png.keal"
 import "./popup.keal"
 import "./state.keal"
 import "./text.keal"
@@ -705,7 +706,13 @@ public proc snapshot(var app: App, w: Int, h: Int, scale: Float, path: String) {
     layout(ui, root, area)
     canvas.clear(theme().bg)
     paint(ui, root)
-    if (kvSaveBmp(path) == 0) { println("keal-view: could not write ${path}") }
+    // Which format is the caller's to say, and here the name *is* the saying
+    // — the opposite of reading one, where the extension is a claim the file
+    // makes about itself and the first bytes are the truth.
+    val wrote = if (path.toLower().endsWith(".png")) {
+                    if (writePng(surfaceImage(), path)) { 1 } else { 0 }
+                } else { kvSaveBmp(path) }
+    if (wrote == 0) { println("keal-view: could not write ${path}") }
     app.onStop()
 }
 
