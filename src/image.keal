@@ -73,6 +73,22 @@ public func readBmp(path: String): Image {
     val topDown = rawH < 0
     val h = if (topDown) { 0 - rawH } else { rawH }
     if ((w <= 0) or (h <= 0)) { kvBlobFree(b); return noImage("BMP: no pixels in it") }
+    // A header can say anything, and two of the numbers in it are about to be
+    // multiplied together. `2000000000 by 2000000000` is fifty-four bytes of
+    // file and 1.6e19 of arithmetic — past a signed `Int`, and Keal's integers
+    // are checked, so they panic rather than wrap. The guard meant to refuse
+    // the file would then be the thing that killed the program, which is the
+    // one thing a decoder must never do: the bytes came from somewhere else.
+    //
+    // So the sides are bounded before anything is multiplied by anything.
+    // 65535 is past any BMP a tool writes, and small enough that every product
+    // below — `w * (bpp / 8)`, `stride * h`, `w * h * 4` — stays under 2^35.
+    // The allocation that follows may still fail, and that is already handled.
+    if ((w > 65535) or (h > 65535)) {
+        kvBlobFree(b)
+        return noImage("BMP: " + w.toString() + " by " + h.toString()
+                     + ", which is larger than this reads")
+    }
     if ((bpp != 24) and (bpp != 32)) {
         kvBlobFree(b)
         return noImage("BMP: " + bpp.toString() + " bits a pixel, which this does not read")

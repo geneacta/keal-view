@@ -1073,6 +1073,24 @@ proc imageTests() {
     ok("a file that is not a BMP is refused", not prose.ok())
     ok("by the two letters it does not begin with", prose.problem.contains("BM"))
 
+    // A header that lies about its size. This one is fifty-four bytes and
+    // claims a picture of two billion by two billion, so the multiplication
+    // that decides whether the file is long enough is itself past what an Int
+    // holds. Keal's integers are checked and panic rather than wrap, so before
+    // the sides were bounded this did not refuse the file — it killed the
+    // program, taking this whole suite with it. Which is the failure a decoder
+    // is least allowed: the bytes came from somewhere else.
+    writeFile("out/huge.bmp", hugeHeader())
+    val huge = readBmp("out/huge.bmp")
+    ok("a header claiming more pixels than can be counted is refused", not huge.ok())
+    ok("by its size, and the guard does not overflow reaching that conclusion",
+       huge.problem.contains("larger than this reads"))
+
+    writeFile("out/big.bmp", sizedHeader(70000, 70000))
+    val big = readBmp("out/big.bmp")
+    ok("and so is one merely larger than this reads", not big.ok())
+    ok("named the same way", big.problem.contains("70000 by 70000"))
+
     writeFile("out/tiny.bmp", "BM tiny")
     val tiny = readBmp("out/tiny.bmp")
     ok("a file shorter than a header is refused", not tiny.ok())
@@ -1108,6 +1126,42 @@ proc imageTests() {
     eqI("and every pixel is the mean of the four under it",
         redOf(shrunk.at(0, 0)), 127)
     eqI("not one of them", greenOf(shrunk.at(1, 1)), 127)
+}
+
+/// A BMP header claiming 0x7F7F7F7F pixels each way — two billion and some,
+/// which is enough that `stride * h` passes what an Int holds.
+func hugeHeader(): String { return sizedHeader(2139062143, 2139062143) }
+
+/// The fifty-four bytes of a BMP header saying whatever size is asked for.
+///
+/// Built here rather than checked in, so the suite carries its own attacker
+/// and a reader can see what the file says. It works because every byte it
+/// needs is under 128: a Keal string is UTF-8, so those encode as themselves,
+/// and `writeFile` puts down exactly these bytes. A size with a byte of 128 or
+/// more could not be written this way — which is a limit of the test, not of
+/// what the decoder is asked to survive.
+func sizedHeader(w: Int, h: Int): String {
+    val b: List<Int> = []
+    var i = 0
+    while (i < 54) { b.add(0); i++ }
+    b[0] = 66                      // B
+    b[1] = 77                      // M
+    b[10] = 54                     // where the pixels would start
+    b[14] = 40                     // a BITMAPINFOHEADER
+    var k = 0
+    while (k < 4) {
+        b[18 + k] = (w shr (k * 8)) band 255
+        b[22 + k] = (h shr (k * 8)) band 255
+        k++
+    }
+    b[26] = 1                      // one plane
+    b[28] = 32                     // thirty-two bits a pixel
+    var s = ""
+    for (v in b) {
+        if (v > 127) { return "" }
+        s = s + v.toChar()
+    }
+    return s
 }
 
 /// A four-by-four chequerboard of black and white, built by hand rather than
