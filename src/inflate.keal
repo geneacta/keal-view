@@ -1,0 +1,420 @@
+import "./ffi.keal"
+
+/// DEFLATE, decompressed — RFC 1951, and the zlib wrapper of RFC 1950 that
+/// PNG carries it in.
+///
+/// This reads and does not write. A PNG is read without ever compressing
+/// anything, and the two halves are different problems: decoding is a table
+/// walk, encoding is a search for a good parse. Writing one would not reuse
+/// much of this beyond the Huffman tables, so it is left out rather than
+/// half-built.
+///
+/// **Everything here comes from somewhere else**, which decides the shape.
+/// A stream that stops in the middle, a block that lies about its length, a
+/// back-reference pointing before the start of what has been produced, a
+/// Huffman table with no valid codes, a checksum that does not match — each is
+/// refused by name. None of them ends the program.
+///
+/// **The output is bounded before a bit is read.** `limit` is the most bytes
+/// the caller will accept, and it is also the buffer that gets allocated, so a
+/// stream that wants more is stopped at the ceiling rather than discovered
+/// afterwards. That is the difference between a bound and a remark. For a PNG
+/// the number is exact — height by (1 + width by channels) — because the
+/// header says the size before the pixels arrive, which is the whole reason
+/// this is safe to call on a file somebody sent you.
+
+/// What came out: a blob of bytes, how many, and why not if not.
+public class Inflated(public val bytes: Int, public val size: Int,
+                      public val problem: String) {
+    proc deinit() { if (this.bytes != 0) { kvBlobFree(this.bytes) } }
+
+    public func ok(): Bool { return this.problem == "" }
+
+    /// One byte, or -1 outside. Bounds are checked here because every caller
+    /// is a loop, and a loop that checks its own bounds writes them twice.
+    public func at(i: Int): Int {
+        if ((i < 0) or (i >= this.size)) { return -1 }
+        return kvBlobGet(this.bytes, i)
+    }
+}
+
+func noBytes(why: String): Inflated { return Inflated(0, 0, why) }
+
+// ------------------------------------------------------------- reading bits
+
+/// A cursor over the compressed bytes, reading least-significant bit first,
+/// which is what DEFLATE does — and note that its Huffman codes are packed
+/// the other way round, most significant first, which is the single detail
+/// that makes this format easy to write wrongly.
+class Bits(public val src: Int, public val stop: Int) {
+    public var at: Int = 0
+    public var hold: Int = 0
+    public var count: Int = 0
+    /// Set once the stream ran out. Every read checks it rather than
+    /// returning a zero that would be indistinguishable from a real one.
+    public var over: Bool = false
+
+    public func bit(): Int {
+        if (this.count == 0) {
+            if (this.at >= this.stop) { this.over = true; return 0 }
+            this.hold = kvBlobGet(this.src, this.at)
+            this.at = this.at + 1
+            this.count = 8
+        }
+        val v = this.hold band 1
+        this.hold = this.hold shr 1
+        this.count = this.count - 1
+        return v
+    }
+
+    /// `n` bits, the first one read being the least significant.
+    public func bits(n: Int): Int {
+        var v = 0
+        var i = 0
+        while (i < n) {
+            v = v bor (this.bit() shl i)
+            if (this.over) { return 0 }
+            i++
+        }
+        return v
+    }
+
+    /// Throw away the rest of the byte — what a stored block starts with.
+    public proc align() { this.hold = 0; this.count = 0 }
+}
+
+// ---------------------------------------------------------------- huffman
+
+/// A canonical Huffman table, held as the count of codes at each length and
+/// the symbols in order. Decoding walks one bit at a time and compares
+/// against the range of codes at that length: no lookup table to build, no
+/// table size to choose, and the whole of it is fifteen iterations.
+class Huff {
+    public var counts: List<Int> = []
+    public var symbols: List<Int> = []
+}
+
+/// Build one from a symbol's code lengths, zero meaning "not used".
+func huffOf(lengths: List<Int>): Huff? {
+    val h = Huff()
+    var i = 0
+    while (i <= 15) { h.counts.add(0); i++ }
+    for (l in lengths) {
+        if ((l < 0) or (l > 15)) { return null }
+        h.counts[l] = h.counts[l] + 1
+    }
+    // A table where every symbol is unused decodes nothing, and a table that
+    // is over-subscribed is not a prefix code. Both mean the stream is not
+    // what it says it is.
+    if (h.counts[0] == lengths.size) { return null }
+    var left = 1
+    var len = 1
+    while (len <= 15) {
+        left = left * 2
+        left = left - h.counts[len]
+        if (left < 0) { return null }
+        len++
+    }
+    val offs: List<Int> = []
+    var k = 0
+    while (k <= 16) { offs.add(0); k++ }
+    len = 1
+    while (len <= 15) {
+        offs[len + 1] = offs[len] + h.counts[len]
+        len++
+    }
+    var s = 0
+    while (s < lengths.size) { h.symbols.add(0); s++ }
+    s = 0
+    while (s < lengths.size) {
+        if (lengths[s] != 0) {
+            h.symbols[offs[lengths[s]]] = s
+            offs[lengths[s]] = offs[lengths[s]] + 1
+        }
+        s++
+    }
+    return h
+}
+
+/// One symbol, or -1 when the bits do not name one.
+func decode(var b: Bits, h: Huff): Int {
+    var code = 0
+    var first = 0
+    var index = 0
+    var len = 1
+    while (len <= 15) {
+        code = code bor b.bit()
+        if (b.over) { return -1 }
+        val count = h.counts[len]
+        if ((code - first) < count) { return h.symbols[index + (code - first)] }
+        index = index + count
+        first = (first + count) * 2
+        code = code * 2
+        len++
+    }
+    return -1
+}
+
+// ------------------------------------------------------------------ tables
+
+/// The extra bits and bases of RFC 1951, written out rather than computed:
+/// the tables are the specification, and a loop that reproduces them is a
+/// second place for them to be wrong.
+func lengthBase(): List<Int> {
+    return [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43,
+            51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+}
+func lengthExtra(): List<Int> {
+    return [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4,
+            4, 4, 5, 5, 5, 5, 0]
+}
+func distBase(): List<Int> {
+    return [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257,
+            385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289,
+            16385, 24577]
+}
+func distExtra(): List<Int> {
+    return [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9,
+            10, 10, 11, 11, 12, 12, 13, 13]
+}
+
+/// The order the code-length code's own lengths arrive in, which is not the
+/// order of the symbols. This is the other detail the format hides.
+func clOrder(): List<Int> {
+    return [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+}
+
+func fixedLit(): Huff? {
+    val l: List<Int> = []
+    var i = 0
+    while (i < 288) {
+        l.add(if (i < 144) { 8 } else { if (i < 256) { 9 }
+              else { if (i < 280) { 7 } else { 8 } } })
+        i++
+    }
+    return huffOf(l)
+}
+
+func fixedDist(): Huff? {
+    val l: List<Int> = []
+    var i = 0
+    while (i < 30) { l.add(5); i++ }
+    return huffOf(l)
+}
+
+// ----------------------------------------------------------------- inflate
+
+/// Decompress a raw DEFLATE stream: `len` bytes of `src` starting at `at`,
+/// producing at most `limit` bytes.
+public func inflate(src: Int, at: Int, len: Int, limit: Int): Inflated {
+    if (limit <= 0) { return noBytes("inflate: nothing may be produced") }
+    // The ceiling is bounded too, and not because a caller would ask for a
+    // terabyte. Below, `n + length` and `n + nl` are compared against it, and
+    // `n` may be the ceiling itself — so a ceiling near the top of an `Int`
+    // would make the comparison that enforces it overflow, and Keal's
+    // integers panic rather than wrap. That is exactly the shape of the
+    // defect this module's neighbour had, found in review: the guard was the
+    // thing that failed. It is written down here rather than left to the
+    // allocation below happening to fail first.
+    if (limit > 1099511627776) { return noBytes("inflate: a ceiling larger than this allows") }
+    if (len <= 0) { return noBytes("inflate: nothing to read") }
+    val out = kvBlobNew(limit)
+    if (out == 0) { return noBytes("inflate: no room for the result") }
+
+    val b = Bits(src, at + len)
+    b.at = at
+    var n = 0
+    var last = false
+
+    while (not last) {
+        last = b.bit() == 1
+        val kind = b.bits(2)
+        if (b.over) { kvBlobFree(out); return noBytes("inflate: the stream stops mid-block") }
+
+        if (kind == 0) {
+            b.align()
+            if ((b.at + 4) > b.stop) {
+                kvBlobFree(out)
+                return noBytes("inflate: a stored block has no length")
+            }
+            val nl = kvBlobGet(b.src, b.at) bor (kvBlobGet(b.src, b.at + 1) shl 8)
+            val nc = kvBlobGet(b.src, b.at + 2) bor (kvBlobGet(b.src, b.at + 3) shl 8)
+            b.at = b.at + 4
+            // The length is written twice, once inverted. A block that
+            // disagrees with itself is a block this cannot trust.
+            if (nl != ((nc bxor 65535) band 65535)) {
+                kvBlobFree(out)
+                return noBytes("inflate: a stored block disagrees with its own length")
+            }
+            if ((b.at + nl) > b.stop) {
+                kvBlobFree(out)
+                return noBytes("inflate: a stored block runs past the end of the stream")
+            }
+            if ((n + nl) > limit) {
+                kvBlobFree(out)
+                return noBytes("inflate: more bytes than were allowed")
+            }
+            var i = 0
+            while (i < nl) {
+                kvBlobSet(out, n + i, kvBlobGet(b.src, b.at + i))
+                i++
+            }
+            b.at = b.at + nl
+            n = n + nl
+            continue
+        }
+
+        var lit: Huff? = null
+        var dst: Huff? = null
+        if (kind == 1) {
+            lit = fixedLit()
+            dst = fixedDist()
+        } else { if (kind == 2) {
+            val hlit = b.bits(5) + 257
+            val hdist = b.bits(5) + 1
+            val hclen = b.bits(4) + 4
+            if (b.over) { kvBlobFree(out); return noBytes("inflate: the stream stops in a header") }
+            val clLen: List<Int> = []
+            var z = 0
+            while (z < 19) { clLen.add(0); z++ }
+            val order = clOrder()
+            var i = 0
+            while (i < hclen) {
+                clLen[order[i]] = b.bits(3)
+                i++
+            }
+            if (b.over) { kvBlobFree(out); return noBytes("inflate: the stream stops in a table") }
+            val cl = huffOf(clLen)
+            if (cl == null) { kvBlobFree(out); return noBytes("inflate: a table names no codes") }
+            // The literal and distance lengths are themselves compressed, by
+            // the table just read.
+            val lens: List<Int> = []
+            while (lens.size < (hlit + hdist)) {
+                val sym = decode(b, cl)
+                if (sym < 0) { kvBlobFree(out); return noBytes("inflate: a code names no symbol") }
+                if (sym < 16) { lens.add(sym); continue }
+                var rep = 0
+                var v = 0
+                if (sym == 16) {
+                    if (lens.size == 0) {
+                        kvBlobFree(out)
+                        return noBytes("inflate: a repeat with nothing to repeat")
+                    }
+                    v = lens[lens.size - 1]
+                    rep = 3 + b.bits(2)
+                } else { if (sym == 17) { rep = 3 + b.bits(3) }
+                  else { rep = 11 + b.bits(7) } }
+                if (b.over) { kvBlobFree(out); return noBytes("inflate: the stream stops in a table") }
+                if ((lens.size + rep) > (hlit + hdist)) {
+                    kvBlobFree(out)
+                    return noBytes("inflate: a table repeats past its own end")
+                }
+                var r = 0
+                while (r < rep) { lens.add(v); r++ }
+            }
+            val litLen: List<Int> = []
+            val dstLen: List<Int> = []
+            var k = 0
+            while (k < hlit) { litLen.add(lens[k]); k++ }
+            while (k < (hlit + hdist)) { dstLen.add(lens[k]); k++ }
+            lit = huffOf(litLen)
+            dst = huffOf(dstLen)
+        } else {
+            kvBlobFree(out)
+            return noBytes("inflate: a block of a kind this format does not have")
+        } }
+
+        if (lit == null) { kvBlobFree(out); return noBytes("inflate: a table names no codes") }
+        if (dst == null) { kvBlobFree(out); return noBytes("inflate: a distance table names no codes") }
+        // Pinned here rather than used through the `var`s: the checker's
+        // narrowing does not survive into the loop below, and the two lines
+        // above are what make these safe.
+        val litT = lit!!
+        val dstT = dst!!
+
+        val lBase = lengthBase()
+        val lExtra = lengthExtra()
+        val dBase = distBase()
+        val dExtra = distExtra()
+        var done = false
+        while (not done) {
+            val sym = decode(b, litT)
+            if (sym < 0) { kvBlobFree(out); return noBytes("inflate: a code names no symbol") }
+            if (sym < 256) {
+                if (n >= limit) { kvBlobFree(out); return noBytes("inflate: more bytes than were allowed") }
+                kvBlobSet(out, n, sym)
+                n = n + 1
+                continue
+            }
+            if (sym == 256) { done = true; continue }
+            val li = sym - 257
+            if (li >= 29) { kvBlobFree(out); return noBytes("inflate: a length code that does not exist") }
+            val length = lBase[li] + b.bits(lExtra[li])
+            val dsym = decode(b, dstT)
+            if (dsym < 0) { kvBlobFree(out); return noBytes("inflate: a distance names no symbol") }
+            if (dsym >= 30) { kvBlobFree(out); return noBytes("inflate: a distance code that does not exist") }
+            val distance = dBase[dsym] + b.bits(dExtra[dsym])
+            if (b.over) { kvBlobFree(out); return noBytes("inflate: the stream stops mid-copy") }
+            // A copy reaches back into what has already been produced. One
+            // that reaches further back than that is the classic way to read
+            // whatever happens to be in memory.
+            if (distance > n) {
+                kvBlobFree(out)
+                return noBytes("inflate: a copy from before the start of the output")
+            }
+            if ((n + length) > limit) {
+                kvBlobFree(out)
+                return noBytes("inflate: more bytes than were allowed")
+            }
+            // Byte at a time, deliberately: the source and destination
+            // overlap when the distance is shorter than the length, and that
+            // overlap is how the format says "repeat this run".
+            var i = 0
+            while (i < length) {
+                kvBlobSet(out, n + i, kvBlobGet(out, (n - distance) + i))
+                i++
+            }
+            n = n + length
+        }
+    }
+
+    return Inflated(out, n, "")
+}
+
+// -------------------------------------------------------------------- zlib
+
+/// The zlib wrapper of RFC 1950: two bytes of header, the DEFLATE stream, and
+/// an Adler-32 of what came out. What a PNG's `IDAT` chunks hold.
+public func zlibInflate(src: Int, at: Int, len: Int, limit: Int): Inflated {
+    if (len < 6) { return noBytes("zlib: shorter than a wrapper") }
+    val cmf = kvBlobGet(src, at)
+    val flg = kvBlobGet(src, at + 1)
+    if ((cmf band 15) != 8) { return noBytes("zlib: not deflate") }
+    if ((((cmf * 256) + flg) % 31) != 0) { return noBytes("zlib: the header does not check") }
+    if ((flg band 32) != 0) { return noBytes("zlib: a preset dictionary, which this does not read") }
+
+    val got = inflate(src, at + 2, len - 6, limit)
+    if (not got.ok()) { return got }
+
+    // The checksum is at the end, most significant byte first — the other way
+    // round from everything else in this format.
+    val want = ((kvBlobGet(src, (at + len) - 4) shl 24)
+           bor ((kvBlobGet(src, (at + len) - 3) shl 16)
+           bor ((kvBlobGet(src, (at + len) - 2) shl 8)
+           bor kvBlobGet(src, (at + len) - 1))))
+    if (adler32(got) != want) { return noBytes("zlib: the checksum does not match") }
+    return got
+}
+
+/// Adler-32 of what came out, as RFC 1950 defines it.
+public func adler32(v: Inflated): Int {
+    var a = 1
+    var b = 0
+    var i = 0
+    while (i < v.size) {
+        a = (a + kvBlobGet(v.bytes, i)) % 65521
+        b = (b + a) % 65521
+        i++
+    }
+    return (b shl 16) bor a
+}
