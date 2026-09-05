@@ -1,6 +1,7 @@
 import "../src/app.keal"
 import "../src/dock.keal"
 import "../src/image.keal"
+import "../src/inflate.keal"
 
 /// What can be checked without a screen.
 ///
@@ -1187,10 +1188,162 @@ func checkers(): Image {
     return Image(w, h, b, "")
 }
 
+
+// ----------------------------------------------------------------- inflate
+
+/// DEFLATE is the one module here whose correctness is proved against
+/// something outside this repository rather than against an eye. Every vector
+/// below was produced by Python's `zlib` — an implementation nobody here
+/// wrote — and is carried as hexadecimal rather than as a binary file,
+/// because a fixture nobody can read is a fixture nobody checks.
+
+func hexBlob(h: String): Int {
+    val b = kvBlobNew(h.length / 2)
+    var i = 0
+    while (i < (h.length / 2)) {
+        kvBlobSet(b, i, (hexOf(h[i * 2]) * 16) + hexOf(h[(i * 2) + 1]))
+        i++
+    }
+    return b
+}
+
+func hexOf(c: String): Int {
+    if ((c >= "0") and (c <= "9")) { return c.code() - 48 }
+    return (c.code() - 97) + 10
+}
+
+func inflated(h: String, limit: Int, raw: Bool): Inflated {
+    val b = hexBlob(h)
+    val v = if (raw) { inflate(b, 0, h.length / 2, limit) }
+            else { zlibInflate(b, 0, h.length / 2, limit) }
+    kvBlobFree(b)
+    return v
+}
+
+func textOf(v: Inflated): String {
+    var s = ""
+    var i = 0
+    while (i < v.size) { s = s + v.at(i).toChar(); i++ }
+    return s
+}
+
+/// `zlib.compress(b"the quick brown fox jumps over the lazy dog", 0)` — stored
+/// blocks, which carry the bytes uncompressed behind a length and its
+/// complement.
+val vStored = "7801012b00d4ff74686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f67613c0ffa"
+/// `zlib.compress(b"abcabcabc", 1)` — the fixed Huffman table.
+val vFixed = "78014b4c4a4e042300113d0373"
+/// `zlib.compress(...)` on sixty bytes of a small alphabet, which is enough
+/// for a table of its own to beat the fixed one.
+val vDynamic = "78da05c1010100301001c02aaa199efe097667e8f6b8c01eb0ca42f9c4306b3bdda3e634450ff5313a3ce70386e61578"
+/// `zlib.compress(b"a" + b"b" * 300, 9)` — thirteen bytes producing three
+/// hundred and one, all but two of them from copies whose distance is shorter
+/// than their length, which is how the format says "repeat this run".
+val vRuns = "78da4b4c1a05440300fb23733a"
+/// Raw DEFLATE with no zlib wrapper, `b"hello, deflate"`.
+val vRaw = "cb48cdc9c9d75148494dcb492c490500"
+/// Assembled by hand rather than compressed: a literal, then a copy from five
+/// bytes back when only one byte has been produced. Python inflates the same
+/// stream with the distance made legal, which is what says the bit-writer
+/// that made it was right.
+val vBadDistance = "4b041200"
+/// A block whose two type bits say 3, which no DEFLATE stream has.
+val vBadKind = "06"
+
+proc inflateTests() {
+    val a = inflated(vStored, 1000, false)
+    ok("a stored stream comes back", a.ok())
+    eqI("with every byte", a.size, 43)
+    ok("and they are the right ones", textOf(a) == "the quick brown fox jumps over the lazy dog")
+
+    val b = inflated(vFixed, 1000, false)
+    ok("the fixed table decodes", b.ok())
+    ok("to what went in", textOf(b) == "abcabcabc")
+
+    val c = inflated(vDynamic, 1000, false)
+    ok("a table of the stream's own decodes", c.ok())
+    eqI("all sixty bytes", c.size, 60)
+    ok("beginning as it did", textOf(c).startsWith("d cfhbahe ddh"))
+
+    // The overlap case: a copy whose distance is one and whose length is
+    // hundreds. Reading it as a block move rather than a byte at a time gives
+    // a single 'b' and then rubbish, which is why this vector is here.
+    val d = inflated(vRuns, 1000, false)
+    ok("a run repeats itself out of its own output", d.ok())
+    eqI("to its full length", d.size, 301)
+    eqI("first byte", d.at(0), 97)
+    eqI("second", d.at(1), 98)
+    eqI("last", d.at(300), 98)
+    var runs = 0
+    var i = 1
+    while (i <= 300) { if (d.at(i) == 98) { runs++ }; i++ }
+    eqI("and every one between", runs, 300)
+
+    val e = inflated(vRaw, 1000, true)
+    ok("a stream with no wrapper decodes", e.ok())
+    ok("to its bytes", textOf(e) == "hello, deflate")
+
+    // `zlib.adler32(b"hello, deflate")`, and not a number typed from memory:
+    // this assertion is only worth having because the value came from the
+    // other implementation.
+    eqI("the checksum is the one zlib computes", adler32(e), 648873270)
+}
+
+/// Everything here is a stream that is not what it says. None of them may end
+/// the program, and each says which one it was.
+proc inflateRefusalTests() {
+    val far = inflated(vBadDistance, 1000, true)
+    ok("a copy from before the start of the output is refused", not far.ok())
+    ok("and named", far.problem.contains("before the start"))
+
+    val kind = inflated(vBadKind, 1000, true)
+    ok("a block of a kind the format does not have is refused", not kind.ok())
+    ok("and named", kind.problem.contains("kind this format does not have"))
+
+    // Cut in half. Where it stops is inside the compressed data, so the
+    // refusal comes from the bit reader running out rather than from a check.
+    val cut = inflated(vDynamic.take(40), 1000, false)
+    ok("a stream that stops in the middle is refused", not cut.ok())
+
+    // The Adler-32 at the end, changed. The bytes inflate perfectly well; it
+    // is only the checksum that says they are not the bytes that went in.
+    val bad = inflated(vDynamic.take(vDynamic.length - 2) + "00", 1000, false)
+    ok("a checksum that does not match is refused", not bad.ok())
+    ok("and named", bad.problem.contains("checksum"))
+
+    // A stored block writes its length twice, the second time inverted.
+    val lie = inflated(vStored.take(10) + "d4fe" + vStored.drop(14), 1000, false)
+    ok("a stored block disagreeing with its own length is refused", not lie.ok())
+    ok("and named", lie.problem.contains("disagrees"))
+
+    // Three hundred and one bytes from thirteen. The ceiling is what stops a
+    // small file asking for a large answer, and it stops it at the ceiling
+    // rather than after.
+    val over = inflated(vRuns, 100, false)
+    ok("a stream wanting more than it was allowed is refused", not over.ok())
+    ok("and named", over.problem.contains("more bytes than were allowed"))
+
+    ok("a limit of nothing is refused", not inflated(vRuns, 0, false).ok())
+    // The ceiling is compared against sums that include it, so a ceiling near
+    // the top of an Int would overflow the comparison enforcing it — the same
+    // shape as the defect found in `image.keal`, refused here before it can
+    // be reached rather than after.
+    val huge = inflated(vRuns, 9000000000000000000, false)
+    ok("a ceiling too large to compare against is refused", not huge.ok())
+    ok("and named", huge.problem.contains("ceiling larger"))
+    ok("an empty stream is refused", not inflated("", 100, true).ok())
+    ok("a wrapper shorter than itself is refused", not inflated("7801", 100, false).ok())
+    val notZlib = inflated("0000000000000000", 100, false)
+    ok("a wrapper that is not deflate is refused", not notZlib.ok())
+    ok("and named", notZlib.problem.contains("not deflate"))
+}
+
 dockTests()
 dockSaveTests()
 dockRestoreTests()
 imageTests()
+inflateTests()
+inflateRefusalTests()
 interactionTests()
 textTests()
 stateTests()
