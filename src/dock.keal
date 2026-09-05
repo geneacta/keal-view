@@ -453,3 +453,167 @@ public func dockOverlay(var d: Dock, t: Theme = theme()): View {
             .at(d.pointerX + 12.0, d.pointerY + 10.0)
     ])
 }
+
+// ------------------------------------------------- saving and restoring
+
+/// An arrangement, written down.
+///
+/// The tree is two cases and nothing else, so the text is two kinds of line
+/// and nothing else, in the order a preorder walk visits them:
+///
+///     kv-dock 1
+///     S h 0.19
+///     L 0 files
+///     S v 0.72
+///     S h 0.68
+///     L 0 editor
+///     L 1 props preview
+///     L 0 terminal
+///
+/// `S` is a split — `h` for side by side, `v` for stacked — followed by the
+/// fraction the first child takes, and then its two children. `L` is a leaf:
+/// which tab is showing, then the panels in it. A binary tree in which every
+/// split has exactly two children and every leaf is a terminal has exactly one
+/// preorder, so nothing has to be counted, nested or indented to read it back.
+///
+/// It is a text a person can read, diff and repair, because a window layout is
+/// the kind of file somebody eventually opens after their editor started up
+/// wrong.
+val dockFormat = "kv-dock 1"
+
+/// The arrangement as text, or **null** when a panel's id cannot be written.
+///
+/// Ids are separated by spaces on a leaf's line, so an id holding a space, a
+/// tab or a newline could not be read back. That is refused here rather than
+/// written and discovered on the next start: a save that cannot be loaded is
+/// worse than no save, and it fails at the moment somebody can still choose a
+/// different id.
+public func dockSave(d: Dock): String? {
+    val out: List<String> = []
+    out.add(dockFormat)
+    if (not writeNode(d.root, out)) { return null }
+    return out.join("\n") + "\n"
+}
+
+func writeNode(n: Node?, var out: List<String>): Bool {
+    if (n == null) { return false }
+    if (n.split) {
+        val axis = if (n.vertical) { "v" } else { "h" }
+        out.add("S " + axis + " " + n.fraction.toString())
+        if (not writeNode(n.a, out)) { return false }
+        return writeNode(n.b, out)
+    }
+    var line = "L " + n.active.toString()
+    for (id in n.tabs) {
+        if (unwritable(id)) { return false }
+        line = line + " " + id
+    }
+    out.add(line)
+    return true
+}
+
+/// An id that could not be read back from a leaf's line.
+func unwritable(id: String): Bool {
+    if (id == "") { return true }
+    return id.contains(" ") or (id.contains("\t") or (id.contains("\n") or id.contains("\r")))
+}
+
+/// Read an arrangement back, and put it in force.
+///
+/// **A panel the arrangement names and this dock does not have is dropped**,
+/// and whatever becomes empty is pruned — a leaf with no tabs left goes, and a
+/// split left with one child collapses into it. An editor that refuses to
+/// start because a plug-in went away is worse than an editor that forgets
+/// where a panel was.
+///
+/// Answers **false** and changes nothing when the text is not an arrangement,
+/// or when nothing recognisable is left of it. Nothing is half-applied: the
+/// tree is built and pruned entire before it replaces the one in use.
+public func dockLoad(var d: Dock, text: String): Bool {
+    val lines: List<String> = []
+    for (raw in text.split("\n")) {
+        val l = raw.trim()
+        if (l != "") { lines.add(l) }
+    }
+    if (lines.size < 2) { return false }
+    if (lines[0] != dockFormat) { return false }
+
+    val r = Reader(lines)
+    r.at = 1
+    val built = readNode(r, d)
+    if (built == null) { return false }
+    // Trailing lines mean the file says more than one tree, which is a file
+    // this did not write and cannot be sure it understood.
+    if (r.at != lines.size) { return false }
+    val kept = prune(built)
+    if (kept == null) { return false }
+    d.root = kept
+    invalidate()
+    return true
+}
+
+class Reader(public val lines: List<String>) {
+    public var at: Int = 0
+}
+
+func readNode(var r: Reader, d: Dock): Node? {
+    if (r.at >= r.lines.size) { return null }
+    val parts = r.lines[r.at].split(" ")
+    r.at = r.at + 1
+    if (parts.size < 2) { return null }
+
+    if (parts[0] == "S") {
+        if (parts.size != 3) { return null }
+        val vertical = parts[1] == "v"
+        if ((not vertical) and (parts[1] != "h")) { return null }
+        val f = parts[2].toFloat()
+        if (f == null) { return null }
+        val a = readNode(r, d)
+        if (a == null) { return null }
+        val b = readNode(r, d)
+        if (b == null) { return null }
+        // `splitOf` clamps the fraction, so a file saying 0.0 or 3.0 gives a
+        // usable window rather than a divider off the edge of it.
+        return splitOf(a, b, f, vertical)
+    }
+
+    if (parts[0] == "L") {
+        val active = parts[1].toInt()
+        if (active == null) { return null }
+        val ids: List<String> = []
+        var i = 2
+        while (i < parts.size) {
+            val id = parts[i]
+            // The one place an unknown panel is silently dropped, and the
+            // reason this cannot fail: the file outlives the program that
+            // wrote it, and the set of panels is the program's to change.
+            if (d.panel(id) != null) { ids.add(id) }
+            i++
+        }
+        val n = leaf(ids)
+        n.active = clampI(active, 0, (ids.size - 1).max(0))
+        return n
+    }
+
+    return null
+}
+
+/// The panels this dock knows about that the arrangement does not place.
+///
+/// A saved layout is older than the program reading it, so a version that
+/// added a panel will find it nowhere in the file — dropped by nobody, simply
+/// never mentioned. An application asks this after `dockLoad` and decides:
+/// drop them into a leaf with `dropInto`, or leave them out until asked for.
+public func unplaced(d: Dock): List<String> {
+    val placed: List<Node> = []
+    leaves(d.root, placed)
+    val seen: Map<String, Bool> = {}
+    for (n in placed) {
+        for (id in n.tabs) { seen[id] = true }
+    }
+    val out: List<String> = []
+    for (id in d.panels.keys()) {
+        if (not (seen[id] ?: false)) { out.add(id) }
+    }
+    return out.sorted()
+}

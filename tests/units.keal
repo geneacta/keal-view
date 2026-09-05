@@ -863,7 +863,175 @@ proc objectStateTests() {
 colourTests()
 geometryTests()
 layoutTests()
+
+// ------------------------------------------------- saving and restoring
+
+/// A dock holding four panels in a nested arrangement, each body a label
+/// naming itself so the layout can be asked where it put them.
+func sampleDock(): Dock {
+    val d = Dock(beside(leaf(["files"]),
+                        above(beside(leaf(["editor"]), leaf(["props", "preview"]), 0.68),
+                              leaf(["terminal"]),
+                              0.72),
+                        0.19))
+    for (id in ["files", "editor", "props", "preview", "terminal"]) {
+        d.add(panelOf(id, id, { -> label("body-" + id) }))
+    }
+    return d
+}
+
+/// Where a panel's body was actually drawn. The whole point of restoring an
+/// arrangement is that the panels come back to the same places, so that is
+/// what these assertions look at — not the text, and not the tree.
+func bodyRect(v: View, id: String): Rect? {
+    if ((v.kind == kLabel) and (v.label == ("body-" + id))) { return v.frame }
+    var i = 0
+    while (i < v.kids.size) {
+        val f = bodyRect(v.kids[i], id)
+        if (f != null) { return f }
+        i++
+    }
+    return null
+}
+
+func sameRect(a: Rect?, b: Rect?): Bool {
+    if (a == null) { return false }
+    if (b == null) { return false }
+    return ((a.x - b.x).abs() < 0.01) and (((a.y - b.y).abs() < 0.01)
+       and (((a.w - b.w).abs() < 0.01) and ((a.h - b.h).abs() < 0.01)))
+}
+
+/// Lay a dock out the way `runApp` does — the tree the loop builds, not a
+/// convenient piece of it.
+func layDock(var ui: Ui, var d: Dock, area: Rect): View {
+    val tree = stack([dockView(d, ui.theme), nothing(), nothing()])
+    layout(ui, tree, area)
+    return tree
+}
+
+proc dockSaveTests() {
+    val area = Rect(0.0, 0.0, 400.0, 300.0)
+    val ui = testUi()
+
+    // 1. The round trip, judged by where the panels land.
+    val a = sampleDock()
+    val before = layDock(ui, a, area)
+    val text = dockSave(a)
+    ok("an arrangement can be written down", text != null)
+    if (text == null) { return }
+
+    val b = sampleDock()
+    b.root = leaf(["files"])          // a different arrangement to overwrite
+    ok("and read back", dockLoad(b, text))
+
+    // Written down again, it is the same text. This is the property that
+    // catches a save and a load drifting apart without either of them looking
+    // wrong on its own — a fraction that does not survive its own printing,
+    // say. It is worth an assertion because the failure is silent: the layout
+    // would come back subtly different every time it was reopened.
+    ok("and writing it down again gives the same text", dockSave(b) == text)
+    val after = layDock(ui, b, area)
+    // Only the tab that is showing has a body in the tree, so those are the
+    // ones a rectangle can be compared for. `preview` is the second tab of
+    // its group and is drawn nowhere — which is itself the right answer, and
+    // is checked below by asking which group holds it.
+    for (id in ["files", "editor", "props", "terminal"]) {
+        ok("restored: " + id + " is where it was",
+           sameRect(bodyRect(before, id), bodyRect(after, id)))
+    }
+    ok("a tab that is not showing is drawn nowhere", bodyRect(after, "preview") == null)
+    for (id in ["files", "editor", "props", "preview", "terminal"]) {
+        val h1 = a.holder(id)
+        val h2 = b.holder(id)
+        ok("restored: " + id + " is in a group with the same tabs",
+           (h1 != null) and ((h2 != null) and (h1.tabs.join(",") == h2.tabs.join(","))))
+        ok("restored: " + id + "'s group shows the same tab",
+           (h1 != null) and ((h2 != null) and (h1.active == h2.active)))
+    }
+
+    // 2. The text is the shape the doc-comment promises: a header and one
+    //    line per node, preorder. Four leaves and three splits here.
+    val lines: List<String> = []
+    for (l in text.split("\n")) { if (l.trim() != "") { lines.add(l.trim()) } }
+    ok("the first line says what it is", lines[0] == "kv-dock 1")
+    eqI("a header and one line per node", lines.size, 1 + 4 + 3)
+    ok("a split names its axis and fraction", lines[1].startsWith("S h 0.19"))
+    ok("a leaf names its showing tab first", lines[2] == "L 0 files")
+
+    // 3. The tab that was showing is the tab that comes back.
+    val c = sampleDock()
+    c.reveal("preview")
+    val ctext = dockSave(c) ?: ""
+    val c2 = sampleDock()
+    ok("a second arrangement reads back", dockLoad(c2, ctext))
+    val h = c2.holder("preview")
+    ok("the tab that was showing still is", (h != null) and (h.tabs[h.active] == "preview"))
+}
+
+proc dockRestoreTests() {
+    val area = Rect(0.0, 0.0, 400.0, 300.0)
+    val ui = testUi()
+    val text = dockSave(sampleDock()) ?: ""
+
+    // A panel the file names and this program does not have is dropped, and
+    // what empties is pruned. This is the case an editor meets when a plug-in
+    // goes away, and it must not be a refusal.
+    val d = Dock(leaf(["files"]))
+    for (id in ["files", "editor", "terminal"]) {
+        d.add(panelOf(id, id, { -> label("body-" + id) }))
+    }
+    ok("an arrangement naming panels we do not have still loads", dockLoad(d, text))
+    ok("the panels we do have are placed", d.holder("editor") != null)
+    ok("and the ones we do not are not", d.holder("props") == null)
+    ok("nor the other one", d.holder("preview") == null)
+    // The leaf that held props and preview held nothing else, so the split
+    // above it collapsed rather than leaving an empty pane.
+    val tree = layDock(ui, d, area)
+    val ed = bodyRect(tree, "editor")
+    ok("the editor took the room the empty pane would have left",
+       (ed != null) and (ed.w > 250.0))
+
+    // Nothing recognisable is a refusal, and a refusal changes nothing.
+    val keep = Dock(beside(leaf(["only"]), leaf(["other"]), 0.5))
+    keep.add(panelOf("only", "Only", { -> label("body-only") }))
+    keep.add(panelOf("other", "Other", { -> label("body-other") }))
+    val was = keep.root
+    ok("an arrangement of panels we have none of is refused", not dockLoad(keep, text))
+    ok("and the arrangement in use is untouched", keep.root == was)
+
+    ok("a text that is not an arrangement is refused", not dockLoad(keep, "hello\nthere"))
+    ok("a header alone is refused", not dockLoad(keep, "kv-dock 1\n"))
+    ok("a newer format is refused rather than guessed at",
+       not dockLoad(keep, "kv-dock 2\nL 0 only"))
+    ok("a split missing a child is refused", not dockLoad(keep, "kv-dock 1\nS h 0.5\nL 0 only"))
+    ok("a second tree after the first is refused",
+       not dockLoad(keep, "kv-dock 1\nL 0 only\nL 0 other"))
+    ok("the arrangement survived all of that", keep.root == was)
+
+    // A fraction outside the range is clamped rather than believed: a divider
+    // off the edge of the window is not a window anyone can use.
+    ok("an impossible fraction still loads",
+       dockLoad(keep, "kv-dock 1\nS h 9.0\nL 0 only\nL 0 other"))
+    ok("and is clamped", keep.root.fraction <= 0.95)
+
+    // An id that could not be read back is refused at the moment it is
+    // written, not discovered on the next start.
+    val bad = Dock(leaf(["with space"]))
+    bad.add(panelOf("with space", "Bad", { -> label("x") }))
+    ok("an id holding a space cannot be written", dockSave(bad) == null)
+
+    // A panel the file never mentioned — the version that added it.
+    val grown = sampleDock()
+    grown.add(panelOf("debugger", "Debugger", { -> label("body-debugger") }))
+    ok("a newly added panel loads with the rest", dockLoad(grown, text))
+    val missing = unplaced(grown)
+    eqI("and is reported as unplaced", missing.size, 1)
+    ok("by name", missing.size > 0 and (missing[0] == "debugger"))
+}
+
 dockTests()
+dockSaveTests()
+dockRestoreTests()
 interactionTests()
 textTests()
 stateTests()

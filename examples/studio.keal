@@ -109,6 +109,45 @@ proc resetLayout() {
     say("disposition remise à zéro")
 }
 
+// --------------------------------------------- the arrangement, kept
+
+/// Where the layout is remembered between runs. Beside the program rather
+/// than in a configuration directory, because this is an example and a file
+/// somebody can open, read and delete is the point of it.
+val layoutPath = "studio-layout.txt"
+
+/// Read the arrangement back, if there is one and it still makes sense.
+///
+/// Everything here is allowed to fail quietly: no file on a first run, a file
+/// from an older version naming a panel that has gone, a file somebody edited
+/// by hand. None of those is a reason not to open a window — the starting
+/// layout is already in force, and this only replaces it when it has
+/// something better.
+proc restoreLayout() {
+    val text = readFile(layoutPath)
+    if (text == null) { return }
+    if (not dockLoad(dock, text)) {
+        say("disposition illisible, celle d'origine est gardée")
+        return
+    }
+    // A version that adds a panel finds it nowhere in a file written before
+    // it existed. Rather than lose it, put it back where it belongs.
+    val missing = unplaced(dock)
+    for (id in missing) {
+        val holder = dock.holder("editor") ?: dock.root
+        dock.dropInto(holder.nid, zoneCentre, id)
+    }
+    if (missing.size > 0) { say("panneaux replacés : " + missing.join(", ")) }
+    else { say("disposition restaurée") }
+}
+
+/// Write it down on the way out.
+proc keepLayout() {
+    val text = dockSave(dock)
+    if (text == null) { return }
+    writeFile(layoutPath, text)
+}
+
 proc registerPanels() {
     dock.add(panelOf("files", "Fichiers", { -> filesPanel() }))
     dock.add(panelOf("editor", "font.keal", { -> editorPanel() }))
@@ -326,7 +365,8 @@ func shell(): View {
     ]).grows()
 }
 
-app.onStart = { -> registerPanels() }
+app.onStart = { -> registerPanels(); restoreLayout() }
+app.onStop = { -> keepLayout() }
 app.build = { -> shell() }
 app.overlay = { -> dockOverlay(dock) }
 
