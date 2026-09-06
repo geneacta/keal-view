@@ -15,6 +15,7 @@ out/
 # noise is where a real change hides, so it is named rather than swept up by
 # hand — the same line, for the same reason, as in the Keal repository.
 site/__pycache__/
+ci/__pycache__/
 
 # `examples/studio.keal` remembers where its panels were, beside itself. The
 # README says to run it as `build/studio` from the root, so the file lands

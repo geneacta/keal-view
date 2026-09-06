@@ -68,6 +68,23 @@ for f in shapes text calculator studio gallery todo tour; do
 done
 echo "frames drawn: $(ls -1 ./*.bmp | tr '\n' ' ')"
 
+# Two things in the README are generated from files in this repository, so they
+# can only go stale when somebody here changes one — which is exactly when a
+# gate should speak. The badge caught the headline percentage drifting the
+# first time it ran.
+#
+# Skipped rather than failed when there is no Python, and said out loud: this
+# script is the instrument somebody uses on a machine they are porting to, and
+# it must not report a fault in the framework because an interpreter that
+# nothing else here needs is missing. Everything above this line ran without
+# it.
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$ROOT/ci/band.py" --check
+  python3 "$ROOT/ci/wordmark.py" --check
+else
+  echo "no python3: the README's badge and dark wordmark were not checked"
+fi
+
 # The same frame again as a PNG, because the writer is Keal and a full window
 # is the only thing that puts it over a stored block's 65535 bytes. The
 # assertions in `units` write pictures of a few hundred pixels; this writes

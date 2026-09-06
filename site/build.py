@@ -34,11 +34,6 @@ SITE = os.path.join(ROOT, "site")
 # The window glyph in the corner: the thing this framework makes. Inline
 # rather than a file, so there is no binary asset to keep in step with the
 # palette it is drawn in.
-MARK = ('<svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">'
-        '<rect x="1.6" y="3.6" width="22.8" height="18.8" rx="4.5" stroke="#3b82f6" '
-        'stroke-width="2"/><path d="M2 9.6h22" stroke="#3b82f6" stroke-width="2"/>'
-        '<circle cx="6.2" cy="6.6" r="1.25" fill="#3b82f6"/></svg>')
-
 FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E"
            "%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' "
            "stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' "
@@ -260,7 +255,7 @@ def page(lang, filename, title, description, body, active=None):
 <div class="wrap">
 <nav class="nav">
   <div class="nav-left">
-    <a class="mark" href="index.html">%(mark)s<span class="wm">keal-view</span></a>
+    <a class="mark" href="index.html" aria-label="keal-view"><span class="wordmark"></span></a>
     <div class="nav-links">%(links)s</div>
   </div>
   <div class="nav-right">
@@ -290,7 +285,6 @@ def page(lang, filename, title, description, body, active=None):
         "locale": "en_GB" if lang == "en" else "fr_FR",
         "image": C.BASE_URL + "assets/studio.png",
         "favicon": FAVICON,
-        "mark": MARK,
         "links": links,
         "version": "v" + C.VERSION,
         "other": other,
@@ -563,6 +557,9 @@ def copy_assets():
     out = os.path.join(SITE, "assets")
     os.makedirs(out, exist_ok=True)
     copied = []
+    shutil.copyfile(os.path.join(ROOT, "keal-view.png"),
+                    os.path.join(out, "keal-view.png"))
+    copied.append("keal-view.png")
     for name in sorted(os.listdir(os.path.join(ROOT, "docs"))):
         if name.endswith(".png"):
             shutil.copyfile(os.path.join(ROOT, "docs", name), os.path.join(out, name))

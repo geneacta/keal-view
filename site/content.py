@@ -12,7 +12,13 @@ in the README at the time of writing, and the README is the thing to correct
 first if it drifts.
 """
 
-VERSION = "0.1"
+import os as _os
+# The one place a version lives, read rather than repeated: `ci/band.py` puts
+# the same number on the README's badge, so the page and the badge cannot
+# disagree.
+with open(_os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                        "VERSION"), encoding="utf-8") as _f:
+    VERSION = _f.read().strip()
 BASE_URL = "https://geneacta.github.io/keal-view/"
 KEAL_REPO = "https://github.com/geneacta/keal"
 KEAL_SITE = "https://geneacta.github.io/keal/"
