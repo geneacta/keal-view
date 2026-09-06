@@ -1,3 +1,10 @@
+<!-- keal-view-band:start -->
+<p align="right">
+  <a href="https://github.com/geneacta/keal-view/releases"><img alt="version" src="https://img.shields.io/badge/version-0.1.0-blue?style=flat"></a>
+  <a href="https://github.com/geneacta/keal-view/tree/main/src"><img alt="written in Keal" src="https://img.shields.io/badge/written%20in%20Keal-89--91%25-brightgreen?style=flat"></a>
+</p>
+<!-- keal-view-band:end -->
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/keal-view-dark.png">
@@ -6,13 +13,6 @@
 </p>
 
 # keal-view — application windows, written in Keal
-
-<!-- keal-view-band:start -->
-<p align="center">
-  <a href="https://github.com/geneacta/keal-view/releases"><img alt="version" src="https://img.shields.io/badge/version-0.1.0-3b82f6?style=flat-square&labelColor=2b2b2b"></a>
-  <a href="https://github.com/geneacta/keal-view/tree/main/src"><img alt="written in Keal" src="https://img.shields.io/badge/written%20in%20Keal-89--91%25-3b82f6?style=flat-square&labelColor=2b2b2b"></a>
-</p>
-<!-- keal-view-band:end -->
 
 A cross-platform GUI framework for [Keal](https://github.com/geneacta/keal),
 in which **the drawing is Keal**. Not bindings to a toolkit, not a wrapper
