@@ -1025,6 +1025,72 @@ proc editorTests() {
     ok("a secret field paints no run at all",
        redBox(Rect(sec.frame.x, sec.frame.y, sec.frame.w, sec.frame.h)).w < 0.0)
 
+    // ---- a line of code is a line, however long it is
+    //
+    // Folding is right for prose and wrong for code: an expression that breaks
+    // in the middle of itself reads as two lines, and anything counting lines
+    // beside the text counts the wrong ones. An editor told not to fold keeps
+    // the breaks its author typed and scrolls sideways to follow the caret.
+    val longLine = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nbb"
+    val folded = editor(longLine, "", 3, { s -> }).font(mono).keyed("fold")
+    val flat0 = editor(longLine, "", 3, { s -> }).font(mono).keyed("flat")
+    val flat = flat0.wrappingLines(false)
+    var tW = column([folded.sized(200.0, 90.0), flat.sized(200.0, 90.0)])
+    layout(ui, tW, area)
+    val foldedLines = editorLines(ui, folded)
+    val flatLines = editorLines(ui, flat)
+    ok("a long line folds into several rows when it is allowed to",
+       foldedLines.size > 2)
+    eqI("and is one row when it is not, with the typed break still a break",
+        flatLines.size, 2)
+    eqI("the second row being what came after the newline", flatLines[1].start,
+        longLine.length - 2)
+
+    // The caret at the far end of a long line has to be *visible*, which is
+    // the whole of what scrolling sideways is for. Read from the pixels: the
+    // blue of the caret must be inside the box, and near its right edge
+    // rather than a hundred points off the end of it.
+    ui.focus = flat.id
+    ui.time = 0.0
+    ui.setCaret(flat.id, 60)
+    ui.setAnchor(flat.id, 60)
+    ui.setMemo(mixId(flat.id, 9), 0.0 - 1.0)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tW)
+    val inW = editorInner(ui.theme, flat.frame)
+    ok("an editor that does not fold has scrolled sideways",
+       editorShift(ui, flat) > 0.0)
+    val caretW = blueBox(inW)
+    ok("and the caret at the end of a long line is inside the box", caretW.w > 0.0)
+    if (caretW.w > 0.0) {
+        ok("near its right edge", (right(inW) - caretW.x) < 12.0)
+    }
+    ok("while one that folds never shifts", editorShift(ui, folded) == 0.0)
+
+    // And the case the guard in `editorShift` is actually for: the same
+    // editor, same identity, told to fold after it has been scrolled sideways
+    // — a "wrap lines" switch in an application that has one. The sideways
+    // offset is kept per widget and would still be sitting there; a folding
+    // editor that read it would draw its text starting off the left of itself.
+    // Removing the guard passes every other assertion here, which is why this
+    // one exists.
+    val rewrapped = editor(longLine, "", 3, { s -> }).font(mono).keyed("flat")
+    var tW2 = column([folded.sized(200.0, 90.0), rewrapped.sized(200.0, 90.0)])
+    layout(ui, tW2, area)
+    ok("the two are the same widget", rewrapped.id == flat.id)
+    ok("and it has kept the offset it was scrolled to",
+       ui.memoOf(mixId(rewrapped.id, 12), 0.0) > 0.0)
+    ok("but folding again puts the text back at the left",
+       editorShift(ui, rewrapped) == 0.0)
+
+    // And a click lands where it looks like it lands, which it does not if the
+    // hit test forgets the shift the painter used.
+    val col40 = ui.fonts.width("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", mono, sc)
+    val shiftNow = editorShift(ui, flat)
+    val hitAt = editorHitAt(ui, flat, (inW.x + col40) - shiftNow, inW.y + 2.0)
+    eqI("a click on a scrolled line is the character under the pointer",
+        hitAt.x.toInt(), 40)
+
     // ---- the wheel
     val tall = editor("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl", "", 3,
                       { s -> }).sized(300.0, 70.0)

@@ -431,7 +431,23 @@ public func editorInner(t: Theme, r: Rect): Rect {
 /// An editor's text, broken into lines at the width it actually has.
 public func editorLines(ui: Ui, v: View): List<Line> {
     val inner = editorInner(ui.theme, v.frame)
-    return ui.fonts.wrapLines(v.label, inner.w, ui.styleFor(v), ui.canvas.scale)
+    // An editor that does not fold long lines is the same wrapping asked for
+    // at a column nothing reaches, which leaves the breaks the author typed
+    // and adds none. One code path, not two: a second one would be a second
+    // place for the offsets to be got wrong.
+    val col = if (v.wrapsLines) { inner.w } else { 1000000000.0 }
+    return ui.fonts.wrapLines(v.label, col, ui.styleFor(v), ui.canvas.scale)
+}
+
+/// How far an editor is scrolled sideways, in points.
+///
+/// Zero for one that folds its lines, which is why it is a function rather
+/// than a memo read in five places: a folding editor has nothing to the side
+/// of it, and the arithmetic that follows the caret along a line must not run
+/// at all there.
+public func editorShift(ui: Ui, v: View): Float {
+    if (v.wrapsLines) { return 0.0 }
+    return ui.memoOf(mixId(v.id, 12), 0.0).max(0.0)
 }
 
 /// How far down an editor is scrolled, with the caret followed if it has moved
@@ -451,11 +467,24 @@ public func editorScroll(var ui: Ui, v: View, lines: List<Line>): Float {
     val n = v.label.length
     val caret = caretIn(ui, v)
     if (ui.memoOf(mixId(v.id, 9), -1.0).toInt() != caret) {
-        val top = caretRow(ui, v, lines, caret).toFloat() * lh
+        val row = caretRow(ui, v, lines, caret)
+        val top = row.toFloat() * lh
         if (top < off) { off = top }
         if ((top + lh) > (off + inner.h)) { off = top + lh - inner.h }
         off = clampF(off, 0.0, room)
         ui.setMemo(mixId(v.id, 9), caret.toFloat())
+        // And sideways, for an editor that does not fold: the caret can be
+        // anywhere along a line as long as the line is, and following it down
+        // to a row it is not visible on is following it nowhere.
+        if (not v.wrapsLines) {
+            val l = lines[row]
+            val body = v.label.substring(l.start, l.end)
+            val cx = ui.fonts.xOfIndex(body, caret - l.start, st, sc)
+            var sx = ui.memoOf(mixId(v.id, 12), 0.0)
+            if ((cx - sx) > (inner.w - 2.0)) { sx = cx - inner.w + 2.0 }
+            if (cx < sx) { sx = cx }
+            ui.setMemo(mixId(v.id, 12), sx.max(0.0))
+        }
     }
     ui.setScroll(v.id, off)
     // What the wheel needs, and it can only be known once the text has been
@@ -482,7 +511,7 @@ public func editorHitAt(ui: Ui, v: View, x: Float, y: Float): Rect {
     val row = clampI((((y - inner.y) + off) / lh).floor(), 0, lines.size - 1)
     val l = lines[row]
     val body = v.label.substring(l.start, l.end)
-    val at = l.start + ui.fonts.indexAt(body, x - inner.x, st, sc)
+    val at = l.start + ui.fonts.indexAt(body, (x - inner.x) + editorShift(ui, v), st, sc)
     return Rect(at.toFloat(), row.toFloat(), 0.0, 0.0)
 }
 
@@ -584,6 +613,10 @@ proc paintEditor(var ui: Ui, v: View) {
     val lh = ui.fonts.lineHeight(st, sc)
     val asc = ui.fonts.ascent(st, sc)
     val off = editorScroll(ui, v, lines)
+    // Read after `editorScroll`, which is what moves it: one place decides
+    // where the text sits and everything below draws where it says.
+    val shift = editorShift(ui, v)
+    val left = inner.x - shift
 
     val n = v.label.length
     val caret = caretIn(ui, v)
@@ -610,10 +643,10 @@ proc paintEditor(var ui: Ui, v: View) {
             if ((b > a) or (over > 0.0)) {
                 val x0 = ui.fonts.xOfIndex(body, a - l.start, st, sc)
                 val x1 = ui.fonts.xOfIndex(body, b - l.start, st, sc)
-                c.fillRect(Rect(inner.x + x0, y, (x1 - x0) + over, lh), t.selection)
+                c.fillRect(Rect(left + x0, y, (x1 - x0) + over, lh), t.selection)
             }
         }
-        drawRuns(ui, c, v.inkRuns, body, l.start, inner.x, y + asc, st, ink)
+        drawRuns(ui, c, v.inkRuns, body, l.start, left, y + asc, st, ink)
         i++
     }
 
@@ -625,7 +658,7 @@ proc paintEditor(var ui: Ui, v: View) {
         val period = 530.0
         ui.wakeIn(period - (ui.time % period))
         if (((ui.time / period).toInt() % 2) == 0) {
-            c.fillRect(Rect(inner.x + cx, cy + 1.0, t.hairline * 1.4, lh - 2.0), t.accent)
+            c.fillRect(Rect(left + cx, cy + 1.0, t.hairline * 1.4, lh - 2.0), t.accent)
         }
     }
     c.pop()

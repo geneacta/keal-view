@@ -288,7 +288,9 @@ checkbox("I agree", agreed.get(), { v -> agreed.set(v) })
 ```
 
 `editor` is a `field` with more room only in the way a page is a line with
-more room. Four keys change meaning: Return puts in a newline rather than
+more room. It wraps to its width unless you say `.wrappingLines(false)`, which
+is what code wants: a folded line of code reads as two, and a margin counting
+lines beside it counts the wrong ones. Four keys change meaning: Return puts in a newline rather than
 accepting, Home and End are the ends of the row the caret is on rather than of
 the whole text, Up and Down move a row and keep the column they started in,
 and a paste keeps its newlines instead of flattening them to spaces. The third

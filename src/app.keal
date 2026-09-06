@@ -402,6 +402,19 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         val was = ui.scrollOf(s.id)
         val now = clampF(was - e.dy, 0.0, room)
         if (now != was) { ui.setScroll(s.id, now); invalidate() }
+        // Sideways, for an editor that does not fold its lines. A trackpad
+        // sends this on its own; a wheel mouse sends it when Shift is held,
+        // and the platforms report that as `dx` rather than leaving it to be
+        // worked out here.
+        if (s.kind == kEditor) {
+            if (not s.wrapsLines) {
+                if (e.dx != 0.0) {
+                    val hadX = ui.memoOf(mixId(s.id, 12), 0.0)
+                    val nowX = (hadX - e.dx).max(0.0)
+                    if (nowX != hadX) { ui.setMemo(mixId(s.id, 12), nowX); invalidate() }
+                }
+            }
+        }
         return
     }
 

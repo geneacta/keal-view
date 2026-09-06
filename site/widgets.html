@@ -54,7 +54,14 @@ and work on character offsets. <code>rows</code> is how tall an editor is in lin
 that it scrolls, with the wheel or by the caret leaving the box.</p><p>An editor wraps to the width it is given. A word longer than the column is cut
 rather than left to overflow, and a click on either side of that cut puts the
 caret where it was clicked — which is not free, and is the one place in the
-text machinery where an offset alone does not say which row it is on.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
+text machinery where an offset alone does not say which row it is on.</p><p><code>.wrappingLines(false)</code> turns that off: the only breaks are the ones the author
+typed, and the editor scrolls sideways to follow the caret along a long line —
+by the caret, or by a trackpad, or by a wheel with Shift held. <strong>Use it for
+code.</strong> A line of code that folds reads as two lines: an expression breaks in
+the middle of itself, and anything counting lines beside the text counts the
+wrong ones. Leave it on for prose, which is what it is for.</p><p>Not to be confused with a label&#x27;s <code>wrapping()</code>, which is the opposite default
+for a different question — a label cuts itself with an ellipsis unless told to
+wrap.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
 editor&#x27;s text in colours of their own. <code>[start, end)</code> are offsets into the
 text; anything no run covers keeps the ordinary ink. Runs must not overlap and
 must already be in order — nothing sorts them, because whatever made them knew

@@ -115,6 +115,17 @@ rather than left to overflow, and a click on either side of that cut puts the
 caret where it was clicked — which is not free, and is the one place in the
 text machinery where an offset alone does not say which row it is on.
 
+`.wrappingLines(false)` turns that off: the only breaks are the ones the author
+typed, and the editor scrolls sideways to follow the caret along a long line —
+by the caret, or by a trackpad, or by a wheel with Shift held. **Use it for
+code.** A line of code that folds reads as two lines: an expression breaks in
+the middle of itself, and anything counting lines beside the text counts the
+wrong ones. Leave it on for prose, which is what it is for.
+
+Not to be confused with a label's `wrapping()`, which is the opposite default
+for a different question — a label cuts itself with an ellipsis unless told to
+wrap.
+
 ### Text in more than one colour
 
 `.coloured([InkRun(start, end, ink), …])` paints stretches of a field's or an

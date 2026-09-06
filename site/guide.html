@@ -169,7 +169,9 @@ hands you <code>true</code> when it is off and you were about to turn it on. It 
 flips itself — the tree is rebuilt from your state, so your state is the only
 thing that decides.</p><pre><code>checkbox(&quot;I agree&quot;, agreed.get(), { v -&gt; agreed.set(v) })
 //                  ↑ what it shows        ↑ what you do about it</code></pre><p><code>editor</code> is a <code>field</code> with more room only in the way a page is a line with
-more room. Four keys change meaning: Return puts in a newline rather than
+more room. It wraps to its width unless you say <code>.wrappingLines(false)</code>, which
+is what code wants: a folded line of code reads as two, and a margin counting
+lines beside it counts the wrong ones. Four keys change meaning: Return puts in a newline rather than
 accepting, Home and End are the ends of the row the caret is on rather than of
 the whole text, Up and Down move a row and keep the column they started in,
 and a paste keeps its newlines instead of flattening them to spaces. The third

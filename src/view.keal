@@ -128,6 +128,9 @@ public class View {
     public var index: Int = 0
     /// How many lines of text an editor is tall before it starts scrolling.
     public var rows: Int = 0
+    /// Whether an editor folds a line too long for its column on to the next
+    /// one. See `wrapping`.
+    public var wrapsLines: Bool = true
     /// Answers the pointer with `onDrag` rather than with a click.
     public var draggable: Bool = false
     /// A view that is not a control but still takes a click — what makes a
@@ -297,6 +300,25 @@ public class View {
         this.onDragEnd = drop
         return this
     }
+    /// Whether an editor folds a long line on to the next one, or keeps it as
+    /// one line and scrolls sideways to follow the caret along it.
+    ///
+    /// Folding is right for prose and wrong for code. A line of code that
+    /// wraps reads as two lines: an expression breaks in the middle of itself,
+    /// and anything counting lines beside the text — numbers in a margin, a
+    /// mark where a diagnostic is — counts the wrong ones.
+    ///
+    /// Named apart from the label's `wrapping()` just above, which is a
+    /// different question with the opposite default: a label cuts itself with
+    /// an ellipsis unless told to wrap, and an editor wraps unless told not
+    /// to. One is about a line that will not fit in a box, the other about a
+    /// document that has to keep the shape its author gave it — and a single
+    /// name over both would read as one idea.
+    public func wrappingLines(on: Bool): View {
+        this.wrapsLines = on
+        return this
+    }
+
     /// Paint parts of the label in colours of their own.
     ///
     /// `[start, end)` are offsets into the label, and anything no run covers
