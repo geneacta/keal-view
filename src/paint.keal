@@ -510,6 +510,45 @@ public func caretRow(ui: Ui, v: View, lines: List<Line>, off: Int): Int {
     return lineOfOffset(lines, off)
 }
 
+/// One line of text, with whatever stretches of it have colours of their own.
+///
+/// `runs` are offsets into the whole label and this draws one line of it, so
+/// each is clipped to `[from, from + body.length)` first. Anything no run
+/// covers is drawn in `ink`. With no runs at all this is one `draw` call and
+/// costs nothing, which is what every view but a code editor wants.
+///
+/// Each piece is placed with `xOfIndex` from the start of the line rather
+/// than by adding up the pieces before it: widths are not additive under
+/// kerning, and a caret placed by `xOfIndex` beside text placed by summation
+/// would drift apart along the line — the caret sitting visibly to one side
+/// of the letter it is between.
+proc drawRuns(var ui: Ui, var c: Canvas, runs: List<InkRun>, body: String,
+              from: Int, x: Float, base: Float, st: TextStyle, ink: Int) {
+    if (runs.size == 0) { ui.fonts.draw(c, body, x, base, st, ink); return }
+    val n = body.length
+    val to = from + n
+    var pos = 0
+    for (r in runs) {
+        if (r.end <= from) { continue }
+        if (r.start >= to) { break }
+        val a = (r.start - from).max(0).min(n)
+        val b = (r.end - from).max(0).min(n)
+        if (a > pos) {
+            ui.fonts.draw(c, body.substring(pos, a),
+                          x + ui.fonts.xOfIndex(body, pos, st, c.scale), base, st, ink)
+        }
+        if (b > a) {
+            ui.fonts.draw(c, body.substring(a, b),
+                          x + ui.fonts.xOfIndex(body, a, st, c.scale), base, st, r.ink)
+        }
+        pos = b.max(pos)
+    }
+    if (pos < n) {
+        ui.fonts.draw(c, body.drop(pos),
+                      x + ui.fonts.xOfIndex(body, pos, st, c.scale), base, st, ink)
+    }
+}
+
 proc paintEditor(var ui: Ui, v: View) {
     val t = ui.theme
     val c = ui.canvas
@@ -564,7 +603,7 @@ proc paintEditor(var ui: Ui, v: View) {
                 c.fillRect(Rect(inner.x + x0, y, (x1 - x0) + over, lh), t.selection)
             }
         }
-        ui.fonts.draw(c, body, inner.x, y + asc, st, ink)
+        drawRuns(ui, c, v.inkRuns, body, l.start, inner.x, y + asc, st, ink)
         i++
     }
 

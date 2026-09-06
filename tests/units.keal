@@ -912,6 +912,63 @@ proc editorTests() {
         eqI("a selection across three rows is painted on all three", bands, 3)
     }
 
+    // ---- stretches of the label painted in a colour of their own
+    //
+    // These read the pixels, because that is the whole of what this feature
+    // is: nothing about the tree or the dispatcher changes, only what lands
+    // on the canvas. Monospaced, so that "the third character" is a width
+    // this test can compute and not the font's opinion.
+    val red = rgb(220, 40, 40)
+    val src = "val x = 1\nval y = 2"
+    val mono = textMono(14.0)
+    val bare = editor(src, "", 3, { s -> }).font(mono).keyed("bare").sized(300.0, 90.0)
+    var tR0 = column([bare])
+    layout(ui, tR0, area)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tR0)
+    val inR0 = editorInner(ui.theme, bare.frame)
+    ok("with no runs the editor puts down no red at all", redBox(inR0).w < 0.0)
+
+    // The same text, with `val` coloured on each of the two lines.
+    val runs = [InkRun(0, 3, red), InkRun(10, 13, red)]
+    val lit0 = editor(src, "", 3, { s -> }).font(mono).keyed("lit")
+    val lit = lit0.coloured(runs).sized(300.0, 90.0)
+    var tR1 = column([lit])
+    layout(ui, tR1, area)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tR1)
+    val inR1 = editorInner(ui.theme, lit.frame)
+    val box = redBox(inR1)
+    ok("a run is painted", box.w > 0.0)
+    if (box.w > 0.0) {
+        val w3 = ui.fonts.width("val", mono, ui.canvas.scale)
+        val lh7 = ui.fonts.lineHeight(mono, ui.canvas.scale)
+        // Both runs start at column zero, so the red begins at the left edge
+        // and is three characters wide — not the width of the line, which is
+        // what a run that failed to stop at its end would give.
+        ok("it begins where the run begins", (box.x - inR1.x).abs() < 3.0)
+        ok("and stops where the run stops", (box.w - w3).abs() < 4.0)
+        // Two runs on two rows: the red must reach into the second row, which
+        // a run clipped to the first line would never do.
+        ok("a run on the second row is painted too", box.h > lh7)
+    }
+
+    // A run that stops mid-word must leave the rest of the word alone.
+    val part0 = editor("abcdef", "", 1, { s -> }).font(mono).keyed("part")
+    val part = part0.coloured([InkRun(0, 3, red)]).sized(300.0, 40.0)
+    var tR2 = column([part])
+    layout(ui, tR2, area)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tR2)
+    val inR2 = editorInner(ui.theme, part.frame)
+    val half = redBox(inR2)
+    ok("half a word is half red", half.w > 0.0)
+    if (half.w > 0.0) {
+        val w3b = ui.fonts.width("abc", mono, ui.canvas.scale)
+        val w6 = ui.fonts.width("abcdef", mono, ui.canvas.scale)
+        ok("the run stops inside the word", half.w < ((w3b + w6) / 2.0))
+    }
+
     // ---- the wheel
     val tall = editor("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl", "", 3,
                       { s -> }).sized(300.0, 70.0)
@@ -1072,6 +1129,38 @@ func blueBox(r: Rect): Rect {
         while (x < (r.x + r.w).toInt()) {
             val p = kvPxGet(x, y)
             if ((blueOf(p) - redOf(p)) > 25) {
+                if (x.toFloat() < x0) { x0 = x.toFloat() }
+                if (y.toFloat() < y0) { y0 = y.toFloat() }
+                if (x.toFloat() > x1) { x1 = x.toFloat() }
+                if (y.toFloat() > y1) { y1 = y.toFloat() }
+            }
+            x++
+        }
+        y++
+    }
+    if (x1 < 0.0) { return Rect(0.0, 0.0, 0.0 - 1.0, 0.0 - 1.0) }
+    return Rect(x0, y0, (x1 - x0) + 1.0, (y1 - y0) + 1.0)
+}
+
+/// The box that a strong red fits inside, anywhere in `r`, by the same rule
+/// `blueBox` uses and for the same reason: hue, not nearness.
+///
+/// Red is what the coloured-run tests paint with, and it is chosen because
+/// **nothing else in this framework is red.** The panel, the text and every
+/// anti-aliased blend between them have red and blue within a dozen of each
+/// other; the accent and the selection lean blue. So a pixel whose red beats
+/// its blue by 25 was put there by a run and by nothing else.
+func redBox(r: Rect): Rect {
+    var x0 = 1000000.0
+    var y0 = 1000000.0
+    var x1 = 0.0 - 1.0
+    var y1 = 0.0 - 1.0
+    var y = r.y.toInt()
+    while (y < (r.y + r.h).toInt()) {
+        var x = r.x.toInt()
+        while (x < (r.x + r.w).toInt()) {
+            val p = kvPxGet(x, y)
+            if ((redOf(p) - blueOf(p)) > 25) {
                 if (x.toFloat() < x0) { x0 = x.toFloat() }
                 if (y.toFloat() < y0) { y0 = y.toFloat() }
                 if (x.toFloat() > x1) { x1 = x.toFloat() }

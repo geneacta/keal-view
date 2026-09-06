@@ -58,6 +58,14 @@ public val primary = 1
 public val quiet = 2
 public val danger = 3
 
+/// A stretch of a label that is painted in its own colour.
+///
+/// `[start, end)` are offsets into the label. What a stretch *means* is not
+/// this framework's business — it holds a colour and nothing else, so that a
+/// lexer, a spell checker or a diff can all use the same field without any of
+/// them being named here.
+public record InkRun(public val start: Int, public val end: Int, public val ink: Int)
+
 public class View {
     public var kind: Int = 0
     public var vertical: Bool = false
@@ -141,6 +149,9 @@ public class View {
     public var placeX: Float = 0.0
     public var placeY: Float = 0.0
     public var options: List<String> = []
+    /// Stretches of the label to paint in a colour of their own — see
+    /// `coloured`.
+    public var inkRuns: List<InkRun> = []
     public var password: Bool = false
 
     public var onTap: () -> Unit = { -> }
@@ -284,6 +295,20 @@ public class View {
         this.onGrab = grab
         this.onDrag = move
         this.onDragEnd = drop
+        return this
+    }
+    /// Paint parts of the label in colours of their own.
+    ///
+    /// `[start, end)` are offsets into the label, and anything no run covers
+    /// keeps the ordinary ink. Runs must not overlap and must be in order;
+    /// nothing here sorts them, because whatever made them knows the order
+    /// already and re-deriving it every frame is work done for nobody.
+    ///
+    /// This is for text something else has already made sense of — an editor
+    /// showing code, where a lexer knows what each stretch is. keal-view has
+    /// no idea what a keyword is and should not acquire one.
+    public func coloured(runs: List<InkRun>): View {
+        this.inkRuns = runs
         return this
     }
     /// Take a click without being a control — what turns a `custom` into a
