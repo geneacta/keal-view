@@ -1,4 +1,16 @@
+<p align="center"><img src="keal-view.png" alt="keal-view" width="320"></p>
+
 # keal-view — application windows, written in Keal
+
+<!-- keal-view-band:start -->
+<p align="center">
+  <a href="https://github.com/geneacta/keal-view/releases"><img alt="version" src="https://img.shields.io/badge/version-0.1.0-3b82f6?style=flat-square&labelColor=2b2b2b"></a>
+  <a href="https://github.com/geneacta/keal-view/tree/main/src"><img alt="written in Keal" src="https://img.shields.io/badge/written%20in%20Keal-89--91%25-3b82f6?style=flat-square&labelColor=2b2b2b"></a>
+</p>
+<!-- keal-view-band:end -->
+
+<!-- keal-view-band:start -->
+<!-- keal-view-band:end -->
 
 A cross-platform GUI framework for [Keal](https://github.com/geneacta/keal),
 in which **the drawing is Keal**. Not bindings to a toolkit, not a wrapper
@@ -15,16 +27,17 @@ written in:** [keal](https://github.com/geneacta/keal) ·
 
 ```
               lines    what it is
-  Keal          5598   the whole framework: rasteriser, fonts, layout,
-                       widgets, theme, docking, menus, the run loop
-  C          690-854   one window, one event queue, and inline accessors:
-                       kv.h (281) plus one backend of three — Cocoa 409,
+  Keal          7055   the whole framework: rasteriser, fonts, layout,
+                       widgets, theme, docking, menus, pictures, the run loop
+  C          713-877   one window, one event queue, and inline accessors:
+                       kv.h (304) plus one backend of three — Cocoa 409,
                        X11 567, Win32 573
 ```
 
-**87 to 89 % of a running keal-view program is Keal**, depending on which
-backend it was built against, and none of the other 11 to 13 % puts a pixel
-anywhere.
+**89 to 91 % of a running keal-view program is Keal**, depending on which
+backend it was built against, and none of the other 9 to 11 % puts a pixel
+anywhere. The badge above is counted by `ci/band.py` from these same files, so
+it cannot drift from them.
 
 <p align="center"><img src="docs/studio.png" alt="A docked workspace" width="900"></p>
 

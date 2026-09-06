@@ -29,7 +29,13 @@ img { max-width: 100%; }
 .nav-left { display: flex; align-items: center; gap: 36px; }
 .mark { display: flex; align-items: center; gap: 10px; }
 .mark svg { display: block; }
-.mark .wm { font: 600 16px Sora, sans-serif; letter-spacing: -.01em; color: var(--ink); }
+/* The wordmark, painted through its own alpha rather than shown. The file is
+   dark teal on nothing — right on a light background and invisible on this
+   one — so the shape comes from the image and the colour from here. */
+.wordmark { display: block; width: 132px; height: 40px; background: var(--ink);
+            -webkit-mask: url(assets/keal-view.png) no-repeat center / contain;
+            mask: url(assets/keal-view.png) no-repeat center / contain; }
+.mark:hover .wordmark { background: var(--accent-h); }
 .nav-links { display: flex; gap: 26px; font: 500 14px Sora, sans-serif; flex-wrap: wrap; }
 .nav-links a { color: var(--dim); }
 .nav-links a:hover { color: var(--ink); }

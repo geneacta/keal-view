@@ -68,6 +68,11 @@ for f in shapes text calculator studio gallery todo tour; do
 done
 echo "frames drawn: $(ls -1 ./*.bmp | tr '\n' ' ')"
 
+# The badge in the README counts files in this repository, so it can only go
+# stale when somebody here changes one — which is exactly when a gate should
+# speak. It caught the headline percentage drifting the first time it ran.
+python3 "$ROOT/ci/band.py" --check
+
 # The same frame again as a PNG, because the writer is Keal and a full window
 # is the only thing that puts it over a stored block's 65535 bytes. The
 # assertions in `units` write pictures of a few hundred pixels; this writes
