@@ -912,6 +912,31 @@ proc editorTests() {
         eqI("a selection across three rows is painted on all three", bands, 3)
     }
 
+    // ---- an editor nobody has touched opens at its top
+    //
+    // The caret has a fallback for "nobody has put one here", and for a field
+    // that fallback is the end — click into something you typed before and
+    // carry on typing. An editor is a document, and a document handed to you
+    // scrolled to its last line has answered a question you did not ask.
+    // Nothing looks broken while it happens: an unfocused editor draws no
+    // caret, so the only symptom is the file starting in the wrong place.
+    val many = "l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14"
+    val fresh = editor(many, "", 3, { s -> }).keyed("fresh").sized(300.0, 70.0)
+    var tT = column([fresh])
+    layout(ui, tT, area)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tT)
+    eqF("an untouched editor is scrolled to the top", ui.scrollOf(fresh.id), 0.0)
+    eqI("and its caret is at the start, not the end", caretIn(ui, fresh), 0)
+
+    // The other half of the same rule, so that fixing one does not quietly
+    // change the other.
+    val fresh2 = field("already typed", "", { s -> }).keyed("fresh2").sized(200.0, 30.0)
+    var tU = column([fresh2])
+    layout(ui, tU, area)
+    eqI("an untouched field still puts its caret at the end",
+        caretIn(ui, fresh2), 13)
+
     // ---- stretches of the label painted in a colour of their own
     //
     // These read the pixels, because that is the whole of what this feature

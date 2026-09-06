@@ -571,9 +571,24 @@ proc caretToPointer(var ui: Ui, var v: View, e: Event, extend: Bool) {
 
 /// The line the caret is on, as an ordered pair of offsets. A field has one
 /// line and it is the whole of it; an editor has as many as the column made.
+/// Where the caret is, and where it is when nobody has put one there yet.
+///
+/// A one-line field puts it at the **end**: clicking into something you have
+/// typed before should let you carry on typing. An editor puts it at the
+/// **start**, because it holds a document and a document opens at its top.
+///
+/// Found by opening a 133-line file in an editor and being shown its last
+/// line. The caret was never drawn — an unfocused editor draws none — so
+/// nothing looked wrong except that the file began in the wrong place, which
+/// reads as a scrolling bug rather than a caret one.
+public func caretIn(ui: Ui, v: View): Int {
+    val n = v.label.length
+    return clampI(ui.caretOf(v.id, if (v.kind == kEditor) { 0 } else { n }), 0, n)
+}
+
 func lineUnder(ui: Ui, v: View): Rect {
     val n = v.label.length
-    val at = clampI(ui.caretOf(v.id, n), 0, n)
+    val at = caretIn(ui, v)
     if (v.kind != kEditor) { return Rect(0.0, n.toFloat(), 0.0, 0.0) }
     val lines = editorLines(ui, v)
     val l = lines[caretRow(ui, v, lines, at)]
@@ -598,7 +613,7 @@ proc moveCaretByLine(var ui: Ui, var v: View, down: Bool, extend: Bool) {
     val st = ui.styleFor(v)
     val sc = ui.canvas.scale
     val n = v.label.length
-    val at = clampI(ui.caretOf(v.id, n), 0, n)
+    val at = caretIn(ui, v)
     val lines = editorLines(ui, v)
     val row = caretRow(ui, v, lines, at)
     val here = lines[row]
@@ -628,7 +643,7 @@ proc moveCaretByLine(var ui: Ui, var v: View, down: Bool, extend: Bool) {
 /// The current selection, as an ordered pair of character offsets.
 func selOf(ui: Ui, v: View): Rect {
     val n = v.label.length
-    val car = clampI(ui.caretOf(v.id, n), 0, n)
+    val car = caretIn(ui, v)
     val anc = clampI(ui.anchorOf(v.id, car), 0, n)
     return Rect(car.min(anc).toFloat(), car.max(anc).toFloat(), 0.0, 0.0)
 }
@@ -662,7 +677,7 @@ proc deleteSel(var ui: Ui, var v: View, backwards: Bool) {
 
 proc moveCaret(var ui: Ui, var v: View, to: Int, extend: Bool) {
     val n = v.label.length
-    val from = clampI(ui.caretOf(v.id, n), 0, n)
+    val from = caretIn(ui, v)
     val at = clampI(to, 0, n)
     // Extending needs somewhere to extend *from*. A field reached by Tab has
     // never been clicked, so it has no anchor, and `anchorOf` would answer the
@@ -731,7 +746,7 @@ proc pressed(var ui: Ui, var root: View, e: Event) {
     }
 
     val n = f.label.length
-    val car = clampI(ui.caretOf(f.id, n), 0, n)
+    val car = caretIn(ui, f)
     val sel = selOf(ui, f)
 
     if (e.cmd()) {

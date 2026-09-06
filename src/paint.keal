@@ -443,7 +443,7 @@ public func editorScroll(var ui: Ui, v: View, lines: List<Line>): Float {
     val room = ((lines.size.toFloat() * lh) - inner.h).max(0.0)
     var off = clampF(ui.scrollOf(v.id), 0.0, room)
     val n = v.label.length
-    val caret = clampI(ui.caretOf(v.id, n), 0, n)
+    val caret = caretIn(ui, v)
     if (ui.memoOf(mixId(v.id, 9), -1.0).toInt() != caret) {
         val top = caretRow(ui, v, lines, caret).toFloat() * lh
         if (top < off) { off = top }
@@ -576,7 +576,7 @@ proc paintEditor(var ui: Ui, v: View) {
     val off = editorScroll(ui, v, lines)
 
     val n = v.label.length
-    val caret = clampI(ui.caretOf(v.id, n), 0, n)
+    val caret = caretIn(ui, v)
     val anchor = clampI(ui.anchorOf(v.id, caret), 0, n)
     val selA = caret.min(anchor)
     val selB = caret.max(anchor)
