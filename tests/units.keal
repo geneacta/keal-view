@@ -598,6 +598,12 @@ proc popupPlacementTests() {
     val app = App("t", 400, 300)
     val area = Rect(0.0, 0.0, 400.0, 300.0)
 
+    // What everything below rests on: the surface being drawn into knows how
+    // big it is, whether or not there is a window.
+    eqF("the surface is as wide as the canvas was begun", surfaceSize().w, 400.0)
+    eqF("and as tall", surfaceSize().h, 300.0)
+    eqI("with no window behind it at all", kvWidth(), 0)
+
     closePopup()
     var picked = 0 - 1
     val sel = select(["un", "deux", "trois"], 1, { i -> picked = i }).sized(140.0, 30.0)
@@ -615,13 +621,64 @@ proc popupPlacementTests() {
     eqF("asked for down the left edge of the control it belongs to",
         popupAskedAt().x, sel.frame.x)
     eqF("and just under it", popupAskedAt().y, bottom(sel.frame) + 4.0)
-    // Where it is asked for is what a dropdown decides; where it lands is
-    // `clampX` and `clampY` keeping it on screen, and they measure against the
-    // window — of which there is none here, so the layer below only says that
-    // a menu was built and placed at all.
+    // And where it lands, which is a second question: `clampX` and `clampY`
+    // keep a popup on screen, and used to measure against the *window* — of
+    // which a snapshot and a test both have none. `kvp_width` answered zero,
+    // `screen - w - 8` went negative, and every popup was pinned into the
+    // corner. They measure the surface now, which is the thing being drawn
+    // into and exists in all three cases.
     var t2 = stack([column([sel]).padAll(40.0), nothing(), popupLayer()])
     layout(ui, t2, area)
-    ok("and the menu is built and placed", firstPlaced(t2) != null)
+    val m = firstPlaced(t2)
+    ok("and the menu is built and placed", m != null)
+    if (m != null) {
+        eqF("down the left edge of the control it belongs to", m.placeX, sel.frame.x)
+        eqF("and landing just under it", m.placeY, bottom(sel.frame) + 4.0)
+    }
+    closePopup()
+
+    // Near the right edge it opens leftwards instead of half off the picture,
+    // which is the thing the clamp is for and which nothing could check while
+    // it was measuring a screen of nothing.
+    // Whether a menu overflows its window depends on how wide the font drew
+    // its longest choice, so the arithmetic is checked with numbers rather
+    // than by opening one and looking. A test that opened one would assert the
+    // typeface, and would go quietly vacuous on a machine whose letters are
+    // narrower — which is the failure that does not announce itself.
+    eqF("a popup with room stays where it was asked for", keepOn(40.0, 96.0, 400.0), 40.0)
+    eqF("one that would run off the side is pulled back",
+        keepOn(340.0, 96.0, 400.0), 296.0)
+    eqF("and one wider than the window shows its left edge",
+        keepOn(340.0, 500.0, 400.0), 8.0)
+    eqF("one asked for off the left comes back to the margin",
+        keepOn(0.0 - 20.0, 96.0, 400.0), 8.0)
+    eqF("and exactly at the margin is left there", keepOn(8.0, 96.0, 400.0), 8.0)
+    // The case this was all about. A surface of no size is the one thing
+    // nothing can be decided from, and there it does nothing — rather than
+    // computing a negative edge and pinning everything into the corner, which
+    // is what measuring the *window* did on every machine with no window.
+    eqF("a surface of no size moves nothing", keepOn(340.0, 96.0, 0.0), 340.0)
+
+    // And that the menu actually asks the surface — which the numbers above
+    // cannot show, because they are handed a screen rather than fetching one.
+    // With the old code this reached for the *window*: `kvp_width` is zero and
+    // `kvp_scale` is zero beside it, so the division gave a number that is not
+    // a number, every comparison against it was false, and the clamp quietly
+    // did nothing at all. Every popup then sat exactly where it was asked for,
+    // which is why nothing noticed — until one was asked for off the edge.
+    //
+    // A menu is never narrower than 96 points, so one asked for at 390 in a
+    // 400-point surface has to come back whatever the font did.
+    closePopup()
+    openMenu(390.0, 290.0, ["un", "deux", "trois"], 0, { i -> })
+    var t7 = stack([nothing(), nothing(), popupLayer()])
+    layout(ui, t7, area)
+    val m4 = firstPlaced(t7)
+    ok("a menu asked for past the right edge is still built", m4 != null)
+    if (m4 != null) {
+        ok("and comes back on to the surface", (m4.placeX + m4.mw) <= area.w)
+        ok("and up on to it", (m4.placeY + m4.mh) <= area.h)
+    }
     closePopup()
 
     // The same for a menu button, which had the same cycle written a different

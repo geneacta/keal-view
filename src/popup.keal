@@ -191,16 +191,29 @@ public func popupAskedAt(): Rect { return Rect(atX, atY, 0.0, 0.0) }
 
 /// Keep a popup on screen: a menu opened near the right edge opens leftwards
 /// instead of half off the window.
-func clampX(x: Float, w: Float): Float {
-    val screen = kvWidth().toFloat() / kvScale()
-    if (x + w > screen - 8.0) { return (screen - w - 8.0).max(8.0) }
-    return x.max(8.0)
-}
+func clampX(x: Float, w: Float): Float { return keepOn(x, w, surfaceSize().w) }
+func clampY(y: Float, h: Float): Float { return keepOn(y, h, surfaceSize().h) }
 
-func clampY(y: Float, h: Float): Float {
-    val screen = kvHeight().toFloat() / kvScale()
-    if (y + h > screen - 8.0) { return (screen - h - 8.0).max(8.0) }
-    return y.max(8.0)
+/// One edge of it. `screen` is the surface in points — **not** the window,
+/// which is what this asked before and which is zero when a frame is drawn
+/// without one. Both `--snapshot` and every test are that case, and the answer
+/// there was to pin every popup into the corner: `screen - size - 8` on a
+/// screen of nothing is negative, and the floor of 8 was all that was left.
+///
+/// A surface of no size is the one case nothing can be decided from, and there
+/// it leaves the position alone: not knowing where the edges are is a reason
+/// to do nothing, not a reason to move something to a corner.
+///
+/// Public for the sake of its own assertions. Whether a menu overflows depends
+/// on how wide the font drew its longest choice, so a test that only opened a
+/// menu and looked at where it landed would be asserting the typeface — and
+/// would go quietly vacuous on a machine whose letters are narrower. The
+/// arithmetic is checked here with numbers, and the wiring is checked by
+/// opening one.
+public func keepOn(at: Float, size: Float, screen: Float): Float {
+    if (screen < 1.0) { return at }
+    if (at + size > screen - 8.0) { return (screen - size - 8.0).max(8.0) }
+    return at.max(8.0)
 }
 
 func dialogLayer(t: Theme): View {

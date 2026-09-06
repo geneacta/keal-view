@@ -18,6 +18,24 @@ import "./geom.keal"
 /// curved edge's is the distance from the pixel centre to the curve, which is
 /// exact to within the curvature over one pixel. Nothing is supersampled, so
 /// there is no quality dial and no frame that is quietly cheaper than the last.
+var surfaceW = 0.0
+var surfaceH = 0.0
+
+/// How big the surface being drawn into is, in points, or a rectangle of no
+/// size before anything has begun a frame.
+///
+/// It is here rather than asked of the platform because the platform answers
+/// about the **window**, and there is not always one: `--snapshot` draws a
+/// frame with no window at all, and so does every test. `kvp_width` is zero in
+/// both, which is how a popup opened during a snapshot came to be pinned into
+/// the corner rather than placed where it was asked for — the code that keeps
+/// a menu on screen was measuring against a screen of nothing.
+///
+/// A view that has to stay inside the picture should ask this. It is set by
+/// `begin`, from the same two numbers the drawing itself uses, so it cannot
+/// describe a different surface from the one being painted.
+public func surfaceSize(): Rect { return Rect(0.0, 0.0, surfaceW, surfaceH) }
+
 public class Canvas {
     /// Device pixels per logical point.
     public var scale: Float = 1.0
@@ -38,6 +56,8 @@ public class Canvas {
         this.cx1 = w
         this.cy1 = h
         this.stack.clear()
+        surfaceW = w.toFloat() / this.scale
+        surfaceH = h.toFloat() / this.scale
     }
 
     /// The whole surface, in logical points.
