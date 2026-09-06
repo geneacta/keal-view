@@ -81,6 +81,15 @@ def main():
     text = read("README.md")
     if START not in text or END not in text:
         raise SystemExit("ci/band.py: README.md has no %s … %s markers" % (START, END))
+    # Counted, not just found. This script rewrites between the *first* start
+    # and the *first* end, so a second pair further down is a region it would
+    # never touch and never mention — which is how an empty duplicate of these
+    # two lines sat in the README through a green run of the check that owns
+    # them. A gate that cannot see a thing should refuse rather than pass.
+    if text.count(START) != 1 or text.count(END) != 1:
+        raise SystemExit("ci/band.py: README.md has %d start and %d end markers; "
+                         "there must be exactly one of each."
+                         % (text.count(START), text.count(END)))
     now = text[:text.index(START)] + band() + text[text.index(END) + len(END):]
     if "--check" in sys.argv:
         if now != text:

@@ -255,7 +255,7 @@ def page(lang, filename, title, description, body, active=None):
 <div class="wrap">
 <nav class="nav">
   <div class="nav-left">
-    <a class="mark" href="index.html"><span class="wordmark"></span></a>
+    <a class="mark" href="index.html" aria-label="keal-view"><span class="wordmark"></span></a>
     <div class="nav-links">%(links)s</div>
   </div>
   <div class="nav-right">
