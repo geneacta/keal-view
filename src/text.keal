@@ -19,6 +19,23 @@ public func text(size: Float): TextStyle { return TextStyle(size, false, false) 
 public func textBold(size: Float): TextStyle { return TextStyle(size, true, false) }
 public func textMono(size: Float): TextStyle { return TextStyle(size, false, true) }
 
+/// One line of wrapped text, as offsets into the string it came from:
+/// `[start, end)` are its characters, and `hard` says the break after it was a
+/// newline the author typed rather than the column running out.
+public record Line(public val start: Int, public val end: Int, public val hard: Bool)
+
+/// Which line an offset falls on. Offsets are given to the earlier line where
+/// two could claim one — see `wrapLines`, which arranges for that to happen
+/// only mid-word.
+public func lineOfOffset(lines: List<Line>, off: Int): Int {
+    var i = 0
+    while (i < lines.size) {
+        if (off <= lines[i].end) { return i }
+        i++
+    }
+    return (lines.size - 1).max(0)
+}
+
 /// Horizontal placement inside a box.
 public func alignStart(): Int { return 0 }
 public func alignCenter(): Int { return 1 }
@@ -171,6 +188,75 @@ public class Fonts(public var sans: Font?, public var boldFace: Font?, public va
             i++
         }
         return lines.size.toFloat() * lh
+    }
+
+    /// Break `s` into lines the way `wrap` does, but as **offsets** into the
+    /// string rather than as copies of it.
+    ///
+    /// `wrap` above is for showing text and loses where each line came from —
+    /// it rebuilds its lines with `line + " " + word`, so a run of two spaces
+    /// comes back as one and no offset survives. That is enough to draw a
+    /// paragraph and not enough to put a caret in it.
+    ///
+    /// **A break consumes its character**, the space exactly as the newline
+    /// does. So the lines partition the string: every offset from 0 to its
+    /// length belongs to exactly one line, and the question "which line is the
+    /// caret on" has one answer. Editors that keep the space at the end of the
+    /// visual line have two answers at every wrap — the end of one line and
+    /// the start of the next are the same offset — and buy their way out with
+    /// a caret *affinity*, a hidden bit saying which of the two was meant. One
+    /// consumed space is cheaper than a bit that every operation has to carry
+    /// correctly, and what it costs is a caret position nobody wants: the one
+    /// after the space that ended a line.
+    ///
+    /// One exception, and it is unavoidable: a word too long for the column is
+    /// cut mid-word, and there no character is consumed, so that one offset
+    /// does sit on two lines. It is given to the earlier of them, which is
+    /// what keeps End on the line above from landing on the line below.
+    public func wrapLines(s: String, maxW: Float, st: TextStyle, scale: Float): List<Line> {
+        val cs = s.chars()
+        val n = cs.size
+        val out: List<Line> = []
+        var start = 0
+        var i = 0
+        var w = 0.0
+        // The last space seen on the line being built, and -1 for none.
+        var space = -1
+        while (i < n) {
+            val c = cs[i]
+            if (c == "\n") {
+                out.add(Line(start, i, true))
+                i++
+                start = i
+                w = 0.0
+                space = -1
+                continue
+            }
+            val cw = this.width(c, st, scale)
+            // A space is allowed to overflow rather than to break: a line
+            // ending in a space that does not fit would otherwise wrap on
+            // nothing visible. The next real character is what breaks.
+            if ((c != " ") and ((w + cw > maxW) and (i > start))) {
+                if (space >= 0) {
+                    out.add(Line(start, space, false))
+                    start = space + 1
+                } else {
+                    out.add(Line(start, i, false))
+                    start = i
+                }
+                i = start
+                w = 0.0
+                space = -1
+                continue
+            }
+            if (c == " ") { space = i }
+            w = w + cw
+            i++
+        }
+        // Always one more, so that an empty string is one empty line and a
+        // string ending in a newline has a line after it for the caret.
+        out.add(Line(start, n, false))
+        return out
     }
 
     /// Which character boundary in `s` lies nearest `dx` points from its

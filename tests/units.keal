@@ -411,6 +411,165 @@ func firstHandle(v: View): View? {
 
 // -------------------------------------------------------------------- text
 
+/// Everything that must be true of a wrapping, whatever the font is.
+///
+/// The widths on this machine are not the widths on another, so asserting
+/// where a particular sentence breaks would be asserting the font. What is
+/// asserted instead is the property a caret depends on — the lines partition
+/// the string, and the character between two of them, when there is one, is
+/// the character that caused the break.
+proc wrapInvariants(f: Fonts, s: String, maxW: Float, st: TextStyle) {
+    val cs = s.chars()
+    val ls = f.wrapLines(s, maxW, st, 2.0)
+    val what = "wrapping at " + maxW.toInt().toString() + ": "
+    ok(what + "at least one line", ls.size > 0)
+    if (ls.size == 0) { return }
+    eqI(what + "the first line begins at nothing", ls[0].start, 0)
+    eqI(what + "the last line ends at the end", ls[ls.size - 1].end, cs.size)
+    ok(what + "nothing is broken after the last line", not ls[ls.size - 1].hard)
+
+    var rebuilt = ""
+    var bad = 0
+    var wide = 0
+    var i = 0
+    while (i < ls.size) {
+        val l = ls[i]
+        if ((l.start < 0) or ((l.end < l.start) or (l.end > cs.size))) { bad++ }
+        val body = s.substring(l.start, l.end)
+        rebuilt = rebuilt + body
+        // A line fits the column. Two exceptions, both deliberate: one
+        // character never fits anywhere narrower than itself, and a space is
+        // allowed to hang past the edge rather than wrap on something
+        // invisible.
+        if ((l.end - l.start) > 1) {
+            if (cs[l.end - 1] != " ") {
+                if (f.width(body, st, 2.0) > maxW + 0.01) { wide++ }
+            }
+        }
+        if ((i + 1) < ls.size) {
+            val nx = ls[i + 1]
+            if (nx.start == l.end) {
+                // Nothing consumed, so this was a word cut mid-word — never a
+                // newline, which always consumes itself. And the character it
+                // was cut before must not be one that a break would have eaten:
+                // a space or a newline left sitting on a boundary is an offset
+                // two lines can claim, which is the ambiguity `wrapLines`
+                // exists to avoid.
+                if (l.hard) { bad++ }
+                if (l.end < cs.size) {
+                    if ((cs[l.end] == " ") or (cs[l.end] == "\n")) { bad++ }
+                }
+            } else { if (nx.start == (l.end + 1)) {
+                val c = cs[l.end]
+                if (l.hard) {
+                    if (c != "\n") { bad++ }
+                } else {
+                    if (c != " ") { bad++ }
+                }
+                rebuilt = rebuilt + c
+            } else {
+                bad++
+            } }
+        }
+        i++
+    }
+    eqI(what + "every line follows the one before it", bad, 0)
+    eqI(what + "no line is wider than the column", wide, 0)
+    ok(what + "the lines put the string back together", rebuilt == s)
+
+    // The whole point of the offsets: every place a caret can be belongs to
+    // exactly one line, and `lineOfOffset` finds the one that contains it.
+    var off = 0
+    var lost = 0
+    while (off <= cs.size) {
+        val k = lineOfOffset(ls, off)
+        if ((k < 0) or (k >= ls.size)) {
+            lost++
+        } else {
+            if ((off < ls[k].start) or (off > ls[k].end)) { lost++ }
+        }
+        off++
+    }
+    eqI(what + "every caret position lands on a line", lost, 0)
+}
+
+proc wrapLinesTests() {
+    val f = systemFonts()
+    if (f.sans == null) {
+        println("note  no system font on this machine — the wrapping tests are skipped")
+        return
+    }
+    val st = text(13.0)
+
+    // The structure, where it does not depend on any width at all.
+    // Each of these reads a line by number after asserting how many there
+    // are, so the count is checked *and then obeyed*: an assertion that failed
+    // and then indexed past the end would take the whole suite down with it,
+    // and one wrong answer would hide every answer after it.
+    val empty = f.wrapLines("", 100.0, st, 2.0)
+    eqI("an empty string is one line", empty.size, 1)
+    if (empty.size == 1) {
+        eqI("that begins at nothing", empty[0].start, 0)
+        eqI("and ends there", empty[0].end, 0)
+    }
+
+    val nl = f.wrapLines("\n", 1000.0, st, 2.0)
+    eqI("a newline alone is two lines", nl.size, 2)
+    if (nl.size == 2) {
+        ok("the first is broken hard", nl[0].hard)
+        eqI("and the second is empty, so the caret can go after it", nl[1].start, 1)
+        eqI("with nothing on it", nl[1].end, 1)
+    }
+
+    val trail = f.wrapLines("a\n", 1000.0, st, 2.0)
+    eqI("a string ending in a newline has a line after it", trail.size, 2)
+    if (trail.size == 2) {
+        eqI("the last one empty", trail[1].end - trail[1].start, 0)
+    }
+
+    val two = f.wrapLines("line one\nline two", 1000.0, st, 2.0)
+    eqI("a newline in the middle makes two lines", two.size, 2)
+    if (two.size == 2) {
+        ok("broken hard", two[0].hard)
+        eqI("the newline itself belongs to neither", two[1].start - two[0].end, 1)
+        // `lineOfOffset` at the two ends and at the break.
+        eqI("offset zero is the first line", lineOfOffset(two, 0), 0)
+        eqI("the offset of the newline is the line before it", lineOfOffset(two, 8), 0)
+        eqI("the offset after it is the line after", lineOfOffset(two, 9), 1)
+        eqI("the very end is the last line", lineOfOffset(two, 17), 1)
+        eqI("past the end is still the last line", lineOfOffset(two, 999), 1)
+    }
+
+    val wide = f.wrapLines("hello world", 100000.0, st, 2.0)
+    eqI("a column wide enough breaks nothing", wide.size, 1)
+    if (wide.size == 1) {
+        ok("and does not claim a hard break", not wide[0].hard)
+    }
+
+    // A column one point wide cannot fit anything, so every character is its
+    // own line — except the space, which is consumed by the break it caused
+    // and so is on none of them.
+    val thin = f.wrapLines("ab cd", 1.0, st, 2.0)
+    eqI("a column narrower than a letter still gives one letter a line", thin.size, 4)
+    if (thin.size == 4) {
+        eqI("the space is consumed rather than shown", thin[1].end, 2)
+        eqI("and the line after it starts past the space", thin[2].start, 3)
+    }
+
+    // And the invariants, over strings and columns chosen to reach every
+    // branch: nothing, one letter, hard breaks at both ends, double spaces,
+    // a word longer than the column, and a column too narrow for a letter.
+    val cases = ["", "a", "\n", "a\n", "\na", "\n\n", "hello world",
+                 "one two three four five six seven", "a  b   c",
+                 "supercalifragilisticexpialidocious",
+                 "short\nand a much longer line that has to wrap\n\nlast"]
+    for (c in cases) {
+        for (w in [1.0, 8.0, 30.0, 60.0, 200.0, 100000.0]) {
+            wrapInvariants(f, c, w, st)
+        }
+    }
+}
+
 proc textTests() {
     val f = systemFonts()
     val face = f.sans
@@ -1558,6 +1717,7 @@ pngWriteTests()
 pngRefusalTests()
 interactionTests()
 textTests()
+wrapLinesTests()
 stateTests()
 numberTests()
 objectStateTests()
