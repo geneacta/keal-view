@@ -115,6 +115,28 @@ rather than left to overflow, and a click on either side of that cut puts the
 caret where it was clicked — which is not free, and is the one place in the
 text machinery where an offset alone does not say which row it is on.
 
+### Text in more than one colour
+
+`.coloured([InkRun(start, end, ink), …])` paints stretches of a field's or an
+editor's text in colours of their own. `[start, end)` are offsets into the
+text; anything no run covers keeps the ordinary ink. Runs must not overlap and
+must already be in order — nothing sorts them, because whatever made them knew
+the order and re-deriving it every frame is work done for nobody.
+
+```keal
+editor(source, "", 30, { s -> src.set(s) })
+    .coloured(tokens.get().map({ t -> InkRun(t.from, t.to, colourOf(t.kind)) }))
+```
+
+An `InkRun` holds two offsets and a colour and nothing else, so a lexer, a
+spell checker and a diff all use the same field and none of them is named in
+it. keal-view has no idea what a keyword is and should not acquire one.
+
+Honoured by `field` and `editor` and by nothing else: a `label` cuts itself
+with an ellipsis and aligns what is left, so offsets into it stop meaning what
+they said, and `secretField` ignores runs outright — its dots stand one for one
+with the characters, so colouring them would draw the shape of the password.
+
 ### Icon names
 
 `check` `close` `plus` `minus` `chevron-up` `chevron-down` `chevron-left`

@@ -569,8 +569,6 @@ proc caretToPointer(var ui: Ui, var v: View, e: Event, extend: Bool) {
     invalidate()
 }
 
-/// The line the caret is on, as an ordered pair of offsets. A field has one
-/// line and it is the whole of it; an editor has as many as the column made.
 /// Where the caret is, and where it is when nobody has put one there yet.
 ///
 /// A one-line field puts it at the **end**: clicking into something you have
@@ -586,6 +584,8 @@ public func caretIn(ui: Ui, v: View): Int {
     return clampI(ui.caretOf(v.id, if (v.kind == kEditor) { 0 } else { n }), 0, n)
 }
 
+/// The line the caret is on, as an ordered pair of offsets. A field has one
+/// line and it is the whole of it; an editor has as many as the column made.
 func lineUnder(ui: Ui, v: View): Rect {
     val n = v.label.length
     val at = caretIn(ui, v)

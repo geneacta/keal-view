@@ -389,7 +389,13 @@ proc paintField(var ui: Ui, v: View) {
             c.fillRect(Rect(inner.x + a - shift, inner.y + (inner.h - lh) / 2.0, b - a, lh),
                        t.selection)
         }
-        ui.fonts.draw(c, shown, inner.x - shift, baseline, st, ui.inkFor(v))
+        // A field takes coloured runs as an editor does — the two share every
+        // other thing that works on offsets, and a rule that held in one and
+        // not the other would be a rule nobody could remember. Never on a
+        // secret field: the dots stand one for one with the characters, so
+        // colouring them would draw the shape of the password.
+        val runs = if (v.password) { emptyRuns() } else { v.inkRuns }
+        drawRuns(ui, c, runs, shown, 0, inner.x - shift, baseline, st, ui.inkFor(v))
         if (focused) {
             // A caret that blinks means a frame drawn with nothing having
             // happened — so the loop is told to expect one, and told **when**.
@@ -509,6 +515,10 @@ public func caretRow(ui: Ui, v: View, lines: List<Line>, off: Int): Int {
     }
     return lineOfOffset(lines, off)
 }
+
+/// No runs at all, named so that a caller can say it means none rather than
+/// building an empty list at a place that is drawn every frame.
+public func emptyRuns(): List<InkRun> { return [] }
 
 /// One line of text, with whatever stretches of it have colours of their own.
 ///

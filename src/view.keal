@@ -307,6 +307,12 @@ public class View {
     /// This is for text something else has already made sense of — an editor
     /// showing code, where a lexer knows what each stretch is. keal-view has
     /// no idea what a keyword is and should not acquire one.
+    ///
+    /// Honoured by `field` and `editor`, and by nothing else. A `label` cuts
+    /// itself with an ellipsis and aligns what is left, so offsets into it
+    /// stop meaning what they said; `secretField` ignores runs outright,
+    /// because its dots stand one for one with the characters and colouring
+    /// them would draw the shape of the password.
     public func coloured(runs: List<InkRun>): View {
         this.inkRuns = runs
         return this

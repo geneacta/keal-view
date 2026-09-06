@@ -994,6 +994,37 @@ proc editorTests() {
         ok("the run stops inside the word", half.w < ((w3b + w6) / 2.0))
     }
 
+    // A field takes runs too, because it shares everything else that works on
+    // offsets and a rule that held in one and not the other is a rule nobody
+    // could remember. Before this, `coloured` on a field was accepted, stored
+    // and silently ignored — the worst of the three things an unsupported
+    // option can do.
+    val fld0 = field("abcdef", "", { s -> }).font(mono).keyed("cfld")
+    val cfld = fld0.coloured([InkRun(0, 3, red)]).sized(200.0, 34.0)
+    var tR3 = column([cfld])
+    layout(ui, tR3, area)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tR3)
+    val inR3 = Rect(cfld.frame.x, cfld.frame.y, cfld.frame.w, cfld.frame.h)
+    val fbox = redBox(inR3)
+    ok("a field paints a run as an editor does", fbox.w > 0.0)
+    if (fbox.w > 0.0) {
+        val w3c = ui.fonts.width("abc", mono, ui.canvas.scale)
+        val w6c = ui.fonts.width("abcdef", mono, ui.canvas.scale)
+        ok("and stops where the run stops", fbox.w < ((w3c + w6c) / 2.0))
+    }
+
+    // Never on a secret field. Its dots stand one for one with the
+    // characters, so a run would draw the shape of the password.
+    val sec0 = secretField("abcdef", "", { s -> }).font(mono).keyed("csec")
+    val sec = sec0.coloured([InkRun(0, 3, red)]).sized(200.0, 34.0)
+    var tR4 = column([sec])
+    layout(ui, tR4, area)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tR4)
+    ok("a secret field paints no run at all",
+       redBox(Rect(sec.frame.x, sec.frame.y, sec.frame.w, sec.frame.h)).w < 0.0)
+
     // ---- the wheel
     val tall = editor("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl", "", 3,
                       { s -> }).sized(300.0, 70.0)
