@@ -219,6 +219,14 @@ The lesson generalises to any backend you write: the question is not whether
 your text events are right, it is whether you make one where there should be
 none.
 
+**Run on: macOS.** Not yet on Windows or on Linux. Reading both backends says
+neither can have this defect — but reading is exactly what missed it on macOS
+for a week, so until somebody has pressed the keys the answer for those two is
+*probably*, and it is written here as *probably* rather than in the table as
+*verified*. A Wayland session cannot press its own keys: `XTest` is advertised
+there and inert behind the portal, so this test needs a person and not a
+harness.
+
 ## 2½. Before you report an input problem, run the control
 
 Both false positives in this project's first two test passes came from the

@@ -165,7 +165,13 @@ because <strong>nobody had ever pressed an arrow key in a keal-view window on th
 platform.</strong> Everything there had gone through <code>--snapshot</code>, or through
 synthesised events above the backend, and this was the backend inventing one.</p><p>The lesson generalises to any backend you write: the question is not whether
 your text events are right, it is whether you make one where there should be
-none.</p><h2 id="2-before-you-report-an-input-problem-run-the-control">2½. Before you report an input problem, run the control</h2><p>Both false positives in this project&#x27;s first two test passes came from the
+none.</p><p><strong>Run on: macOS.</strong> Not yet on Windows or on Linux. Reading both backends says
+neither can have this defect — but reading is exactly what missed it on macOS
+for a week, so until somebody has pressed the keys the answer for those two is
+<em>probably</em>, and it is written here as <em>probably</em> rather than in the table as
+<em>verified</em>. A Wayland session cannot press its own keys: <code>XTest</code> is advertised
+there and inert behind the portal, so this test needs a person and not a
+harness.</p><h2 id="2-before-you-report-an-input-problem-run-the-control">2½. Before you report an input problem, run the control</h2><p>Both false positives in this project&#x27;s first two test passes came from the
 harness rather than the framework, and both were caught the same way: doing
 the same thing to a program that is known to work.</p><p>Arrow keys sent with <code>SendInput</code> and no <code>KEYEVENTF_EXTENDEDKEY</code> are treated as
 the numeric keypad&#x27;s, and Windows then cancels the Shift around them — so

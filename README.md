@@ -311,8 +311,19 @@ rather than failing silently — which was the failure mode worth fearing. What
 remains is one pair of eyes on a screen at 125 % or more, confirming that
 everything is larger and still sharp.
 
-Four things remain unverified, and they are recorded rather than glossed —
+Five things remain unverified, and they are recorded rather than glossed —
 each of them unverifiable by the person who would have to do it:
+
+* **that a navigation key types nothing, on Windows and on Linux.** The check
+  is `tests/bench.keal` and §2⅜ of the porting guide, it takes a minute, and it
+  has been run only on macOS — where it found a defect that had been there
+  since the first day. Reading says neither of the other two backends can have
+  it: Windows sends no `WM_CHAR` for a key that types nothing, and
+  `Xutf8LookupString` answers no bytes for one, so the guard is not even
+  reached. Reading is what missed it on macOS for a week, so the reading is
+  recorded as reading. The Linux machine is a Wayland session and cannot press
+  its own keys — `XTest` is advertised and inert behind the portal — so this
+  one needs a hand on a keyboard.
 
 * **display scaling as it looks**, on Windows. Both testers had screens at
   100 %, and changing someone's display settings is not a tester's call. The
