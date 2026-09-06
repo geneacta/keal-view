@@ -15,6 +15,20 @@ import "./view.keal"
 /// next keystroke. It lives here instead, in a map keyed by the identity
 /// `layout` derives from each node's place in the tree, so a widget finds its
 /// own state again on the next frame without the application having to hold it.
+/// One editor's text, as it was broken into lines, beside everything the
+/// breaking depended on. See `Ui.wrappedOf`.
+public class Wrapped(public val text: String, public val col: Float,
+                     public val size: Float, public val bold: Bool,
+                     public val mono: Bool, public val lines: List<Line>) {
+    public func stillHolds(text: String, col: Float, st: TextStyle): Bool {
+        if (this.col != col) { return false }
+        if (this.size != st.size) { return false }
+        if (this.bold != st.bold) { return false }
+        if (this.mono != st.mono) { return false }
+        return this.text == text
+    }
+}
+
 public class Ui(public var canvas: Canvas, public var fonts: Fonts, public var theme: Theme) {
     public var pointer: Pointer = Pointer()
 
@@ -37,6 +51,7 @@ public class Ui(public var canvas: Canvas, public var fonts: Fonts, public var t
 
     /// Retained per-widget state, keyed by node identity.
     var scrollY: Map<Int, Float> = {}
+    var wraps: Map<Int, Wrapped> = {}
     var caret: Map<Int, Int> = {}
     var anchor: Map<Int, Int> = {}
     var scratch: Map<Int, Float> = {}
@@ -58,6 +73,31 @@ public class Ui(public var canvas: Canvas, public var fonts: Fonts, public var t
     public var nextFrameIn: Float = -1.0
 
     // ------------------------------------------------------- retained state
+
+    /// The lines an editor's text was last broken into, and what it was broken
+    /// against.
+    ///
+    /// Wrapping asks the font for the width of every character, and an editor
+    /// wraps its **whole** document to know which row anything is on — the row
+    /// a caret is on depends on every line above it. A five-thousand-line file
+    /// cost 61 ms a frame doing that, four times over: the painter, the hit
+    /// test, `lineUnder` and `moveCaretByLine` each asked separately, and a
+    /// blinking caret asked twice a second with nothing changed at all.
+    ///
+    /// So it is kept, and thrown away when any of the four things it depends
+    /// on has moved. The text is compared whole, because a length and a width
+    /// would agree while a character was typed over a selection of one — a
+    /// string comparison is a walk over bytes, and what it saves is a walk
+    /// over glyphs, which is a hundred times the work.
+    public func wrappedOf(id: Int): Wrapped? { return this.wraps[id] }
+    public proc setWrapped(id: Int, w: Wrapped) {
+        // Bounded, for the same reason the glyph cache is: identity comes from
+        // a node's place in the tree, and a list of editors that grows leaves
+        // an entry behind for every one that has ever existed. Editors are few,
+        // so the bound is small and being over it means something is wrong.
+        if (this.wraps.size > 64) { this.wraps = {} }
+        this.wraps[id] = w
+    }
 
     public func scrollOf(id: Int): Float { return this.scrollY[id] ?: 0.0 }
     public proc setScroll(id: Int, v: Float) { this.scrollY[id] = v }

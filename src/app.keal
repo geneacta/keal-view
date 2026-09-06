@@ -599,7 +599,7 @@ public func caretIn(ui: Ui, v: View): Int {
 
 /// The line the caret is on, as an ordered pair of offsets. A field has one
 /// line and it is the whole of it; an editor has as many as the column made.
-func lineUnder(ui: Ui, v: View): Rect {
+func lineUnder(var ui: Ui, v: View): Rect {
     val n = v.label.length
     val at = caretIn(ui, v)
     if (v.kind != kEditor) { return Rect(0.0, n.toFloat(), 0.0, 0.0) }

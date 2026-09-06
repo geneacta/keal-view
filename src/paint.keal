@@ -429,14 +429,25 @@ public func editorInner(t: Theme, r: Rect): Rect {
 }
 
 /// An editor's text, broken into lines at the width it actually has.
-public func editorLines(ui: Ui, v: View): List<Line> {
+public func editorLines(var ui: Ui, v: View): List<Line> {
     val inner = editorInner(ui.theme, v.frame)
     // An editor that does not fold long lines is the same wrapping asked for
     // at a column nothing reaches, which leaves the breaks the author typed
     // and adds none. One code path, not two: a second one would be a second
     // place for the offsets to be got wrong.
     val col = if (v.wrapsLines) { inner.w } else { 1000000000.0 }
-    return ui.fonts.wrapLines(v.label, col, ui.styleFor(v), ui.canvas.scale)
+    val st = ui.styleFor(v)
+    val had = ui.wrappedOf(v.id)
+    if (had != null) {
+        if (had.stillHolds(v.label, col, st)) { return had.lines }
+    }
+    val lines = if (v.wrapsLines) {
+                    ui.fonts.wrapLines(v.label, col, st, ui.canvas.scale)
+                } else {
+                    hardLines(v.label)
+                }
+    ui.setWrapped(v.id, Wrapped(v.label, col, st.size, st.bold, st.mono, lines))
+    return lines
 }
 
 /// How far an editor is scrolled sideways, in points.
@@ -501,7 +512,7 @@ public func editorScroll(var ui: Ui, v: View, lines: List<Line>): Float {
 /// click at the left edge of the second row would come back as the right edge
 /// of the first. Answered as a pair, in the way the rest of this framework
 /// answers a pair — `x` is the offset and `y` is the row.
-public func editorHitAt(ui: Ui, v: View, x: Float, y: Float): Rect {
+public func editorHitAt(var ui: Ui, v: View, x: Float, y: Float): Rect {
     val st = ui.styleFor(v)
     val sc = ui.canvas.scale
     val inner = editorInner(ui.theme, v.frame)

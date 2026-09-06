@@ -24,6 +24,36 @@ public func textMono(size: Float): TextStyle { return TextStyle(size, false, tru
 /// newline the author typed rather than the column running out.
 public record Line(public val start: Int, public val end: Int, public val hard: Bool)
 
+/// The lines an author typed, and no others — `wrapLines` at a column
+/// nothing reaches, arrived at without asking the font anything.
+///
+/// `wrapLines` measures every character to find out where a line runs out
+/// of room. An editor that does not fold has no column to run out of, so
+/// all that measuring produces the newlines that were already there. On a
+/// five-thousand-line file that was **66 ms of every keystroke**, spent
+/// discovering that a break happens where a break was typed.
+///
+/// The two must agree exactly, and are asserted to over the same strings
+/// the wrapping invariants use — the offsets a caret, a selection, a hit
+/// test and a coloured run all stand on come from one or the other
+/// depending on a flag, and a flag that changes what an offset means would
+/// be the worst defect in this file.
+public func hardLines(s: String): List<Line> {
+    val out: List<Line> = []
+    val cs = s.chars()
+    var start = 0
+    var i = 0
+    while (i < cs.size) {
+        if (cs[i] == "\n") {
+            out.add(Line(start, i, true))
+            start = i + 1
+        }
+        i++
+    }
+    out.add(Line(start, cs.size, false))
+    return out
+}
+
 /// Which line an offset falls on. Offsets are given to the earlier line where
 /// two could claim one — see `wrapLines`, which arranges for that to happen
 /// only mid-word.

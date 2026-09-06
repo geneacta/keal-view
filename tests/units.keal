@@ -568,6 +568,30 @@ proc wrapLinesTests() {
             wrapInvariants(f, c, w, st)
         }
     }
+
+    // `hardLines` is `wrapLines` at a column nothing reaches, done without
+    // asking the font anything. They must agree exactly: which of the two an
+    // editor uses is a flag, and a flag that changed what an offset means
+    // would be the worst defect in the text machinery — the caret, the
+    // selection, the hit test and the coloured runs all stand on those
+    // numbers. Compared over the same strings as the invariants above.
+    var apart = 0
+    for (c in cases) {
+        val slow = f.wrapLines(c, 1000000000.0, st, 2.0)
+        val fast = hardLines(c)
+        if (slow.size != fast.size) {
+            apart++
+        } else {
+            var i = 0
+            while (i < slow.size) {
+                if (slow[i].start != fast[i].start) { apart++ }
+                if (slow[i].end != fast[i].end) { apart++ }
+                if (slow[i].hard != fast[i].hard) { apart++ }
+                i++
+            }
+        }
+    }
+    eqI("the fast path and the slow one break at the same places", apart, 0)
 }
 
 /// The first view in a tree that was `placed` at a point — how a test finds
@@ -1024,6 +1048,44 @@ proc editorTests() {
     paint(ui, tR4)
     ok("a secret field paints no run at all",
        redBox(Rect(sec.frame.x, sec.frame.y, sec.frame.w, sec.frame.h)).w < 0.0)
+
+    // ---- what is kept between frames, and when it stops being true
+    //
+    // Wrapping a whole document asks the font for the width of every
+    // character, so it is kept per widget between frames. Which makes *when it
+    // is thrown away* the only thing worth asserting about it — a wrapping
+    // that is never recomputed is an editor that shows the line breaks of the
+    // text it had a keystroke ago. Both of these were watched failing against
+    // a cache that never expired.
+    val keptA = editor("one two three", "", 3, { s -> }).font(mono).keyed("kept")
+    var tK1 = column([keptA.sized(300.0, 90.0)])
+    layout(ui, tK1, area)
+    eqI("a short text is one row", editorLines(ui, keptA).size, 1)
+
+    // The column first, and with the *same text*, which is the point: nothing
+    // about the text changed, so a cache watching only the text would hold and
+    // the editor would keep line breaks measured against a box it no longer
+    // has. Putting the edited text before this one hid it — the cache missed
+    // on the text and re-wrapped for the wrong reason, and the assertion
+    // passed while proving nothing.
+    val keptC = editor("one two three", "", 3, { s -> }).font(mono).keyed("kept")
+    var tK3 = column([keptC.sized(70.0, 90.0)])
+    layout(ui, tK3, area)
+    ok("the same text in a narrower box is broken again", editorLines(ui, keptC).size > 1)
+
+    // The style, the same way: same text, same box, bigger letters.
+    val keptD = editor("one two three", "", 3, { s -> }).font(textMono(30.0)).keyed("kept")
+    var tK4 = column([keptD.sized(70.0, 90.0)])
+    layout(ui, tK4, area)
+    ok("and so is the same text in bigger letters",
+       editorLines(ui, keptD).size > editorLines(ui, keptC).size)
+
+    // And the text, which is every keystroke.
+    val keptB = editor("one two three\nfour\nfive", "", 3, { s -> }).font(textMono(30.0)).keyed("kept")
+    var tK2 = column([keptB.sized(70.0, 90.0)])
+    layout(ui, tK2, area)
+    ok("the same widget after an edit", keptB.id == keptA.id)
+    ok("is broken again, not remembered", editorLines(ui, keptB).size > editorLines(ui, keptD).size)
 
     // ---- a line of code is a line, however long it is
     //
