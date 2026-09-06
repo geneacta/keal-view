@@ -493,6 +493,105 @@ proc wrapInvariants(f: Fonts, s: String, maxW: Float, st: TextStyle) {
     eqI(what + "every caret position lands on a line", lost, 0)
 }
 
+/// A tab, and the other characters that are not letters.
+///
+/// The rule lives in one function because five ask it — `width`, `draw`,
+/// `xOfIndex`, `indexAt` and `wrapLines` — and the caret sits where their
+/// answers agree. So what is asserted is the agreement, not the number.
+proc controlCharTests() {
+    val f = systemFonts()
+    if (f.sans == null) {
+        println("note  no system font on this machine — the tab tests are skipped")
+        return
+    }
+    val st = textMono(14.0)
+    val sp = f.width(" ", st, 2.0)
+    ok("a space has a width at all", sp > 0.1)
+
+    // A tab is four spaces, and it is that in every function rather than in
+    // one. Most fonts draw a notdef box for a tab, and a file indented with
+    // them collapsed into two columns where eight should have been.
+    eqF("a tab is four spaces wide", f.width("\t", st, 2.0), sp * 4.0)
+    eqF("and two tabs are eight", f.width("\t\t", st, 2.0), sp * 8.0)
+    eqF("in the middle of a line as well",
+        f.width("a\tb", st, 2.0), f.width("ab", st, 2.0) + (sp * 4.0))
+
+    // The same answer through the other four. `xOfIndex` is what places the
+    // caret and `indexAt` is what a click asks; they must agree with `width`
+    // or the caret sits beside the letter it is between.
+    eqF("the caret after a tab is four spaces along",
+        f.xOfIndex("\tx", 1, st, 2.0), sp * 4.0)
+    // Just past the tab, and not at 4.5 spaces: in a monospaced face that is
+    // exactly the middle of the `x`, which is the boundary `indexAt` rounds at
+    // — a test sitting on it is asserting the rounding rule and not the tab.
+    eqI("and a click just past it is the character after it",
+        f.indexAt("\tx", sp * 4.1, st, 2.0), 1)
+    eqI("and a click inside it is the character before",
+        f.indexAt("\tx", sp * 1.0, st, 2.0), 0)
+    val wrapped = f.wrapLines("\t\t\t\tx", sp * 6.0, st, 2.0)
+    ok("wrapping counts a tab as four spaces too", wrapped.size > 1)
+
+    // A carriage return and the other C0 controls take no room and draw
+    // nothing. A stray `\r` from a Windows file measured a whole character
+    // wide on one font and nothing on another, and drew a box on both.
+    eqF("a carriage return takes no room", f.width("\r", st, 2.0), 0.0)
+    eqF("nor does a bell", f.width("\u{0007}", st, 2.0), 0.0)
+    eqF("so a line with one in it measures as the line without",
+        f.width("ab\rc", st, 2.0), f.width("abc", st, 2.0))
+    eqF("and DEL takes none either", f.width("\u{007f}", st, 2.0), 0.0)
+
+    // And now the half that measuring cannot see. `width` and `draw` walk the
+    // characters separately, and the caret is placed by the first while the
+    // letters are put down by the second — so a tab that is four spaces to one
+    // and one glyph to the other puts the caret nowhere near the letter it is
+    // between. Two mutations of `draw` passed every assertion above.
+    val ui = testUi()
+    val page = Rect(0.0, 0.0, 400.0, 300.0)
+    val mono14 = textMono(14.0)
+    val sp1 = ui.fonts.width(" ", mono14, ui.canvas.scale)
+    val ink = ui.theme.textPrimary
+
+    ui.canvas.clear(ui.theme.bg)
+    ui.fonts.draw(ui.canvas, "x", 10.0, 30.0, mono14, ink)
+    val plain = firstInkX(page, ui.theme.bg)
+    ok("a letter drawn alone leaves ink", plain > 0.0)
+
+    ui.canvas.clear(ui.theme.bg)
+    ui.fonts.draw(ui.canvas, "\tx", 10.0, 30.0, mono14, ink)
+    val tabbed = firstInkX(page, ui.theme.bg)
+    ok("a tab draws no box of its own", tabbed > (plain + (sp1 * 2.0)))
+    ok("and moves the letter after it four spaces",
+       (tabbed - plain - (sp1 * 4.0)).abs() < 2.0)
+
+    ui.canvas.clear(ui.theme.bg)
+    ui.fonts.draw(ui.canvas, "\rx", 10.0, 30.0, mono14, ink)
+    val cr = firstInkX(page, ui.theme.bg)
+    ok("a carriage return draws nothing and moves nothing",
+       (cr - plain).abs() < 2.0)
+}
+
+/// The leftmost column in `r` carrying anything that is not the background.
+/// Answers -1 when nothing was put down.
+func firstInkX(r: Rect, bg: Int): Float {
+    var y = r.y.toInt()
+    var best = 0.0 - 1.0
+    while (y < (r.y + r.h).toInt()) {
+        var x = r.x.toInt()
+        while (x < (r.x + r.w).toInt()) {
+            val p = kvPxGet(x, y)
+            val dr = (redOf(p) - redOf(bg)).abs()
+            val dg = (greenOf(p) - greenOf(bg)).abs()
+            val db = (blueOf(p) - blueOf(bg)).abs()
+            if ((dr + dg + db) > 24) {
+                if ((best < 0.0) or (x.toFloat() < best)) { best = x.toFloat() }
+            }
+            x++
+        }
+        y++
+    }
+    return best
+}
+
 proc wrapLinesTests() {
     val f = systemFonts()
     if (f.sans == null) {
@@ -2420,6 +2519,7 @@ pngRefusalTests()
 interactionTests()
 textTests()
 wrapLinesTests()
+controlCharTests()
 editorTests()
 popupPlacementTests()
 stateTests()

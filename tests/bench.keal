@@ -24,7 +24,11 @@ import "../keal-view.keal"
 /// Delete with nothing selected at the end of the text; if the number moves,
 /// the backend is inventing text events.
 val ctl = state("")
-val doc = state("func first(a: Int, b: Int): Int {\n    return a + b\n}\n\nval second = 12345")
+// Indented with **tabs**, deliberately. Most faces have a glyph for U+0009
+// and it is a notdef box, so a file like this collapsed into two columns
+// where eight should have been — and a tab is content, so it cannot be
+// dropped the way a stray carriage return can.
+val doc = state("func first(a: Int, b: Int): Int {\n\tval c = a + b\n\tif (c > 10) {\n\t\treturn c\n\t}\n\treturn 0\n}")
 val app = App("handtest", 560, 340)
 
 app.build = { ->

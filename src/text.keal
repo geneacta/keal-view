@@ -90,13 +90,51 @@ public class Fonts(public var sans: Font?, public var boldFace: Font?, public va
         return this.boldFace ?: this.mono
     }
 
+    /// How many spaces wide a tab is drawn.
+    ///
+    /// An **advance**, not a tab stop, and the difference is the whole design.
+    /// A stop's width depends on the column the tab starts at, so `width(s)`
+    /// would stop being a function of `s` alone — and `drawRuns` measures a
+    /// piece of a line with `xOfIndex` and then draws that piece by itself, so
+    /// a piece containing a tab would be measured from one origin and drawn
+    /// from another. The caret is placed by `xOfIndex` and the text by `draw`:
+    /// the two would come apart along the line, which is the same failure as a
+    /// hit test that forgets a shift.
+    ///
+    /// A fixed advance keeps `width`, `draw`, `xOfIndex`, `indexAt` and
+    /// `wrapLines` consistent with no new argument anywhere. It is right for
+    /// indentation, which is what a tab is for in code, and wrong only for a
+    /// tab used mid-line as a column separator — which is rare and was never
+    /// well defined.
+    public func tabWidth(): Int { return 4 }
+
+    /// How far one character moves the pen, in device pixels, and whether
+    /// there is anything to draw for it.
+    ///
+    /// Written once because five functions ask it and the caret sits where the
+    /// answers agree. A tab and a newline have glyphs in most fonts and they
+    /// are notdef boxes: a tab-indented file drew two boxes where eight
+    /// columns should have been, which is unreadable rather than merely ugly,
+    /// and a tab is content so it cannot be dropped the way a stray carriage
+    /// return can. Every other C0 control takes no room and draws nothing.
+    func penFor(f: Font, cp: Int, px: Float): Float {
+        if (cp == 9) { return advanceOf(f, 32, px) * this.tabWidth().toFloat() }
+        if (cp < 32) { return 0.0 }
+        if (cp == 127) { return 0.0 }
+        return advanceOf(f, cp, px)
+    }
+
+    /// Whether a character has ink of its own. The controls above never do,
+    /// whatever the face happens to have drawn for them.
+    func inked(cp: Int): Bool { return (cp >= 32) and (cp != 127) }
+
     /// How wide the string is, in points, at `scale` device pixels per point.
     public func width(s: String, st: TextStyle, scale: Float): Float {
         val f = this.faceFor(st)
         if (f == null) { return 0.0 }
         val px = st.size * scale
         var w = 0.0
-        for (ch in s.chars()) { w = w + advanceOf(f, ch.code(), px) }
+        for (ch in s.chars()) { w = w + this.penFor(f, ch.code(), px) }
         return w / scale
     }
 
@@ -125,9 +163,16 @@ public class Fonts(public var sans: Font?, public var boldFace: Font?, public va
         var pen = x * scale
         val by = (baseline * scale).round()
         for (ch in s.chars()) {
-            val g = f.glyphOf(ch.code(), px)
-            if (g.mask != 0) { c.mask(g.mask, g.w, g.h, pen.round() + g.left, by - g.top, col) }
-            pen = pen + g.advance
+            val cp = ch.code()
+            // The advance comes from `penFor` and never from the glyph, so
+            // that what is drawn and what is measured cannot disagree — a
+            // caret is placed by measuring and the letters by drawing, and
+            // they sit beside each other.
+            if (this.inked(cp)) {
+                val g = f.glyphOf(cp, px)
+                if (g.mask != 0) { c.mask(g.mask, g.w, g.h, pen.round() + g.left, by - g.top, col) }
+            }
+            pen = pen + this.penFor(f, cp, px)
         }
         return pen / scale
     }
@@ -291,6 +336,10 @@ public class Fonts(public var sans: Font?, public var boldFace: Font?, public va
 
     /// Which character boundary in `s` lies nearest `dx` points from its
     /// start — the caret position a click asks for.
+    ///
+    /// It measures with `width`, so a tab is four spaces here exactly as it is
+    /// everywhere else, and a click lands between the same two characters the
+    /// caret would be drawn between.
     public func indexAt(s: String, dx: Float, st: TextStyle, scale: Float): Int {
         val cs = s.chars()
         var w = 0.0

@@ -30,7 +30,7 @@ written in:** [keal](https://github.com/geneacta/keal) ·
 <!-- keal-view-count:start -->
 ```
               lines    what it is
-  Keal          7776   the whole framework: rasteriser, fonts, layout,
+  Keal          7825   the whole framework: rasteriser, fonts, layout,
                        widgets, theme, docking, menus, pictures, the run loop
   C          737-877   one window, one event queue, and inline accessors:
                        kv.h (304) plus one backend of three — Cocoa 433,

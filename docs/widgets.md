@@ -126,6 +126,13 @@ Not to be confused with a label's `wrapping()`, which is the opposite default
 for a different question — a label cuts itself with an ellipsis unless told to
 wrap.
 
+A **tab** moves the pen four spaces and draws nothing; every other C0 control
+and DEL take no room and draw nothing at all. Four spaces is an *advance* and
+not a tab stop: a stop's width depends on the column it starts at, which would
+make the width of a string depend on where the string begins, and the caret —
+placed by measuring — would come away from the letters, which are placed by
+drawing.
+
 ### Text in more than one colour
 
 `.coloured([InkRun(start, end, ink), …])` paints stretches of a field's or an

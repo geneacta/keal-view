@@ -61,7 +61,12 @@ code.</strong> A line of code that folds reads as two lines: an expression break
 the middle of itself, and anything counting lines beside the text counts the
 wrong ones. Leave it on for prose, which is what it is for.</p><p>Not to be confused with a label&#x27;s <code>wrapping()</code>, which is the opposite default
 for a different question — a label cuts itself with an ellipsis unless told to
-wrap.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
+wrap.</p><p>A <strong>tab</strong> moves the pen four spaces and draws nothing; every other C0 control
+and DEL take no room and draw nothing at all. Four spaces is an <em>advance</em> and
+not a tab stop: a stop&#x27;s width depends on the column it starts at, which would
+make the width of a string depend on where the string begins, and the caret —
+placed by measuring — would come away from the letters, which are placed by
+drawing.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
 editor&#x27;s text in colours of their own. <code>[start, end)</code> are offsets into the
 text; anything no run covers keeps the ordinary ink. Runs must not overlap and
 must already be in order — nothing sorts them, because whatever made them knew
