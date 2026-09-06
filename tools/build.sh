@@ -36,13 +36,11 @@ case $(uname -s) in
   MINGW*|MSYS*|CYGWIN*|Windows_NT)
     BACKEND=$ROOT/runtime/kv_win32.c
     LINK="-lgdi32 -luser32"
-    # MinGW-w64 ships `gcc` and no `cc` at all, so the Unix default is not a
-    # default here.
-    CC=${CC:-gcc}
     ;;
   *) echo "keal-view has no backend for $(uname -s)" >&2; exit 1 ;;
 esac
-CC=${CC:-cc}
+. "$ROOT/tools/cc.sh"
+CC=$(kv_cc)
 
 OBJ=$OUT/$(basename "$BACKEND" | sed 's/\.[^.]*$//').o
 if [ ! -f "$OBJ" ] || [ "$BACKEND" -nt "$OBJ" ] || [ "$ROOT/runtime/kv.h" -nt "$OBJ" ]; then

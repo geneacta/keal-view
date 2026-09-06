@@ -36,10 +36,15 @@ echo "compiler: $("$KEAL_BIN" version) at $KEAL_BIN"
 # itself as one of these three and went unread: a call to a function that was
 # never declared, a pointer where an integer was expected, an integer where a
 # pointer was.
+. "$ROOT/tools/cc.sh"
+# Said before the loop, so that a missing compiler is a missing compiler and
+# not six identical accusations against the code generator.
+command -v "$(kv_cc)" >/dev/null 2>&1 || {
+  echo "no C compiler: $(kv_cc) is not on the path — set CC" >&2; exit 1; }
 CHECK=$ROOT/build/emit-check.c
 for prog in tests/units examples/gallery examples/studio examples/calculator examples/todo examples/tour; do
   "$KEAL_BIN" emit-c "$ROOT/$prog.keal" > "$CHECK" 2>/dev/null
-  "${CC:-cc}" -fsyntax-only -std=c11 -I"$ROOT/runtime" \
+  "$(kv_cc)" -fsyntax-only -std=c11 -I"$ROOT/runtime" \
       -Werror=implicit-function-declaration \
       -Werror=incompatible-pointer-types \
       -Werror=int-conversion \
