@@ -700,7 +700,19 @@ proc editorTests() {
     }
 
     // ---- the column a run of Up and Down is trying to keep
-    val goal = editor("aaaaaaaaaa\nbb\ncccccccccc", "", 4, { s -> }).sized(300.0, 90.0)
+    //
+    // Monospaced on purpose. What is remembered is an **x in points**, which
+    // is right for proportional text — the caret stays where it looks like it
+    // should be, not where a character count says. But then "the column" is
+    // only exactly a column when every character is the same width, and this
+    // test asserts columns. In the system font on Linux, `a` is wider than
+    // `c`: eight `a` measure 68.63 points, nine `c` measure 69.28, so the
+    // nearest boundary to the remembered x is the ninth. That is the font
+    // answering, not the editor, and a test that reads it is asserting the
+    // machine it runs on — which is the thing `wrapInvariants` above exists
+    // to avoid doing.
+    val goal = editor("aaaaaaaaaa\nbb\ncccccccccc", "", 4,
+                      { s -> }).font(textMono(14.0)).sized(300.0, 90.0)
     var t2 = stack([column([goal]), nothing(), nothing()])
     layout(ui, t2, area)
     val ls2 = editorLines(ui, goal)
@@ -751,10 +763,18 @@ proc editorTests() {
         ui.setAnchor(e0.id, 1)
         t3 = deliver(ui, appE, t3, area, [pressed(keyEnter())])
         ok("Return in an editor puts in a newline", body.get() == "a\nb")
-        kvClipboardSet("one\ntwo")
-        t3 = deliver(ui, appE, t3, area, [chord("v")])
-        ok("and a paste keeps the newlines it was given",
-           body.get() == "a\none\ntwob")
+        // The same question the clipboard tests below put, and for the same
+        // reason: on X11 a selection is owned by a *window*, and this binary
+        // opens none, so `kvClipboardSet` writes nowhere and the paste that
+        // follows would fail on a machine where nothing is wrong. 58af20d
+        // fixed exactly this once already; these two tests were written after
+        // it and did not inherit the guard.
+        if (clipboardReachable()) {
+            kvClipboardSet("one\ntwo")
+            t3 = deliver(ui, appE, t3, area, [chord("v")])
+            ok("and a paste keeps the newlines it was given",
+               body.get() == "a\none\ntwob")
+        }
     }
 
     // The same paste into a field, which has one line and can show no other.
@@ -765,7 +785,7 @@ proc editorTests() {
     var t4 = stack([appF.build(), appF.overlay(), popupLayer()])
     layout(ui, t4, area)
     val fl = firstField(t4)
-    if (fl != null) {
+    if ((fl != null) and clipboardReachable()) {
         ui.focus = fl.id
         kvClipboardSet("one\ntwo")
         t4 = deliver(ui, appF, t4, area, [chord("v")])
@@ -933,6 +953,19 @@ func wheel(x: Float, y: Float, dy: Float): Event {
 }
 
 func shifted(k: Int): Event { return Event(evKeyDown(), 0.0, 0.0, 0, k, modShift(), 0, 0.0, 0.0, "") }
+
+/// Whether the clipboard can be reached from here at all.
+///
+/// It belongs to the operating system, not to this framework, and it is not
+/// always answerable. A continuous-integration runner has no display. On X11 a
+/// selection is owned *by a window*, and a test binary opens none, so the
+/// clipboard is unreachable even on a machine whose display is answering
+/// perfectly. Neither is a failure; both are places where the question cannot
+/// be put — so it is put first, and every test that needs an answer asks this.
+func clipboardReachable(): Bool {
+    kvClipboardSet("keal-view-probe")
+    return kvClipboardGet() == "keal-view-probe"
+}
 
 /// A `cmd`/`ctrl` chord, which is how the clipboard is reached. The letter
 /// rides on the *key press* rather than on a text event, which is the whole
@@ -1236,8 +1269,7 @@ proc interactionTests() {
     // binary — which never opens one — cannot reach the clipboard even on a
     // machine whose display is answering perfectly. Neither is a failure;
     // both are places where the question cannot be put. So put it first.
-    kvClipboardSet("keal-view-probe")
-    val hasClipboard = kvClipboardGet() == "keal-view-probe"
+    val hasClipboard = clipboardReachable()
     if (not hasClipboard) {
         println("note  the clipboard cannot be reached from a program with no window"
               + " — copy and paste are skipped here and belong to a running application")
