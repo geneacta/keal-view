@@ -78,11 +78,18 @@ echo "frames drawn: $(ls -1 ./*.bmp | tr '\n' ' ')"
 # it must not report a fault in the framework because an interpreter that
 # nothing else here needs is missing. Everything above this line ran without
 # it.
-if command -v python3 >/dev/null 2>&1; then
+# Asked to *run*, not merely to exist. Windows ships an execution-alias stub
+# at WindowsApps/python3 which is on the PATH, is executable, and which
+# `command -v` finds — and which prints "Python est introuvable" and exits 49.
+# Under `set -e` that killed the suite before its first test on a machine
+# where the skip below was written precisely to keep it alive. Python absent
+# and Python false are different states, and only one of them is a skip that
+# `command -v` can see.
+if python3 -c "" >/dev/null 2>&1; then
   python3 "$ROOT/ci/band.py" --check
   python3 "$ROOT/ci/wordmark.py" --check
 else
-  echo "no python3: the README's badge and dark wordmark were not checked"
+  echo "no working python3: the README's badge and dark wordmark were not checked"
 fi
 
 # The same frame again as a PNG, because the writer is Keal and a full window
