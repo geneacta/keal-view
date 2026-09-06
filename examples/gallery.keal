@@ -11,6 +11,10 @@ import "../keal-view.keal"
 val name = state("")
 val secret = state("")
 val notes = state("Un champ ordinaire. Tape dedans.")
+val page = state("Plusieurs lignes, qui reviennent à la ligne toutes seules quand "
+                 + "la colonne s'épuise.\n\nEntrée coupe la ligne, Origine et Fin "
+                 + "vont aux bouts de celle où est le curseur, et Haut et Bas gardent "
+                 + "la colonne.")
 val agreed = state(false)
 val live = state(true)
 val plan = state(1)
@@ -116,6 +120,8 @@ func inputs(): View {
         field2("Masqué", secretField(secret.get(), "mot de passe",
                                      { s -> secret.set(s) }).keyed("secret")),
         field2("Rempli", field(notes.get(), "", { s -> notes.set(s) }).keyed("notes")),
+        field2("Plusieurs lignes", editor(page.get(), "des notes", 5,
+                                          { s -> page.set(s) }).keyed("page")),
         field2("Désactivé", field("intouchable", "", { s -> }).off())
     ])
 }

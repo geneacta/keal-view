@@ -160,6 +160,7 @@ progress(0.62)
 
 field(name.get(), &quot;your name&quot;, { s -&gt; name.set(s) })
 secretField(pass.get(), &quot;password&quot;, { s -&gt; pass.set(s) })
+editor(notes.get(), &quot;notes&quot;, 6, { s -&gt; notes.set(s) })
 
 card([ … ])                   banner(2, &quot;Careful.&quot;)
 tabView(titles, tab.get(), { i -&gt; tab.set(i) }, body())
@@ -167,7 +168,12 @@ scroll([ … ])                 divider()   spacer()   gapV(12.0)</code></pre><p
 hands you <code>true</code> when it is off and you were about to turn it on. It never
 flips itself — the tree is rebuilt from your state, so your state is the only
 thing that decides.</p><pre><code>checkbox(&quot;I agree&quot;, agreed.get(), { v -&gt; agreed.set(v) })
-//                  ↑ what it shows        ↑ what you do about it</code></pre><hr><h2 id="5-style">5. Style</h2><p>Any view can carry a background, a border, a corner and a shadow. That is what
+//                  ↑ what it shows        ↑ what you do about it</code></pre><p><code>editor</code> is a <code>field</code> with more room only in the way a page is a line with
+more room. Four keys change meaning: Return puts in a newline rather than
+accepting, Home and End are the ends of the row the caret is on rather than of
+the whole text, Up and Down move a row and keep the column they started in,
+and a paste keeps its newlines instead of flattening them to spaces. The third
+argument is how tall it is in lines; past that it scrolls.</p><hr><h2 id="5-style">5. Style</h2><p>Any view can carry a background, a border, a corner and a shadow. That is what
 makes a plain <code>column</code> able to be a card without a card widget existing.</p><pre><code>column([ … ])
     .bg(theme().surface)
     .rounded(12.0)

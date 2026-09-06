@@ -17,6 +17,9 @@ val agreed = state(true)
 val loud = state(false)
 val volume = state(0.6)
 val who = state("")
+val notes = state("Plusieurs lignes, qui reviennent à la ligne toutes seules "
+                  + "quand la colonne s'épuise.\n\nTape dedans : Entrée coupe "
+                  + "la ligne, et Haut et Bas gardent la colonne.")
 val flavour = state(1)
 val leaf2 = state(0)
 
@@ -364,6 +367,27 @@ column([
             caption("volume ${(volume.get() * 100.0).round()} %").color(theme().textMuted)
         ]).gaps(10.0) }))
 
+    tour.chapters.add(chapter("Écrire dedans",
+        "`field` prend une ligne, `editor` en prend plusieurs — et ce sont deux "
+      + "widgets plutôt qu'un avec une hauteur, parce que quatre touches ne "
+      + "veulent pas dire la même chose. **Entrée** valide dans un champ et "
+      + "coupe la ligne dans un éditeur. **Origine** et **Fin** vont aux bouts "
+      + "du texte dans l'un et aux bouts de la ligne où est le curseur dans "
+      + "l'autre. **Haut** et **Bas** ne font rien dans un champ et changent de "
+      + "ligne dans l'éditeur, en gardant la colonne où on était. Et un collage "
+      + "qui contient des retours à la ligne les garde ici et les aplatit "
+      + "là-bas, parce qu'un champ ne pourrait pas les montrer.\n\n"
+      + "Le reste est partagé, et partagé dans le code et pas seulement dans le "
+      + "comportement : la sélection, ce qu'une frappe remplace, ce que Retour "
+      + "arrière enlève, ce qu'un double-clic prend. Tout ça travaille sur des "
+      + "décalages de caractères et ne sait pas combien il y a de lignes.",
+        """editor(notes.get(), "des notes", 5, { s -> notes.set(s) })""",
+        { -> column([
+            editor(notes.get(), "des notes", 5,
+                   { s -> notes.set(s) }).keyed("tour-notes"),
+            caption("${notes.get().length} caractères").color(theme().textMuted)
+        ]).gaps(10.0) }))
+
     tour.chapters.add(chapter("Le style",
         "N'importe quelle vue peut porter un fond, une bordure, un coin et une "
       + "ombre. C'est ce qui permet à une simple `column` d'être une carte sans "
@@ -450,8 +474,10 @@ column([
 
     tour.chapters.add(chapter("Le clavier",
         "Tab parcourt les contrôles qui prennent le focus, dans l'ordre où tu "
-      + "les as déclarés. Les champs gèrent la frappe, la sélection, Origine et "
-      + "Fin, et copier-couper-coller avec le modificateur de la plateforme. "
+      + "les as déclarés. Les champs et les éditeurs gèrent la frappe, la "
+      + "sélection, Origine et Fin, et copier-couper-coller avec le "
+      + "modificateur de la plateforme — un éditeur ajoutant Haut et Bas, et "
+      + "Origine et Fin voulant dire la ligne plutôt que le tout. "
       + "Échap referme d'abord un popup, puis rend le focus. Pour tes propres "
       + "raccourcis, `app.onKey` voit tout en premier — et `e.cmd()` est "
       + "Commande sur macOS et Contrôle ailleurs, donc une ligne couvre les "

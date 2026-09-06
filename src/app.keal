@@ -348,9 +348,9 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
         // Only a text field keeps the keyboard after a click. A button that
         // took focus on click would leave a ring behind it, which is what
         // every toolkit that does this is criticised for.
-        val wantFocus = if (h.kind == kField) { h.id } else { 0 }
+        val wantFocus = if (isTextInput(h)) { h.id } else { 0 }
         if (wantFocus != ui.focus) { ui.focus = wantFocus }
-        if (h.kind == kField) {
+        if (isTextInput(h)) {
             caretToPointer(ui, h, e, false)
             // Two clicks take the word, three take the line.
             if (e.clicks == 2) {
@@ -358,9 +358,12 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
                 ui.setAnchor(h.id, w.x.toInt())
                 ui.setCaret(h.id, w.y.toInt())
             }
+            // Three take the line, which in an editor is the line the
+            // pointer is on and not the whole text.
             if (e.clicks >= 3) {
-                ui.setAnchor(h.id, 0)
-                ui.setCaret(h.id, h.label.length)
+                val ln = lineUnder(ui, h)
+                ui.setAnchor(h.id, ln.x.toInt())
+                ui.setCaret(h.id, ln.y.toInt())
             }
         }
         if (h.kind == kSlider) { sliderToPointer(ui, h, e.x) }
@@ -390,7 +393,12 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
     if (k == evScroll()) {
         val s = scrollUnder(root, e.x, e.y)
         if (s == null) { return }
-        val room = (s.content - s.frame.h).max(0.0)
+        // A scrolling region knows how tall its content is from layout. An
+        // editor cannot: its height is what wrapping made of it at the width
+        // it turned out to have, so the painter is what knows, and it leaves
+        // the number where the wheel can read it.
+        val tall = if (s.kind == kEditor) { ui.memoOf(mixId(s.id, 8), 0.0) } else { s.content }
+        val room = (tall - s.frame.h).max(0.0)
         val was = ui.scrollOf(s.id)
         val now = clampF(was - e.dy, 0.0, room)
         if (now != was) { ui.setScroll(s.id, now); invalidate() }
@@ -413,7 +421,7 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
 
     if (k == evKeyDown()) {
         if (app.onKey(e)) { return }
-        keyDown(ui, root, e)
+        pressed(ui, root, e)
         return
     }
 
@@ -430,8 +438,8 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
 /// report the value they *would* become, not the one they have: the view is
 /// rebuilt from the application's state, so the control never flips itself.
 proc fire(var n: View) {
-    if (n.clickable) { n.onTap(); return }
-    if (n.kind == kButton) { n.onTap(); return }
+    if (n.clickable) { n.onTap(); n.onTapAt(n.frame); return }
+    if (n.kind == kButton) { n.onTap(); n.onTapAt(n.frame); return }
     if (n.kind == kCheck) { n.onBool(not n.on); return }
     if (n.kind == kToggle) { n.onBool(not n.on); return }
     if (n.kind == kRadio) { n.onTap(); return }
@@ -441,7 +449,7 @@ proc drag(var ui: Ui, var root: View, e: Event) {
     val a = nodeById(root, ui.active)
     if (a == null) { return }
     if (a.kind == kSlider) { sliderToPointer(ui, a, e.x); return }
-    if (a.kind == kField) {
+    if (isTextInput(a)) {
         // A press that has not really moved is not a drag. The mouse move that
         // arrives between the two clicks of a double click would otherwise
         // snap the caret back to the pointer and undo the word the second
@@ -485,7 +493,7 @@ proc setCursor(var ui: Ui, root: View, e: Event) {
     val h = hit(root, e.x, e.y)
     if (h == null) { ui.wantCursor(cursorArrow()); return }
     if (h.cursor >= 0) { ui.wantCursor(h.cursor); return }
-    if (h.kind == kField) { ui.wantCursor(cursorText()); return }
+    if (isTextInput(h)) { ui.wantCursor(cursorText()); return }
     ui.wantCursor(cursorArrow())
 }
 
@@ -531,21 +539,90 @@ func focusedField(ui: Ui, root: View): View? {
     if (ui.focus == 0) { return null }
     val n = nodeById(root, ui.focus)
     if (n == null) { return null }
-    if (n.kind != kField) { return null }
+    if (not isTextInput(n)) { return null }
     if (not n.enabled) { return null }
     return n
 }
 
 proc caretToPointer(var ui: Ui, var v: View, e: Event, extend: Bool) {
-    val st = ui.styleFor(v)
-    val sc = ui.canvas.scale
-    val padX = ui.theme.gap(2.5)
-    val shift = ui.memoOf(mixId(v.id, 5), 0.0)
-    val shown = if (v.password) { "•".repeat(v.label.length) } else { v.label }
-    val at = ui.fonts.indexAt(shown, e.x - v.frame.x - padX + shift, st, sc)
+    var at = 0
+    var row = 0 - 1
+    if (v.kind == kEditor) {
+        val h = editorHitAt(ui, v, e.x, e.y)
+        at = h.x.toInt()
+        row = h.y.toInt()
+    } else {
+        val st = ui.styleFor(v)
+        val sc = ui.canvas.scale
+        val padX = ui.theme.gap(2.5)
+        val shift = ui.memoOf(mixId(v.id, 5), 0.0)
+        val shown = if (v.password) { "•".repeat(v.label.length) } else { v.label }
+        at = ui.fonts.indexAt(shown, e.x - v.frame.x - padX + shift, st, sc)
+    }
     ui.setCaret(v.id, at)
     if (not extend) { ui.setAnchor(v.id, at) }
+    forgetHints(ui, v)
+    // The row the pointer was actually on, kept: at a word cut there is no
+    // character between the end of one row and the start of the next, so the
+    // offset alone cannot say which of the two was clicked.
+    if (row >= 0) { ui.setMemo(mixId(v.id, 11), row.toFloat()) }
     invalidate()
+}
+
+/// The line the caret is on, as an ordered pair of offsets. A field has one
+/// line and it is the whole of it; an editor has as many as the column made.
+func lineUnder(ui: Ui, v: View): Rect {
+    val n = v.label.length
+    val at = clampI(ui.caretOf(v.id, n), 0, n)
+    if (v.kind != kEditor) { return Rect(0.0, n.toFloat(), 0.0, 0.0) }
+    val lines = editorLines(ui, v)
+    val l = lines[caretRow(ui, v, lines, at)]
+    return Rect(l.start.toFloat(), l.end.toFloat(), 0.0, 0.0)
+}
+
+/// Throw away both things the caret remembers between keystrokes: the column
+/// a run of Up and Down is trying to stay in, and the row a click or a Down
+/// meant when the offset alone could not say.
+///
+/// Without the column, going down a short line and on to a long one leaves the
+/// caret where the short line ended — every editor that has ever been written
+/// keeps that number, and every one that has ever got it wrong forgot to throw
+/// it away. So both are thrown away by every caret movement that is not one of
+/// the two that set them, in one place rather than at each of them.
+proc forgetHints(var ui: Ui, v: View) {
+    ui.setMemo(mixId(v.id, 10), 0.0 - 1.0)
+    ui.setMemo(mixId(v.id, 11), 0.0 - 1.0)
+}
+
+proc moveCaretByLine(var ui: Ui, var v: View, down: Bool, extend: Bool) {
+    val st = ui.styleFor(v)
+    val sc = ui.canvas.scale
+    val n = v.label.length
+    val at = clampI(ui.caretOf(v.id, n), 0, n)
+    val lines = editorLines(ui, v)
+    val row = caretRow(ui, v, lines, at)
+    val here = lines[row]
+    var goal = ui.memoOf(mixId(v.id, 10), 0.0 - 1.0)
+    if (goal < 0.0) {
+        goal = ui.fonts.xOfIndex(v.label.substring(here.start, here.end), at - here.start, st, sc)
+    }
+    val next = row + (if (down) { 1 } else { 0 - 1 })
+    if ((next < 0) or (next >= lines.size)) {
+        // Off the top or the bottom: go to the very start or the very end,
+        // which is what every editor does and what makes Up on the first line
+        // useful rather than nothing.
+        moveCaret(ui, v, if (down) { n } else { 0 }, extend)
+        return
+    }
+    val to = lines[next]
+    val body = v.label.substring(to.start, to.end)
+    val col = to.start + ui.fonts.indexAt(body, goal, st, sc)
+    // `moveCaret` throws the goal away, because everything else that calls it
+    // should. Put it back after, which is what makes a run of Down keep its
+    // column across a short line rather than lose it on one.
+    moveCaret(ui, v, col, extend)
+    ui.setMemo(mixId(v.id, 10), goal)
+    ui.setMemo(mixId(v.id, 11), next.toFloat())
 }
 
 /// The current selection, as an ordered pair of character offsets.
@@ -564,6 +641,7 @@ proc insert(var ui: Ui, var v: View, s: String) {
     v.onString(v.label.take(a) + s + v.label.drop(b))
     ui.setCaret(v.id, a + s.length)
     ui.setAnchor(v.id, a + s.length)
+    forgetHints(ui, v)
     invalidate()
 }
 
@@ -578,6 +656,7 @@ proc deleteSel(var ui: Ui, var v: View, backwards: Bool) {
     v.onString(v.label.take(a) + v.label.drop(b))
     ui.setCaret(v.id, a)
     ui.setAnchor(v.id, a)
+    forgetHints(ui, v)
     invalidate()
 }
 
@@ -592,6 +671,7 @@ proc moveCaret(var ui: Ui, var v: View, to: Int, extend: Bool) {
     if (extend) { ui.setAnchor(v.id, clampI(ui.anchorOf(v.id, from), 0, n)) }
     else { ui.setAnchor(v.id, at) }
     ui.setCaret(v.id, at)
+    forgetHints(ui, v)
     invalidate()
 }
 
@@ -620,7 +700,12 @@ func wordish(c: String): Bool {
 
 // ------------------------------------------------------------- the keyboard
 
-proc keyDown(var ui: Ui, var root: View, e: Event) {
+// Named `pressed` rather than `keyDown`, which is what it was: `event.keal`
+// has a `keyDown()` that answers the arrow key's number, and inside this file
+// the procedure of the same name shadowed it — so the one place that needed to
+// ask "was that the down arrow" could not, and said instead that a procedure
+// was missing its arguments.
+proc pressed(var ui: Ui, var root: View, e: Event) {
     val key = e.key
 
     // Escape puts away whatever is over the interface before it reaches it.
@@ -658,17 +743,38 @@ proc keyDown(var ui: Ui, var root: View, e: Event) {
             }
             return
         }
-        if (e.text == "v") { insert(ui, f, kvClipboardGet().replace("\n", " ")); return }
+        // A field is one line, so a pasted newline would be a character it
+        // could never show. An editor is the one place where it means what it
+        // says.
+        if (e.text == "v") {
+            val clip = kvClipboardGet()
+            insert(ui, f, if (f.kind == kEditor) { clip } else { clip.replace("\n", " ") })
+            return
+        }
     }
 
     if (key == keyBackspace()) { deleteSel(ui, f, true); return }
     if (key == keyDelete()) { deleteSel(ui, f, false); return }
     if (key == keyLeft()) { moveCaret(ui, f, car - 1, e.shift()); return }
     if (key == keyRight()) { moveCaret(ui, f, car + 1, e.shift()); return }
-    if (key == keyHome()) { moveCaret(ui, f, 0, e.shift()); return }
-    if (key == keyEnd()) { moveCaret(ui, f, n, e.shift()); return }
+    // Home and End are the ends of the line the caret is on. In a field that
+    // is the whole text, which is why one line of code answers both.
+    val line = lineUnder(ui, f)
+    if (key == keyHome()) { moveCaret(ui, f, line.x.toInt(), e.shift()); return }
+    if (key == keyEnd()) { moveCaret(ui, f, line.y.toInt(), e.shift()); return }
+    if (f.kind == kEditor) {
+        if (key == keyUp()) { moveCaretByLine(ui, f, false, e.shift()); return }
+        if (key == keyDown()) { moveCaretByLine(ui, f, true, e.shift()); return }
+    }
     if (key == keyEscape()) { ui.focus = 0; invalidate(); return }
-    if (key == keyEnter()) { f.onTap(); invalidate(); return }
+    // Return ends the typing in a field and continues it in an editor. An
+    // editor still answers `onTap` on nothing, because there is no other key
+    // left to mean "done" — Escape gives the keyboard back, and that is the
+    // one an editor has.
+    if (key == keyEnter()) {
+        if (f.kind == kEditor) { insert(ui, f, "\n") } else { f.onTap(); invalidate() }
+        return
+    }
 }
 
 proc moveFocus(var ui: Ui, var root: View, forward: Bool) {

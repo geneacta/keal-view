@@ -270,6 +270,7 @@ progress(0.62)
 
 field(name.get(), "your name", { s -> name.set(s) })
 secretField(pass.get(), "password", { s -> pass.set(s) })
+editor(notes.get(), "notes", 6, { s -> notes.set(s) })
 
 card([ … ])                   banner(2, "Careful.")
 tabView(titles, tab.get(), { i -> tab.set(i) }, body())
@@ -285,6 +286,13 @@ thing that decides.
 checkbox("I agree", agreed.get(), { v -> agreed.set(v) })
 //                  ↑ what it shows        ↑ what you do about it
 ```
+
+`editor` is a `field` with more room only in the way a page is a line with
+more room. Four keys change meaning: Return puts in a newline rather than
+accepting, Home and End are the ends of the row the caret is on rather than of
+the whole text, Up and Down move a row and keep the column they started in,
+and a paste keeps its newlines instead of flattening them to spaces. The third
+argument is how tall it is in lines; past that it scrolls.
 
 ---
 

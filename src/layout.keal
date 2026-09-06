@@ -103,6 +103,13 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
     } else { if (v.kind == kField) {
         hh = t.control
         w = 180.0
+    } else { if (v.kind == kEditor) {
+        // As tall as the rows it was asked for, plus the padding a field has
+        // above and below its one line — so a one-row editor is exactly the
+        // height of a field, and the two sit level in a form.
+        val lh = ui.fonts.lineHeight(st, sc)
+        hh = lh * v.rows.toFloat() + (t.control - lh)
+        w = 240.0
     } else { if (v.kind == kBadge) {
         hh = ui.fonts.lineHeight(st, sc) + t.gap(1.0)
         w = ui.fonts.width(v.label, st, sc) + t.gap(2.0)
@@ -172,7 +179,7 @@ public func measure(ui: Ui, var v: View, availW: Float, availH: Float): Size {
             v.content = main + v.pad.top + v.pad.bottom
             hh = availH
         }
-    } } } } } } } } } } } } } } } }
+    } } } } } } } } } } } } } } } } }
 
     if (v.wantW >= 0.0) { w = v.wantW }
     if (v.wantH >= 0.0) { hh = v.wantH }
@@ -343,6 +350,7 @@ public func interactive(v: View): Bool {
     if (v.kind == kSegmented) { return true }
     if (v.kind == kSlider) { return true }
     if (v.kind == kField) { return true }
+    if (v.kind == kEditor) { return true }
     if (v.kind == kTabs) { return true }
     if (v.kind == kScroll) { return true }
     if (v.kind == kHandle) { return true }
@@ -474,6 +482,10 @@ public func scrollUnder(v: View, x: Float, y: Float): View? {
         i--
     }
     if (v.kind == kScroll) { return v }
+    // An editor scrolls itself rather than living in a `scroll`: it knows how
+    // tall its text is only after wrapping, which happens where the width is
+    // final, and it has to follow the caret as well as the wheel.
+    if (v.kind == kEditor) { return v }
     return null
 }
 
@@ -481,8 +493,8 @@ public func scrollUnder(v: View, x: Float, y: Float): View? {
 /// them — which is the order they were declared in.
 public proc focusables(v: View, var out: List<View>) {
     if (v.enabled) {
-        if ((v.kind == kField) or ((v.kind == kButton) or ((v.kind == kCheck)
-            or ((v.kind == kToggle) or (v.kind == kRadio))))) {
+        if ((v.kind == kField) or ((v.kind == kEditor) or ((v.kind == kButton)
+            or ((v.kind == kCheck) or ((v.kind == kToggle) or (v.kind == kRadio)))))) {
             out.add(v)
         }
     }

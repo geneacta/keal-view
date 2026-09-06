@@ -229,6 +229,41 @@ onto a chart is a fact no screenshot gives — a screenshot says only that
 nothing changed — and no amount of reading the source would have produced it
 either.
 
+## 2⅔. A leak is not a wrong answer, so no assertion will find one
+
+The suite has nine hundred and fifty checks and every one of them passes on a
+`select` that leaks a view per rebuild, because a leaked object still gives
+the right answer. It has to be looked for with a different instrument, and it
+is worth five minutes on any platform:
+
+```sh
+leaks --atExit -- ./gallery --snapshot g.bmp 2 900 1900     # macOS
+valgrind --leak-check=full ./gallery --snapshot g.bmp 2 900 1900   # Linux
+```
+
+**Then build the same thing many times and see whether the number moves.** A
+handful of objects held at exit is nothing; the same handful *per rebuild* is
+a window that grows while it sits there. Ten lines of Keal in a loop is enough
+to tell the two apart, and it is what separated them here:
+
+```
+   100 builds:    3 600 leaks
+ 1 000 builds:   36 000 leaks
+ 5 000 builds:  180 000 leaks
+```
+
+Thirty-six objects a rebuild, from `select` and `menuButton` each holding a
+function that held the view that held the function. A reference count cannot
+free a cycle, and a tree that is thrown away and rebuilt whenever anything
+changes makes one every frame — about ten megabytes a minute from a window
+with a dropdown on it and nobody touching it. What it looked like at exit was
+eighteen small objects, which is what a leak checker run once reports and what
+anybody would have shrugged at.
+
+The rule that came out of it: **a handler must not close over the view it is
+attached to.** `tappableAt` hands it the rectangle instead, which is the only
+thing such a handler ever wanted from it.
+
 ## 2¾. Measure by comparing, not by reading a number
 
 The two measurements that cut through this project's hardest defect both did

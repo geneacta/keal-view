@@ -62,6 +62,7 @@ proc paintNode(var ui: Ui, v: View) {
     if (v.kind == kSlider) { paintSlider(ui, v); return }
     if (v.kind == kProgress) { paintProgress(ui, v); return }
     if (v.kind == kField) { paintField(ui, v); return }
+    if (v.kind == kEditor) { paintEditor(ui, v); return }
     if (v.kind == kBadge) { paintBadge(ui, v); return }
     if (v.kind == kIcon) {
         val ink = ui.inkFor(v)
@@ -401,6 +402,181 @@ proc paintField(var ui: Ui, v: View) {
                 c.fillRect(Rect(inner.x + cx - shift, inner.y + (inner.h - lh) / 2.0 + 1.0,
                                 t.hairline * 1.4, lh - 2.0), t.accent)
             }
+        }
+    }
+    c.pop()
+}
+
+// --------------------------------------------------------------- the editor
+//
+// The geometry is written once and used twice: the painter draws where these
+// say, and the dispatcher turns a click into an offset by asking the same
+// questions. A widget whose picture and whose hit test each work out where the
+// text is will disagree the first time one of them changes.
+
+/// Where an editor's text lives inside its box.
+public func editorInner(t: Theme, r: Rect): Rect {
+    val padX = t.gap(2.5)
+    val padY = t.gap(1.0)
+    return Rect(r.x + padX, r.y + padY, (r.w - padX * 2.0).max(1.0),
+                (r.h - padY * 2.0).max(1.0))
+}
+
+/// An editor's text, broken into lines at the width it actually has.
+public func editorLines(ui: Ui, v: View): List<Line> {
+    val inner = editorInner(ui.theme, v.frame)
+    return ui.fonts.wrapLines(v.label, inner.w, ui.styleFor(v), ui.canvas.scale)
+}
+
+/// How far down an editor is scrolled, with the caret followed if it has moved
+/// since the last time this was asked.
+///
+/// The caret is followed **only when it has moved**, and that is the whole of
+/// it. Following it every frame would undo the wheel: scroll away from the
+/// caret and the next repaint — a blink of the caret is enough — would drag
+/// the text back.
+public func editorScroll(var ui: Ui, v: View, lines: List<Line>): Float {
+    val st = ui.styleFor(v)
+    val sc = ui.canvas.scale
+    val inner = editorInner(ui.theme, v.frame)
+    val lh = ui.fonts.lineHeight(st, sc)
+    val room = ((lines.size.toFloat() * lh) - inner.h).max(0.0)
+    var off = clampF(ui.scrollOf(v.id), 0.0, room)
+    val n = v.label.length
+    val caret = clampI(ui.caretOf(v.id, n), 0, n)
+    if (ui.memoOf(mixId(v.id, 9), -1.0).toInt() != caret) {
+        val top = caretRow(ui, v, lines, caret).toFloat() * lh
+        if (top < off) { off = top }
+        if ((top + lh) > (off + inner.h)) { off = top + lh - inner.h }
+        off = clampF(off, 0.0, room)
+        ui.setMemo(mixId(v.id, 9), caret.toFloat())
+    }
+    ui.setScroll(v.id, off)
+    // What the wheel needs, and it can only be known once the text has been
+    // wrapped at the width the box turned out to have.
+    ui.setMemo(mixId(v.id, 8), lines.size.toFloat() * lh)
+    return off
+}
+
+/// What a point in an editor hits: the offset, and the row it was on.
+///
+/// **Both**, because the row cannot always be worked out again from the
+/// offset. A word longer than the column is cut where no character sits, so
+/// that one offset is the end of a line and the start of the next, and a
+/// click at the left edge of the second row would come back as the right edge
+/// of the first. Answered as a pair, in the way the rest of this framework
+/// answers a pair — `x` is the offset and `y` is the row.
+public func editorHitAt(ui: Ui, v: View, x: Float, y: Float): Rect {
+    val st = ui.styleFor(v)
+    val sc = ui.canvas.scale
+    val inner = editorInner(ui.theme, v.frame)
+    val lines = editorLines(ui, v)
+    val lh = ui.fonts.lineHeight(st, sc)
+    val off = ui.scrollOf(v.id)
+    val row = clampI((((y - inner.y) + off) / lh).floor(), 0, lines.size - 1)
+    val l = lines[row]
+    val body = v.label.substring(l.start, l.end)
+    val at = l.start + ui.fonts.indexAt(body, x - inner.x, st, sc)
+    return Rect(at.toFloat(), row.toFloat(), 0.0, 0.0)
+}
+
+/// Which row the caret is drawn on.
+///
+/// Almost always `lineOfOffset`, and the exception is the one boundary
+/// `wrapLines` cannot make unambiguous. A break at a space or a newline eats
+/// its character, so the offset before it and the offset after it are
+/// different numbers and belong to different lines. A word longer than the
+/// column has no character to eat, so there the end of one row and the start
+/// of the next **are the same offset**, and both answers are true.
+///
+/// `lineOfOffset` answers the earlier row, which is what an offset arriving
+/// from somewhere with no opinion should get — it is what keeps End on a row
+/// from painting the caret at the start of the row below. But two operations
+/// do have an opinion, and it is the other one: a click knows which row it
+/// landed on, and Down knows which row it went to. Without this, a click at
+/// the left edge of the second row of a long word jumps the caret up to the
+/// right edge of the first, and a Down aiming at column zero lands on an
+/// offset that resolves back to the row it started on and does not move.
+///
+/// So those two leave the row they meant, and it is believed only while it
+/// still contains the caret. A remembered row cannot go stale into a wrong
+/// answer: change the text or the width and it stops containing the offset,
+/// and this falls back to the rule.
+public func caretRow(ui: Ui, v: View, lines: List<Line>, off: Int): Int {
+    val want = ui.memoOf(mixId(v.id, 11), 0.0 - 1.0).toInt()
+    if ((want >= 0) and (want < lines.size)) {
+        if ((off >= lines[want].start) and (off <= lines[want].end)) { return want }
+    }
+    return lineOfOffset(lines, off)
+}
+
+proc paintEditor(var ui: Ui, v: View) {
+    val t = ui.theme
+    val c = ui.canvas
+    val r = v.frame
+    val focused = ui.isFocused(v)
+    val rad = t.radiusMd
+    c.fillRound(r, rad, if (v.enabled) { t.surfaceHi } else { fade(t.surfaceHi, 0.5) })
+    val edge = if (focused) { t.accent } else { if (ui.isHot(v)) { t.borderStrong } else { t.border } }
+    if (focused) { c.strokeRound(grow(r, 2.0), rad + 2.0, 2.0, t.accentSoft) }
+    c.strokeRound(r, rad, t.hairline, edge)
+
+    val st = ui.styleFor(v)
+    val sc = c.scale
+    val inner = editorInner(t, r)
+    c.push(inner)
+    if (v.label == "") {
+        // The hint sits on the first line rather than in the middle: an editor
+        // is a column of text and its first line is where typing starts.
+        val lh0 = ui.fonts.lineHeight(st, sc)
+        ui.fonts.drawIn(c, v.hint, Rect(inner.x, inner.y, inner.w, lh0), 0, st, t.textMuted)
+    }
+    val lines = editorLines(ui, v)
+    val lh = ui.fonts.lineHeight(st, sc)
+    val asc = ui.fonts.ascent(st, sc)
+    val off = editorScroll(ui, v, lines)
+
+    val n = v.label.length
+    val caret = clampI(ui.caretOf(v.id, n), 0, n)
+    val anchor = clampI(ui.anchorOf(v.id, caret), 0, n)
+    val selA = caret.min(anchor)
+    val selB = caret.max(anchor)
+    val ink = ui.inkFor(v)
+    val space = ui.fonts.width(" ", st, sc)
+
+    var i = (off / lh).floor().max(0)
+    val last = (((off + inner.h) / lh).floor() + 1).min(lines.size - 1)
+    while (i <= last) {
+        val l = lines[i]
+        val body = v.label.substring(l.start, l.end)
+        val y = inner.y + (i.toFloat() * lh) - off
+        if (focused and (selA != selB)) {
+            val a = selA.max(l.start).min(l.end)
+            val b = selB.max(l.start).min(l.end)
+            // A selection that runs past this line covers the break as well,
+            // and the break is a character the reader chose. It is shown as a
+            // space's worth of colour past the last letter — without it, a
+            // selection over three lines looks like three selections.
+            val over = if ((selB > l.end) and (selA <= l.end)) { space } else { 0.0 }
+            if ((b > a) or (over > 0.0)) {
+                val x0 = ui.fonts.xOfIndex(body, a - l.start, st, sc)
+                val x1 = ui.fonts.xOfIndex(body, b - l.start, st, sc)
+                c.fillRect(Rect(inner.x + x0, y, (x1 - x0) + over, lh), t.selection)
+            }
+        }
+        ui.fonts.draw(c, body, inner.x, y + asc, st, ink)
+        i++
+    }
+
+    if (focused) {
+        val row = caretRow(ui, v, lines, caret)
+        val l = lines[row]
+        val cx = ui.fonts.xOfIndex(v.label.substring(l.start, l.end), caret - l.start, st, sc)
+        val cy = inner.y + (row.toFloat() * lh) - off
+        val period = 530.0
+        ui.wakeIn(period - (ui.time % period))
+        if (((ui.time / period).toInt() % 2) == 0) {
+            c.fillRect(Rect(inner.x + cx, cy + 1.0, t.hairline * 1.4, lh - 2.0), t.accent)
         }
     }
     c.pop()

@@ -84,12 +84,36 @@ program also understands `--snapshot <file> [scale] [w h]` and
 | `progress(value)` | a bar showing a fraction, taking no input |
 | `field(value, hint, changed)` | a line of text the user types |
 | `secretField(value, hint, changed)` | the same, showing dots |
+| `editor(value, hint, rows, changed)` | text over several lines, wrapped |
 | `tabs(titles, selected, chose)` | a strip of tabs on its own |
 | `icon(name)` | a shape drawn from strokes |
 
 Every control reports **what it would become**, not what it is: a checkbox
 hands you `true` when it is off. Nothing flips itself; the tree is rebuilt
 from your state.
+
+### `field` and `editor`
+
+They are two widgets rather than one with a height, because four keys mean
+different things:
+
+| | `field` | `editor` |
+|---|---|---|
+| Return | accepts — calls `.tappable`'s handler | puts in a newline |
+| Home, End | the ends of the text | the ends of the **row** the caret is on |
+| Up, Down | nothing | the row above and below, keeping the column |
+| a paste with newlines in it | flattened to spaces | kept |
+
+Everything else is shared, and shared in the source and not just in
+behaviour: the selection, what a keystroke replaces, what Backspace takes,
+what a double click takes and what a triple click takes are all written once
+and work on character offsets. `rows` is how tall an editor is in lines; past
+that it scrolls, with the wheel or by the caret leaving the box.
+
+An editor wraps to the width it is given. A word longer than the column is cut
+rather than left to overflow, and a click on either side of that cut puts the
+caret where it was clicked — which is not free, and is the one place in the
+text machinery where an offset alone does not say which row it is on.
 
 ### Icon names
 

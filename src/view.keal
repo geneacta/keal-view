@@ -38,6 +38,7 @@ public val kBadge = 15
 public val kHandle = 16
 public val kRadio = 17
 public val kSegmented = 18
+public val kEditor = 19
 
 /// Where children sit along the axis they are stacked on.
 public val mainStart = 0
@@ -117,6 +118,8 @@ public class View {
     public var icon: String = ""
     /// Selected index, for tabs.
     public var index: Int = 0
+    /// How many lines of text an editor is tall before it starts scrolling.
+    public var rows: Int = 0
     /// Answers the pointer with `onDrag` rather than with a click.
     public var draggable: Bool = false
     /// A view that is not a control but still takes a click — what makes a
@@ -144,6 +147,9 @@ public class View {
     public var onBool: (Bool) -> Unit = { b -> }
     public var onFloat: (Float) -> Unit = { v -> }
     public var onString: (String) -> Unit = { s -> }
+    /// A tap handler that is handed this view's rectangle, so that it does not
+    /// have to capture the view to find it. See `tappableAt`.
+    public var onTapAt: (Rect) -> Unit = { r -> }
     public var onIndex: (Int) -> Unit = { i -> }
     /// The moment the pointer goes down on this view, in window points —
     /// before it is known whether this will be a click or a drag. Where a
@@ -284,6 +290,24 @@ public class View {
     /// widget of its own.
     public func tappable(f: () -> Unit): View {
         this.onTap = f
+        this.clickable = true
+        return this
+    }
+
+    /// The same, for a handler that needs to know **where** the view ended up
+    /// — a dropdown that opens under itself, a menu that opens under its
+    /// button.
+    ///
+    /// It exists so that such a handler does not have to close over the view
+    /// to read `frame` off it. A view holding a function that holds the view
+    /// is a reference cycle, and a reference cycle in a tree that is rebuilt
+    /// every frame is not a handful of objects at exit: it is a leak that
+    /// grows with the frame rate. `select` and `menuButton` both did this, and
+    /// between them lost thirty-six objects and 2.7 kB **per rebuild** — about
+    /// ten megabytes a minute from a window with a dropdown on it, doing
+    /// nothing.
+    public func tappableAt(f: (Rect) -> Unit): View {
+        this.onTapAt = f
         this.clickable = true
         return this
     }
@@ -623,6 +647,34 @@ public func field(value: String, hint: String, changed: (String) -> Unit): View 
     val v = mk(kField)
     v.label = value
     v.hint = hint
+    v.onString = changed
+    return v
+}
+
+/// A `field` or an `editor` — the two views that take typing.
+///
+/// They share every operation that works on offsets: what the selection is,
+/// what a keystroke replaces, what Backspace takes out, what a double click
+/// takes. They part company only where a second dimension exists, which is
+/// four places and no more.
+public func isTextInput(v: View): Bool {
+    return (v.kind == kField) or (v.kind == kEditor)
+}
+
+/// Text over several lines, wrapped to the width it is given, with a caret
+/// that goes up and down as well as along.
+///
+/// `rows` is how tall it is in lines; past that it scrolls, with the wheel or
+/// by moving the caret out of sight. It is a different widget from `field` and
+/// not a taller one — Return puts in a newline instead of accepting, Home and
+/// End mean the ends of the line the caret is on rather than of the whole
+/// text, and a paste keeps its newlines instead of flattening them.
+public func editor(value: String, hint: String, rows: Int,
+                   changed: (String) -> Unit): View {
+    val v = mk(kEditor)
+    v.label = value
+    v.hint = hint
+    v.rows = rows.max(1)
     v.onString = changed
     return v
 }

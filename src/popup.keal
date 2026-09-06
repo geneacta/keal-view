@@ -180,6 +180,15 @@ func rowsHeight(t: Theme): Float {
     return items.size.toFloat() * (t.control + 1.0) + t.gap(2.0)
 }
 
+/// Where the last popup was asked to open, in points, before it was moved to
+/// keep it on screen.
+///
+/// It exists for a test. What a dropdown does when it is clicked is ask for a
+/// menu under itself, and that ask is the thing worth checking — where the
+/// menu then *lands* is `clampX` and `clampY`'s business, and they measure
+/// against the window, of which a headless test has none.
+public func popupAskedAt(): Rect { return Rect(atX, atY, 0.0, 0.0) }
+
 /// Keep a popup on screen: a menu opened near the right edge opens leftwards
 /// instead of half off the window.
 func clampX(x: Float, w: Float): Float {
@@ -261,12 +270,14 @@ public func select(choices: List<String>, index: Int, onChange: (Int) -> Unit,
     v.h(t.control)
     v.least(120.0, 0.0)
     v.cursor = 0
-    v.tappable({ -> selectOpened(v, choices, index, onChange) })
+    // `tappableAt` and not `tappable`, and the difference is a leak. A handler
+    // that closed over `v` to read `v.frame` would make the view hold a
+    // function that holds the view — a cycle no reference count can free, in a
+    // tree that is thrown away and rebuilt every time anything changes. It
+    // cost eighteen objects and 1.3 kB per rebuild, for as long as the window
+    // was open. The rectangle is handed over instead.
+    v.tappableAt({ r -> openMenu(r.x, bottom(r) + 4.0, choices, index, onChange) })
     return v
-}
-
-proc selectOpened(v: View, choices: List<String>, index: Int, onChange: (Int) -> Unit) {
-    openMenu(v.frame.x, bottom(v.frame) + 4.0, choices, index, onChange)
 }
 
 proc drawChevron(p: Paint, r: Rect, col: Int) {
@@ -280,7 +291,8 @@ proc drawChevron(p: Paint, r: Rect, col: Int) {
 /// A button that opens a menu of its own — a toolbar's overflow, a context
 /// menu behind three dots.
 public func menuButton(name: String, choices: List<String>, onPick: (Int) -> Unit): View {
+    // The same cycle as `select`, for the same reason, and broken the same way.
     val v = iconButton(name, { -> })
-    v.onTap = { -> openMenu(v.frame.x, bottom(v.frame) + 4.0, choices, -1, onPick) }
+    v.onTapAt = { r -> openMenu(r.x, bottom(r) + 4.0, choices, -1, onPick) }
     return v
 }

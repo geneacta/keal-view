@@ -24,8 +24,18 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 START = "<!-- keal-view-band:start -->"
 END = "<!-- keal-view-band:end -->"
-SHIELD = ("https://img.shields.io/badge/%s-%s-3b82f6"
-          "?style=flat-square&labelColor=2b2b2b")
+# The same two numbers again, spelled out. The badge said 89–91 % and the table
+# under it said where that came from — and only the badge was generated, so the
+# table went stale the first time a file grew and nothing said so. Two claims
+# from one count means one of them is a copy, and a copy is what drifts.
+TSTART = "<!-- keal-view-count:start -->"
+TEND = "<!-- keal-view-count:end -->"
+# The badges' look belongs to whoever owns the README, not to this script:
+# alignment, style and colour are copied from what is there rather than chosen
+# here. What this script owns is the two numbers in them, which is the only
+# part that can be wrong.
+SHIELD = "https://img.shields.io/badge/%s-%s-%s?style=flat"
+ALIGN = "right"
 
 
 def read(name):
@@ -60,17 +70,56 @@ def share():
     return (lo if lo == hi else None), lo, hi
 
 
+def table():
+    """The lines, and where the C is — the badge's own working, shown."""
+    keal, header, backends = counts()
+    one, lo, hi = share()
+    names = {"kv_cocoa.m": "Cocoa", "kv_x11.c": "X11", "kv_win32.c": "Win32"}
+    each = sorted(
+        (len(read("runtime/" + n).splitlines()), names.get(n, n))
+        for n in sorted(os.listdir(os.path.join(ROOT, "runtime")))
+        if n.startswith("kv_"))
+    c_lo, c_hi = header + min(backends), header + max(backends)
+    c = "%d" % c_lo if c_lo == c_hi else "%d-%d" % (c_lo, c_hi)
+    pct = ("%d %%" % one) if one is not None else ("%d to %d %%" % (lo, hi))
+    rest = ("%d %%" % (100 - lo)) if one is not None \
+        else ("%d to %d %%" % (100 - hi, 100 - lo))
+    return "\n".join([
+        TSTART,
+        "```",
+        "              lines    what it is",
+        "  Keal        %6d   the whole framework: rasteriser, fonts, layout," % keal,
+        "                       widgets, theme, docking, menus, pictures, the run loop",
+        "  C         %8s   one window, one event queue, and inline accessors:" % c,
+        # Two lines rather than one, because the first would otherwise run
+        # past the width of everything around it in a plain-text block that
+        # nothing wraps.
+        "                       kv.h (%d) plus one backend of three — %s %d,"
+        % (header, each[0][1], each[0][0]),
+        "                       %s"
+        % ", ".join("%s %d" % (nm, n) for n, nm in each[1:]),
+        "```",
+        "",
+        "**%s of a running keal-view program is Keal**, depending on which" % pct,
+        "backend it was built against, and none of the other %s puts a pixel" % rest,
+        "anywhere. Both this and the badge above are counted by `ci/band.py` from",
+        "these same files, so neither can drift from them — or from each other,",
+        "which is the way a number in a README usually goes wrong.",
+        TEND,
+    ])
+
+
 def band():
     one, lo, hi = share()
     pct = ("%d" % one) if one is not None else ("%d--%d" % (lo, hi))
     repo = "https://github.com/geneacta/keal-view"
     return "\n".join([
         START,
-        '<p align="center">',
+        '<p align="%s">' % ALIGN,
         '  <a href="%s/releases"><img alt="version" src="%s"></a>'
-        % (repo, SHIELD % ("version", version())),
+        % (repo, SHIELD % ("version", version(), "blue")),
         '  <a href="%s/tree/main/src"><img alt="written in Keal" src="%s"></a>'
-        % (repo, SHIELD % ("written%20in%20Keal", pct + "%25")),
+        % (repo, SHIELD % ("written%20in%20Keal", pct + "%25", "brightgreen")),
         "</p>",
         END,
     ])
@@ -79,31 +128,33 @@ def band():
 def main():
     path = os.path.join(ROOT, "README.md")
     text = read("README.md")
-    if START not in text or END not in text:
-        raise SystemExit("ci/band.py: README.md has no %s … %s markers" % (START, END))
     # Counted, not just found. This script rewrites between the *first* start
     # and the *first* end, so a second pair further down is a region it would
     # never touch and never mention — which is how an empty duplicate of these
     # two lines sat in the README through a green run of the check that owns
     # them. A gate that cannot see a thing should refuse rather than pass.
-    if text.count(START) != 1 or text.count(END) != 1:
-        raise SystemExit("ci/band.py: README.md has %d start and %d end markers; "
-                         "there must be exactly one of each."
-                         % (text.count(START), text.count(END)))
+    for a, b in ((START, END), (TSTART, TEND)):
+        if a not in text or b not in text:
+            raise SystemExit("ci/band.py: README.md has no %s … %s markers" % (a, b))
+        if text.count(a) != 1 or text.count(b) != 1:
+            raise SystemExit("ci/band.py: README.md has %d %s and %d %s; there must "
+                             "be exactly one of each."
+                             % (text.count(a), a, text.count(b), b))
     now = text[:text.index(START)] + band() + text[text.index(END) + len(END):]
+    now = now[:now.index(TSTART)] + table() + now[now.index(TEND) + len(TEND):]
     if "--check" in sys.argv:
         if now != text:
-            print("ci/band.py: the badge band in README.md is out of date.")
+            print("ci/band.py: what README.md counts is out of date.")
             print("  Run python3 ci/band.py and commit what changes.")
             sys.exit(1)
-        print("the badge band says what the repository says")
+        print("the badge and the table say what the repository says")
         return
     if now == text:
-        print("the badge band was already current")
+        print("the badge and the table were already current")
         return
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(now)
-    print("rewrote the badge band in README.md")
+    print("rewrote what README.md counts")
 
 
 if __name__ == "__main__":

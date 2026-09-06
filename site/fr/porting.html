@@ -173,7 +173,24 @@ three of those rounds ended with the tester able to say <em>where</em> it had st
 rather than that it still did not work. <code>wakes=1 frames=0</code> on a pointer moving
 onto a chart is a fact no screenshot gives — a screenshot says only that
 nothing changed — and no amount of reading the source would have produced it
-either.</p><h2 id="2-measure-by-comparing-not-by-reading-a-number">2¾. Measure by comparing, not by reading a number</h2><p>The two measurements that cut through this project&#x27;s hardest defect both did
+either.</p><h2 id="2-a-leak-is-not-a-wrong-answer-so-no-assertion-will-find-one">2⅔. A leak is not a wrong answer, so no assertion will find one</h2><p>The suite has nine hundred and fifty checks and every one of them passes on a
+<code>select</code> that leaks a view per rebuild, because a leaked object still gives
+the right answer. It has to be looked for with a different instrument, and it
+is worth five minutes on any platform:</p><pre><code>leaks --atExit -- ./gallery --snapshot g.bmp 2 900 1900     # macOS
+valgrind --leak-check=full ./gallery --snapshot g.bmp 2 900 1900   # Linux</code></pre><p><strong>Then build the same thing many times and see whether the number moves.</strong> A
+handful of objects held at exit is nothing; the same handful <em>per rebuild</em> is
+a window that grows while it sits there. Ten lines of Keal in a loop is enough
+to tell the two apart, and it is what separated them here:</p><pre><code>   100 builds:    3 600 leaks
+ 1 000 builds:   36 000 leaks
+ 5 000 builds:  180 000 leaks</code></pre><p>Thirty-six objects a rebuild, from <code>select</code> and <code>menuButton</code> each holding a
+function that held the view that held the function. A reference count cannot
+free a cycle, and a tree that is thrown away and rebuilt whenever anything
+changes makes one every frame — about ten megabytes a minute from a window
+with a dropdown on it and nobody touching it. What it looked like at exit was
+eighteen small objects, which is what a leak checker run once reports and what
+anybody would have shrugged at.</p><p>The rule that came out of it: <strong>a handler must not close over the view it is
+attached to.</strong> <code>tappableAt</code> hands it the rectangle instead, which is the only
+thing such a handler ever wanted from it.</p><h2 id="2-measure-by-comparing-not-by-reading-a-number">2¾. Measure by comparing, not by reading a number</h2><p>The two measurements that cut through this project&#x27;s hardest defect both did
 the same thing, and it is worth copying the shape rather than the numbers.</p><p><strong>User time against kernel time, in the same process.</strong> An idle window held
 most of a core; 97 % of it was user time and 0.3 % kernel. That one ratio
 eliminated the wait, the message pump and every system call in a single line,
@@ -212,7 +229,7 @@ half of the codebase to look in.</p><h2 id="4-what-will-not-work-on-your-platfor
 <code>screencapture</code>. There is no portable equivalent; take a screenshot the
 usual way.</li><li><code>--window-id</code> answers an <code>HWND</code> on Windows and an X11 <code>Window</code> on Linux.
 Both are the system&#x27;s real handle, and neither is any use to
-<code>screencapture</code>.</li></ul></div><div class="dtoc"><div class="h">SUR CETTE PAGE</div><div class="dtoc-items"><a href="#0-what-you-need">0. What you need</a><a href="#1-before-the-window-is-the-framework-itself-alright">1. Before the window: is the framework itself alright?</a><a href="#2-the-window-in-the-order-things-go-wrong">2. The window, in the order things go wrong</a><a href="#2-before-you-report-an-input-problem-run-the-control">2½. Before you report an input problem, run the control</a><a href="#2-the-two-things-in-this-repository-that-did-the-finding">2⅝. The two things in this repository that did the finding</a><a href="#2-measure-by-comparing-not-by-reading-a-number">2¾. Measure by comparing, not by reading a number</a><a href="#2-seen-once-and-not-reproduced">2⅞. Seen once and not reproduced</a><a href="#3-reporting">3. Reporting</a><a href="#4-what-will-not-work-on-your-platform-and-should-not">4. What will not work on your platform, and should not</a></div></div></div>
+<code>screencapture</code>.</li></ul></div><div class="dtoc"><div class="h">SUR CETTE PAGE</div><div class="dtoc-items"><a href="#0-what-you-need">0. What you need</a><a href="#1-before-the-window-is-the-framework-itself-alright">1. Before the window: is the framework itself alright?</a><a href="#2-the-window-in-the-order-things-go-wrong">2. The window, in the order things go wrong</a><a href="#2-before-you-report-an-input-problem-run-the-control">2½. Before you report an input problem, run the control</a><a href="#2-the-two-things-in-this-repository-that-did-the-finding">2⅝. The two things in this repository that did the finding</a><a href="#2-a-leak-is-not-a-wrong-answer-so-no-assertion-will-find-one">2⅔. A leak is not a wrong answer, so no assertion will find one</a><a href="#2-measure-by-comparing-not-by-reading-a-number">2¾. Measure by comparing, not by reading a number</a><a href="#2-seen-once-and-not-reproduced">2⅞. Seen once and not reproduced</a><a href="#3-reporting">3. Reporting</a><a href="#4-what-will-not-work-on-your-platform-and-should-not">4. What will not work on your platform, and should not</a></div></div></div>
 <footer>
   <div><p class="base">keal-view — des fenêtres d'application écrites en Keal, où le dessin est lui aussi du Keal. Apache 2.0.</p></div>
   <div class="fcol"><span class="h">PROJET</span><a href="index.html">Accueil</a><a href="gallery.html">Galerie</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view sur GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">Le guide</a><a href="widgets.html">La référence</a><a href="porting.html">Porter sur une plateforme</a><a href="coming-from.html">Je viens d&#x27;une autre boîte à outils</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/fr/">Le site du langage</a><a href="https://github.com/geneacta/keal">Keal sur GitHub</a><a href="https://geneacta.github.io/keal/fr/docs.html">Docs du langage</a><a href="https://geneacta.github.io/keal/fr/tour.html">Le tour du langage</a></div>
