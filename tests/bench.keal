@@ -34,9 +34,10 @@ val app = App("handtest", 560, 340)
 app.build = { ->
     val f = field(ctl.get(), "the control", { s -> ctl.set(s) }).keyed("ctl")
     val e0 = editor(doc.get(), "", 8, { s -> doc.set(s) }).font(textMono(13.0)).keyed("doc")
-    val e = e0.wrappingLines(false).coloured([InkRun(0, 4, rgb(198, 120, 221)),
-                                              InkRun(46, 52, rgb(224, 108, 117)),
-                                              InkRun(64, 67, rgb(198, 120, 221))])
+    val e1 = e0.wrappingLines(false).coloured([InkRun(0, 4, rgb(198, 120, 221)),
+                                               InkRun(35, 38, rgb(198, 120, 221)),
+                                               InkRun(50, 52, rgb(224, 108, 117))])
+    val e = e1.gutter([LineMark(3, theme().danger), LineMark(6, theme().warning)])
     val body = column([f, e.grows(),
                        caption("${doc.get().length} caractères")
                            .color(theme().textMuted)])

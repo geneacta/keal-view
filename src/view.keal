@@ -58,6 +58,14 @@ public val primary = 1
 public val quiet = 2
 public val danger = 3
 
+/// A mark in an editor's margin, on a line: an error, a warning, a breakpoint.
+///
+/// `line` counts **from one**, as the numbers beside it do — said in the type
+/// rather than left for each side to add its own. A mark on a line the text no
+/// longer has is dropped and not drawn; the check that produced it and the
+/// buffer it is drawn beside are two different moments.
+public record LineMark(public val line: Int, public val ink: Int)
+
 /// A stretch of a label that is painted in its own colour.
 ///
 /// `[start, end)` are offsets into the label. What a stretch *means* is not
@@ -131,6 +139,10 @@ public class View {
     /// Whether an editor folds a line too long for its column on to the next
     /// one. See `wrapping`.
     public var wrapsLines: Bool = true
+    /// Whether an editor wears a margin of line numbers. See `gutter`.
+    public var gutter: Bool = false
+    /// What to mark in that margin — see `LineMark`.
+    public var marks: List<LineMark> = []
     /// Answers the pointer with `onDrag` rather than with a click.
     public var draggable: Bool = false
     /// A view that is not a control but still takes a click — what makes a
@@ -316,6 +328,26 @@ public class View {
     /// name over both would read as one idea.
     public func wrappingLines(on: Bool): View {
         this.wrapsLines = on
+        return this
+    }
+
+    /// Give an editor a margin: the line numbers, and a mark on any line you
+    /// name.
+    ///
+    /// The numbers are the lines **the author typed** — a line folded on to
+    /// the next carries one number, and its continuation carries none, because
+    /// a number in a margin has to mean what a compiler's `:12:` means or it
+    /// is worse than nothing.
+    ///
+    /// The margin follows the editor down and **not sideways**: numbers that
+    /// walked off the left edge on the first long line would take the marks
+    /// with them, and the marks are what you look at while chasing a long
+    /// line. Its width comes from how many digits the last line number needs,
+    /// so a forty-line file spends two columns on it and a twelve-thousand-line
+    /// file still fits.
+    public func gutter(marks: List<LineMark> = []): View {
+        this.gutter = true
+        this.marks = marks
         return this
     }
 

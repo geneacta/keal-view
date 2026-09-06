@@ -19,7 +19,19 @@ import "./view.keal"
 /// breaking depended on. See `Ui.wrappedOf`.
 public class Wrapped(public val text: String, public val col: Float,
                      public val size: Float, public val bold: Bool,
-                     public val mono: Bool, public val lines: List<Line>) {
+                     public val mono: Bool, public val lines: List<Line>,
+                     /// How many lines the author typed. Kept here because
+                     /// the margin's width needs it several times a frame and
+                     /// counting it walks the whole document — 38 ms a frame
+                     /// on five thousand lines, six times what drawing the
+                     /// text costs, which is what putting a margin on one
+                     /// measured before this line existed.
+                     public val typed: Int) {
+    /// Whether this was measured against the same text, whatever the column
+    /// and the face were. The line *count* depends on the text alone, so it
+    /// survives a resize that the line *breaks* do not.
+    public func countsFor(text: String): Bool { return this.text == text }
+
     public func stillHolds(text: String, col: Float, st: TextStyle): Bool {
         if (this.col != col) { return false }
         if (this.size != st.size) { return false }

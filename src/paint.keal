@@ -420,17 +420,64 @@ proc paintField(var ui: Ui, v: View) {
 // questions. A widget whose picture and whose hit test each work out where the
 // text is will disagree the first time one of them changes.
 
-/// Where an editor's text lives inside its box.
-public func editorInner(t: Theme, r: Rect): Rect {
+/// How many lines the author typed — one more than the newlines in the text.
+///
+/// Counted from the text and not from the wrapping, which is what keeps the
+/// margin's width out of a circle: the width depends on how many digits the
+/// last number needs, the wrapping depends on how much room is left beside the
+/// margin, and if the count came from the wrapping each would be waiting for
+/// the other.
+public func typedLineCount(s: String): Int {
+    var n = 1
+    for (ch in s.chars()) { if (ch == "\n") { n++ } }
+    return n
+}
+
+/// How wide an editor's margin is, in points, or nothing when it has none.
+public func gutterWidth(ui: Ui, v: View): Float {
+    if (not v.gutter) { return 0.0 }
+    // From the kept wrapping where there is one. Counting the lines walks the
+    // whole document, `editorInner` asks this several times a frame, and
+    // `gutterRect` asks `editorInner` — so a margin on a five-thousand-line
+    // file cost 38 ms a frame, six times what drawing the text costs. Only the
+    // *text* has to match, not the column or the face: how many lines an
+    // author typed survives a resize, which the line breaks do not.
+    val had = ui.wrappedOf(v.id)
+    var count = 0
+    if (had != null) {
+        if (had.countsFor(v.label)) { count = had.typed }
+    }
+    if (count == 0) { count = typedLineCount(v.label) }
+    var digits = 1
+    var at = count
+    while (at >= 10) { at = at / 10; digits++ }
+    val w = ui.fonts.width("0", ui.styleFor(v), ui.canvas.scale)
+    return (w * digits.toFloat()) + ui.theme.gap(2.5)
+}
+
+/// Where an editor's text lives inside its box — past the margin, if it has
+/// one.
+public func editorInner(ui: Ui, v: View): Rect {
+    val t = ui.theme
+    val r = v.frame
     val padX = t.gap(2.5)
     val padY = t.gap(1.0)
-    return Rect(r.x + padX, r.y + padY, (r.w - padX * 2.0).max(1.0),
+    val g = gutterWidth(ui, v)
+    return Rect(r.x + padX + g, r.y + padY, (r.w - padX * 2.0 - g).max(1.0),
                 (r.h - padY * 2.0).max(1.0))
+}
+
+/// Where the margin itself is: the same rows, to the left of the text, and it
+/// never moves sideways however far the text has.
+public func gutterRect(ui: Ui, v: View): Rect {
+    val inner = editorInner(ui, v)
+    val g = gutterWidth(ui, v)
+    return Rect(inner.x - g, inner.y, (g - ui.theme.gap(1.0)).max(0.0), inner.h)
 }
 
 /// An editor's text, broken into lines at the width it actually has.
 public func editorLines(var ui: Ui, v: View): List<Line> {
-    val inner = editorInner(ui.theme, v.frame)
+    val inner = editorInner(ui, v)
     // An editor that does not fold long lines is the same wrapping asked for
     // at a column nothing reaches, which leaves the breaks the author typed
     // and adds none. One code path, not two: a second one would be a second
@@ -446,7 +493,9 @@ public func editorLines(var ui: Ui, v: View): List<Line> {
                 } else {
                     hardLines(v.label)
                 }
-    ui.setWrapped(v.id, Wrapped(v.label, col, st.size, st.bold, st.mono, lines))
+    var typed = 1
+    for (l in lines) { if (l.hard) { typed++ } }
+    ui.setWrapped(v.id, Wrapped(v.label, col, st.size, st.bold, st.mono, lines, typed))
     return lines
 }
 
@@ -471,7 +520,7 @@ public func editorShift(ui: Ui, v: View): Float {
 public func editorScroll(var ui: Ui, v: View, lines: List<Line>): Float {
     val st = ui.styleFor(v)
     val sc = ui.canvas.scale
-    val inner = editorInner(ui.theme, v.frame)
+    val inner = editorInner(ui, v)
     val lh = ui.fonts.lineHeight(st, sc)
     val room = ((lines.size.toFloat() * lh) - inner.h).max(0.0)
     var off = clampF(ui.scrollOf(v.id), 0.0, room)
@@ -515,7 +564,7 @@ public func editorScroll(var ui: Ui, v: View, lines: List<Line>): Float {
 public func editorHitAt(var ui: Ui, v: View, x: Float, y: Float): Rect {
     val st = ui.styleFor(v)
     val sc = ui.canvas.scale
-    val inner = editorInner(ui.theme, v.frame)
+    val inner = editorInner(ui, v)
     val lines = editorLines(ui, v)
     val lh = ui.fonts.lineHeight(st, sc)
     val off = ui.scrollOf(v.id)
@@ -612,13 +661,14 @@ proc paintEditor(var ui: Ui, v: View) {
 
     val st = ui.styleFor(v)
     val sc = c.scale
-    val inner = editorInner(t, r)
-    c.push(inner)
+    val inner = editorInner(ui, v)
     if (v.label == "") {
         // The hint sits on the first line rather than in the middle: an editor
         // is a column of text and its first line is where typing starts.
         val lh0 = ui.fonts.lineHeight(st, sc)
+        c.push(inner)
         ui.fonts.drawIn(c, v.hint, Rect(inner.x, inner.y, inner.w, lh0), 0, st, t.textMuted)
+        c.pop()
     }
     val lines = editorLines(ui, v)
     val lh = ui.fonts.lineHeight(st, sc)
@@ -639,6 +689,53 @@ proc paintEditor(var ui: Ui, v: View) {
 
     var i = (off / lh).floor().max(0)
     val last = (((off + inner.h) / lh).floor() + 1).min(lines.size - 1)
+
+    // The margin, before the text and outside the clip that the text scrolls
+    // under. It follows the rows down and never moves sideways: numbers that
+    // walked off the left edge on the first long line would take the marks
+    // with them, and the marks are what you look at while chasing one.
+    if (v.gutter) {
+        val gr = gutterRect(ui, v)
+        // Its own clip, and this is not a detail: the first version drew the
+        // margin inside `push(inner)`, which is the rectangle the *text*
+        // scrolls under. Every number was clipped away and the margin came out
+        // blank — while the comment two lines above said it was outside. A
+        // comment can assert what the code contradicts.
+        c.push(gr)
+        // How many lines the author typed before the first visible row —
+        // counted rather than divided, because a folded line is one number
+        // across several rows.
+        var typed = 1
+        var k = 0
+        while (k < i) {
+            if (lines[k].hard) { typed++ }
+            k++
+        }
+        var j = i
+        while (j <= last) {
+            val y = inner.y + (j.toFloat() * lh) - off
+            // A continuation of a folded line carries no number, because a
+            // number in a margin has to mean what a compiler's `:12:` means.
+            val startsALine = (j == 0) or lines[j - 1].hard
+            if (startsALine) {
+                var mark = 0
+                for (m in v.marks) { if (m.line == typed) { mark = m.ink } }
+                if (mark != 0) {
+                    c.fillRect(Rect(gr.x - t.gap(0.75), y + (lh / 2.0) - 2.5, 5.0, 5.0), mark)
+                }
+                val num = typed.toString()
+                val nw = ui.fonts.width(num, st, sc)
+                ui.fonts.draw(c, num, right(gr) - nw, y + asc, st,
+                              if (mark != 0) { mark } else { t.textMuted })
+                typed++
+            }
+            j++
+        }
+        c.pop()
+    }
+
+
+    c.push(inner)
     while (i <= last) {
         val l = lines[i]
         val body = v.label.substring(l.start, l.end)

@@ -126,6 +126,31 @@ Not to be confused with a label's `wrapping()`, which is the opposite default
 for a different question — a label cuts itself with an ellipsis unless told to
 wrap.
 
+### A margin
+
+`.gutter()` gives an editor line numbers down its left side, and
+`.gutter([LineMark(12, theme().danger), …])` marks lines as well — an error, a
+warning, a breakpoint.
+
+```keal
+editor(source, "", 30, { s -> src.set(s) })
+    .wrappingLines(false)
+    .gutter(problems.get().map({ p -> LineMark(p.line, colourFor(p.kind)) }))
+```
+
+The numbers are the lines **the author typed**: a folded line carries one
+number and its continuation carries none, because a number in a margin has to
+mean what a compiler's `:12:` means. `LineMark.line` counts from one, as the
+numbers beside it do, and a mark on a line the text no longer has is dropped
+rather than drawn — the check that produced it and the buffer it is drawn
+beside are two different moments.
+
+The margin follows the editor **down and not sideways**. Numbers that walked
+off the left edge on the first long line would take the marks with them, and
+the marks are what you look at while chasing a long line. Its width comes from
+how many digits the last number needs, so a forty-line file spends two columns
+on it and a twelve-thousand-line file still fits.
+
 A **tab** moves the pen four spaces and draws nothing; every other C0 control
 and DEL take no room and draw nothing at all. Four spaces is an *advance* and
 not a tab stop: a stop's width depends on the column it starts at, which would

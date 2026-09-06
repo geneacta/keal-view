@@ -570,6 +570,9 @@ proc controlCharTests() {
        (cr - plain).abs() < 2.0)
 }
 
+/// Whether anything at all was put down in `r` that is not `bg`.
+func inkAnywhere(r: Rect, bg: Int): Bool { return firstInkX(r, bg) >= 0.0 }
+
 /// The leftmost column in `r` carrying anything that is not the background.
 /// Answers -1 when nothing was put down.
 func firstInkX(r: Rect, bg: Int): Float {
@@ -855,7 +858,7 @@ proc editorTests() {
         eqI("and the cut eats nothing, so one offset is on two rows",
             ls1[1].start, ls1[0].end)
         val lh = ui.fonts.lineHeight(ui.styleFor(long), sc)
-        val in1 = editorInner(ui.theme, long.frame)
+        val in1 = editorInner(ui, long)
 
         // A click at the very left of the second row.
         dispatch(ui, app, t1, moveTo(in1.x + 0.5, in1.y + lh + (lh / 2.0)))
@@ -899,7 +902,7 @@ proc editorTests() {
     eqI("three lines of text are three rows", ls2.size, 3)
     if (ls2.size == 3) {
         val lh = ui.fonts.lineHeight(ui.styleFor(goal), sc)
-        val in2 = editorInner(ui.theme, goal.frame)
+        val in2 = editorInner(ui, goal)
         val far = ui.fonts.width("aaaaaaaa", ui.styleFor(goal), sc)
         dispatch(ui, app, t2, moveTo(in2.x + far, in2.y + (lh / 2.0)))
         dispatch(ui, app, t2, down(in2.x + far, in2.y + (lh / 2.0)))
@@ -985,7 +988,7 @@ proc editorTests() {
     val ls5 = editorLines(ui, shown)
     if (ls5.size == 3) {
         val lh = ui.fonts.lineHeight(ui.styleFor(shown), sc)
-        val in5 = editorInner(ui.theme, shown.frame)
+        val in5 = editorInner(ui, shown)
         ui.focus = shown.id
         ui.time = 0.0
 
@@ -1074,7 +1077,7 @@ proc editorTests() {
     layout(ui, tR0, area)
     ui.canvas.clear(ui.theme.bg)
     paint(ui, tR0)
-    val inR0 = editorInner(ui.theme, bare.frame)
+    val inR0 = editorInner(ui, bare)
     ok("with no runs the editor puts down no red at all", redBox(inR0).w < 0.0)
 
     // The same text, with `val` coloured on each of the two lines.
@@ -1085,7 +1088,7 @@ proc editorTests() {
     layout(ui, tR1, area)
     ui.canvas.clear(ui.theme.bg)
     paint(ui, tR1)
-    val inR1 = editorInner(ui.theme, lit.frame)
+    val inR1 = editorInner(ui, lit)
     val box = redBox(inR1)
     ok("a run is painted", box.w > 0.0)
     if (box.w > 0.0) {
@@ -1108,7 +1111,7 @@ proc editorTests() {
     layout(ui, tR2, area)
     ui.canvas.clear(ui.theme.bg)
     paint(ui, tR2)
-    val inR2 = editorInner(ui.theme, part.frame)
+    val inR2 = editorInner(ui, part)
     val half = redBox(inR2)
     ok("half a word is half red", half.w > 0.0)
     if (half.w > 0.0) {
@@ -1218,7 +1221,7 @@ proc editorTests() {
     ui.setMemo(mixId(flat.id, 9), 0.0 - 1.0)
     ui.canvas.clear(ui.theme.bg)
     paint(ui, tW)
-    val inW = editorInner(ui.theme, flat.frame)
+    val inW = editorInner(ui, flat)
     ok("an editor that does not fold has scrolled sideways",
        editorShift(ui, flat) > 0.0)
     val caretW = blueBox(inW)
@@ -1251,6 +1254,103 @@ proc editorTests() {
     val hitAt = editorHitAt(ui, flat, (inW.x + col40) - shiftNow, inW.y + 2.0)
     eqI("a click on a scrolled line is the character under the pointer",
         hitAt.x.toInt(), 40)
+
+    // ---- the margin
+    val five = "one\ntwo\nthree\nfour\nfive"
+    val bare5 = editor(five, "", 6, { s -> }).font(mono).keyed("g0").sized(240.0, 120.0)
+    val with5 = editor(five, "", 6, { s -> }).font(mono).keyed("g1")
+    val gut5 = with5.gutter().sized(240.0, 120.0)
+    var tG = column([bare5, gut5])
+    layout(ui, tG, area)
+    eqF("an editor without a margin has none", gutterWidth(ui, bare5), 0.0)
+    ok("one with a margin has one", gutterWidth(ui, gut5) > 0.0)
+    eqF("and the text starts exactly that much further in",
+        editorInner(ui, gut5).x - editorInner(ui, bare5).x, gutterWidth(ui, gut5))
+
+    // The width comes from the digits the last number needs, not a constant.
+    var hundred = ""
+    var mi = 0
+    while (mi < 120) { hundred = hundred + "x\n"; mi++ }
+    val big = editor(hundred, "", 6, { s -> }).font(mono).keyed("g2")
+    val gutBig = big.gutter().sized(240.0, 120.0)
+    var tG2 = column([gutBig])
+    layout(ui, tG2, area)
+    ok("a file of a hundred lines wears a wider margin than one of five",
+       gutterWidth(ui, gutBig) > gutterWidth(ui, gut5))
+
+    // Numbering from one, asserted by *where* a mark lands rather than by
+    // reading a digit: a mark on line 1 must sit on the first row, and one on
+    // line 3 on the third. Zero-based numbering would put each one row down.
+    val marked = editor(five, "", 6, { s -> }).font(mono).keyed("g3")
+    val gm = marked.gutter([LineMark(1, red), LineMark(3, red)]).sized(240.0, 120.0)
+    var tG3 = column([gm])
+    layout(ui, tG3, area)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tG3)
+    val gr = gutterRect(ui, gm)
+    val glh = ui.fonts.lineHeight(ui.styleFor(gm), sc)
+    val wide = Rect(gr.x - 6.0, gr.y, gr.w + 6.0, gr.h)
+    var rowsMarked = 0
+    var gj = 0
+    while (gj < 5) {
+        val strip = Rect(wide.x, wide.y + (gj.toFloat() * glh) + 1.0, wide.w, glh - 2.0)
+        if (redBox(strip).w > 0.0) { rowsMarked = rowsMarked + (1 * (1 shl gj)) }
+        gj++
+    }
+    eqI("marks land on the first and third rows, counting from one",
+        rowsMarked, 1 + 4)
+
+    // A mark on a line the text no longer has is dropped, not indexed. The
+    // check that produced it and the buffer it is drawn beside are two
+    // different moments.
+    val stale = editor(five, "", 6, { s -> }).font(mono).keyed("g4")
+    val gs = stale.gutter([LineMark(999, red), LineMark(0, red),
+                           LineMark(0 - 3, red)]).sized(240.0, 120.0)
+    var tG4 = column([gs])
+    layout(ui, tG4, area)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tG4)
+    ok("a mark on a line that is not there draws nothing and does not fall over",
+       redBox(gutterRect(ui, gs)).w < 0.0)
+
+    // A folded line carries one number and its continuation carries none.
+    val folded2 = editor("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nb", "", 6,
+                         { s -> }).font(mono).keyed("g5")
+    val gf = folded2.gutter().sized(150.0, 120.0)
+    var tG5 = column([gf])
+    layout(ui, tG5, area)
+    val gfLines = editorLines(ui, gf)
+    ok("the long line folded", gfLines.size > 2)
+    if (gfLines.size > 2) {
+        ui.canvas.clear(ui.theme.bg)
+        paint(ui, tG5)
+        val gr5 = gutterRect(ui, gf)
+        val lh5 = ui.fonts.lineHeight(ui.styleFor(gf), sc)
+        val row0 = Rect(gr5.x, gr5.y + 1.0, gr5.w, lh5 - 2.0)
+        val row1 = Rect(gr5.x, gr5.y + lh5 + 1.0, gr5.w, lh5 - 2.0)
+        ok("the first row of a folded line is numbered",
+           inkAnywhere(row0, ui.theme.surfaceHi))
+        ok("and its continuation is not",
+           not inkAnywhere(row1, ui.theme.surfaceHi))
+    }
+
+    // And the margin does not move sideways, which is the whole reason it is
+    // drawn outside the rectangle the text scrolls under. Numbers that walked
+    // off the left edge on the first long line would take the marks with them.
+    val sideways = editor("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nb", "", 6,
+                          { s -> }).font(mono).keyed("g6")
+    val gx = sideways.wrappingLines(false).gutter().sized(150.0, 120.0)
+    var tG6 = column([gx])
+    layout(ui, tG6, area)
+    val beforeX = gutterRect(ui, gx).x
+    ui.focus = gx.id
+    ui.setCaret(gx.id, 50)
+    ui.setAnchor(gx.id, 50)
+    ui.setMemo(mixId(gx.id, 9), 0.0 - 1.0)
+    ui.canvas.clear(ui.theme.bg)
+    paint(ui, tG6)
+    ok("the text scrolled sideways", editorShift(ui, gx) > 0.0)
+    eqF("and the margin did not", gutterRect(ui, gx).x, beforeX)
 
     // ---- the wheel
     val tall = editor("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl", "", 3,
