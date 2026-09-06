@@ -1,0 +1,41 @@
+import "../keal-view.keal"
+
+/// The bench for the half of this framework no assertion reaches: a window,
+/// with a keyboard and a pointer actually in it.
+///
+///     tools/build.sh tests/bench.keal && build/bench
+///
+/// Everything else here runs headless, which means every check goes through
+/// events this repository made up. That is the right way to test the framework
+/// and it cannot test the **backend**, which is the thing that makes the
+/// events. A defect that lived from the first day was found in ten minutes
+/// here: on macOS every arrow key typed a character into the focused field,
+/// because Cocoa answers a private-use code point for keys that type nothing
+/// and the guard that drops control characters let them through.
+///
+/// The field at the top is the **control**, and it is here rather than in a
+/// second window on purpose. It has been through three people on three
+/// platforms over a week. If a keystroke reaches it and not the editor, the
+/// injector is fine and the editor is not; if it reaches neither, read §2½
+/// before reporting anything.
+///
+/// The count at the bottom is the instrument. **A key that navigates must not
+/// change it.** Press every arrow, Home, End, Page Up and Down, and forward
+/// Delete with nothing selected at the end of the text; if the number moves,
+/// the backend is inventing text events.
+val ctl = state("")
+val doc = state("func first(a: Int, b: Int): Int {\n    return a + b\n}\n\nval second = 12345")
+val app = App("handtest", 560, 340)
+
+app.build = { ->
+    val f = field(ctl.get(), "the control", { s -> ctl.set(s) }).keyed("ctl")
+    val e0 = editor(doc.get(), "", 8, { s -> doc.set(s) }).font(textMono(13.0)).keyed("doc")
+    val e = e0.wrappingLines(false).coloured([InkRun(0, 4, rgb(198, 120, 221)),
+                                              InkRun(46, 52, rgb(224, 108, 117)),
+                                              InkRun(64, 67, rgb(198, 120, 221))])
+    val body = column([f, e.grows(),
+                       caption("${doc.get().length} caractères")
+                           .color(theme().textMuted)])
+    body.padAll(14.0).gaps(10.0)
+}
+run(app)

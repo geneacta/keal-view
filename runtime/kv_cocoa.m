@@ -171,6 +171,30 @@ static int translate(NSEvent *e) {
             NSString *s = [e characters];
             if ([s length] > 0) {
                 unichar c = [s characterAtIndex:0];
+                /* Cocoa answers a *character* for keys that type nothing: the
+                 * arrows, Home, End, Page Up and Down, forward Delete and the
+                 * function row all come back as one code point in Unicode's
+                 * private-use area, U+F700 upwards — NSUpArrowFunctionKey is
+                 * 0xF700 and NSHomeFunctionKey is 0xF729. They are above 32
+                 * and are not 127, so the guard that drops control characters
+                 * let every one of them through, and a text event carrying an
+                 * arrow key is a text event that gets typed into whatever has
+                 * the keyboard.
+                 *
+                 * One press of Left added one character to a document: 72 to
+                 * 73, counted on the screen. Home, End and Shift+Home in
+                 * sequence replaced a whole line with a single unrenderable
+                 * box, in a text field as readily as in an editor.
+                 *
+                 * Neither of the other two backends can do this: Windows sends
+                 * no WM_CHAR for a key that types nothing, and
+                 * `Xutf8LookupString` answers no bytes for one. It is Cocoa's
+                 * alone, and it survived because nobody had ever pressed an
+                 * arrow key in a keal-view window on this platform — every
+                 * check here went through `--snapshot` or through synthesised
+                 * events above the backend, and this is the backend inventing
+                 * one. */
+                if (c >= 0xF700 && c <= 0xF8FF) return 1;
                 if (c >= 32 && c != 127) {
                     KvEv te = blank(KV_EV_TEXT);
                     te.mods = m;

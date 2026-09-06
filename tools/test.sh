@@ -23,6 +23,10 @@ fi
 echo "compiler: $("$KEAL_BIN" version) at $KEAL_BIN"
 
 "$ROOT/tools/build.sh" "$ROOT/tests/units.keal" >/dev/null
+# Compiled and not run: it needs a window, and a person. Built here so that it
+# cannot rot between the days somebody uses it — which is the only reason a
+# bench nobody runs automatically stays worth having.
+"$ROOT/tools/build.sh" "$ROOT/tests/bench.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/tests/shapes.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/tests/text.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/examples/calculator.keal" >/dev/null

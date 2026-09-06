@@ -1,7 +1,7 @@
 <!-- keal-view-band:start -->
 <p align="right">
   <a href="https://github.com/geneacta/keal-view/releases"><img alt="version" src="https://img.shields.io/badge/version-0.1.0-blue?style=flat"></a>
-  <a href="https://github.com/geneacta/keal-view/tree/main/src"><img alt="written in Keal" src="https://img.shields.io/badge/written%20in%20Keal-90--92%25-brightgreen?style=flat"></a>
+  <a href="https://github.com/geneacta/keal-view/tree/main/src"><img alt="written in Keal" src="https://img.shields.io/badge/written%20in%20Keal-90--91%25-brightgreen?style=flat"></a>
 </p>
 <!-- keal-view-band:end -->
 
@@ -32,13 +32,13 @@ written in:** [keal](https://github.com/geneacta/keal) ·
               lines    what it is
   Keal          7776   the whole framework: rasteriser, fonts, layout,
                        widgets, theme, docking, menus, pictures, the run loop
-  C          713-877   one window, one event queue, and inline accessors:
-                       kv.h (304) plus one backend of three — Cocoa 409,
+  C          737-877   one window, one event queue, and inline accessors:
+                       kv.h (304) plus one backend of three — Cocoa 433,
                        X11 567, Win32 573
 ```
 
-**90 to 92 % of a running keal-view program is Keal**, depending on which
-backend it was built against, and none of the other 8 to 10 % puts a pixel
+**90 to 91 % of a running keal-view program is Keal**, depending on which
+backend it was built against, and none of the other 9 to 10 % puts a pixel
 anywhere. Both this and the badge above are counted by `ci/band.py` from
 these same files, so neither can drift from them — or from each other,
 which is the way a number in a README usually goes wrong.

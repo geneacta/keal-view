@@ -145,7 +145,27 @@ and run the same measurement against a text editor as a control.</p><ol><li><str
 build/studio            # the one that matters</code></pre><p>In the studio: <strong>drag a panel by its tab</strong> onto another one. A blue region
 should show where letting go would put it, <em>before</em> you let go — left, right,
 above, below, or as another tab. Drag the dividers between panels. Close a tab
-with its ×. Press <em>Ranger</em> to put it all back.</p><hr><h2 id="2-before-you-report-an-input-problem-run-the-control">2½. Before you report an input problem, run the control</h2><p>Both false positives in this project&#x27;s first two test passes came from the
+with its ×. Press <em>Ranger</em> to put it all back.</p><hr><h2 id="2-a-key-that-navigates-must-not-type">2⅜. A key that navigates must not type</h2><p>Everything in §1 goes through events this repository made up, which is the
+right way to test the framework and cannot test the <strong>backend</strong> — the thing
+that makes the events. So there is a bench for that, and it needs a person:</p><pre><code>tools/build.sh tests/bench.keal &amp;&amp; build/bench</code></pre><p>A text field at the top, an editor below it, and a character count at the
+bottom. The count is the instrument. <strong>Press every arrow, Home, End, Page Up
+and Down, and forward Delete, and the count must not move.</strong> Then Shift with
+each of them, and the selection must appear without the text changing.</p><p>That test takes a minute and found a defect that had been there since the
+first day. On macOS, Cocoa answers a <em>character</em> for keys that type nothing:
+the arrows, Home, End, the function row and forward Delete all come back as
+one code point in Unicode&#x27;s private-use area, U+F700 upwards. They are above
+32 and are not 127, so the guard that drops control characters let every one
+of them through — and one press of Left added one character to a document, 72
+to 73, counted on the screen. Home, End and Shift+Home in sequence replaced a
+whole line with a single unrenderable box, in a field as readily as in an
+editor.</p><p>Neither of the other two backends can do it. Windows sends no <code>WM_CHAR</code> for a
+key that types nothing, and <code>Xutf8LookupString</code> answers no bytes for one. It
+was Cocoa&#x27;s alone, and it survived a thousand assertions and three testers
+because <strong>nobody had ever pressed an arrow key in a keal-view window on that
+platform.</strong> Everything there had gone through <code>--snapshot</code>, or through
+synthesised events above the backend, and this was the backend inventing one.</p><p>The lesson generalises to any backend you write: the question is not whether
+your text events are right, it is whether you make one where there should be
+none.</p><h2 id="2-before-you-report-an-input-problem-run-the-control">2½. Before you report an input problem, run the control</h2><p>Both false positives in this project&#x27;s first two test passes came from the
 harness rather than the framework, and both were caught the same way: doing
 the same thing to a program that is known to work.</p><p>Arrow keys sent with <code>SendInput</code> and no <code>KEYEVENTF_EXTENDEDKEY</code> are treated as
 the numeric keypad&#x27;s, and Windows then cancels the Shift around them — so
@@ -156,8 +176,14 @@ dropped them there too. An <code>INPUT</code> struct built at 56 bytes instead o
 <code>SendInput</code> refuse in silence, so a click simply did not happen and the window
 looked like it was ignoring input. And on X11 under XWayland, <code>XTestFakeMotionEvent</code>
 is advertised and does nothing at all, so the first report of &quot;hover does not
-work&quot; was about the injector.</p><p>Four, from two people, on two platforms. In each case what caught it was the
-same: an observable that should have moved and did not, checked against a
+work&quot; was about the injector.</p><p>And on macOS, System Events&#x27; <code>click at {x, y}</code> is accepted by <code>osascript</code>,
+returns success, and posts nothing that a window receives — so the first pass
+at a double click looked exactly like an editor ignoring the mouse. The
+control said otherwise within a minute: the same click did not reach a text
+field that had been taking clicks for a week. A pointer built on
+<code>CGEventCreateMouseEvent</code> and posted to <code>kCGHIDEventTap</code> works, and then the
+double click selected its word and a drag selected across four lines.</p><p>Five, from three people, on three platforms. In each case what caught it was
+the same: an observable that should have moved and did not, checked against a
 program known to work — or, where no such program would answer synthetic
 events, against a control window written to do exactly what the framework
 does.</p><p>So: if input seems to be lost or ignored, send the same input to a text editor
@@ -229,7 +255,7 @@ half of the codebase to look in.</p><h2 id="4-what-will-not-work-on-your-platfor
 <code>screencapture</code>. There is no portable equivalent; take a screenshot the
 usual way.</li><li><code>--window-id</code> answers an <code>HWND</code> on Windows and an X11 <code>Window</code> on Linux.
 Both are the system&#x27;s real handle, and neither is any use to
-<code>screencapture</code>.</li></ul></div><div class="dtoc"><div class="h">ON THIS PAGE</div><div class="dtoc-items"><a href="#0-what-you-need">0. What you need</a><a href="#1-before-the-window-is-the-framework-itself-alright">1. Before the window: is the framework itself alright?</a><a href="#2-the-window-in-the-order-things-go-wrong">2. The window, in the order things go wrong</a><a href="#2-before-you-report-an-input-problem-run-the-control">2½. Before you report an input problem, run the control</a><a href="#2-the-two-things-in-this-repository-that-did-the-finding">2⅝. The two things in this repository that did the finding</a><a href="#2-a-leak-is-not-a-wrong-answer-so-no-assertion-will-find-one">2⅔. A leak is not a wrong answer, so no assertion will find one</a><a href="#2-measure-by-comparing-not-by-reading-a-number">2¾. Measure by comparing, not by reading a number</a><a href="#2-seen-once-and-not-reproduced">2⅞. Seen once and not reproduced</a><a href="#3-reporting">3. Reporting</a><a href="#4-what-will-not-work-on-your-platform-and-should-not">4. What will not work on your platform, and should not</a></div></div></div>
+<code>screencapture</code>.</li></ul></div><div class="dtoc"><div class="h">ON THIS PAGE</div><div class="dtoc-items"><a href="#0-what-you-need">0. What you need</a><a href="#1-before-the-window-is-the-framework-itself-alright">1. Before the window: is the framework itself alright?</a><a href="#2-the-window-in-the-order-things-go-wrong">2. The window, in the order things go wrong</a><a href="#2-a-key-that-navigates-must-not-type">2⅜. A key that navigates must not type</a><a href="#2-before-you-report-an-input-problem-run-the-control">2½. Before you report an input problem, run the control</a><a href="#2-the-two-things-in-this-repository-that-did-the-finding">2⅝. The two things in this repository that did the finding</a><a href="#2-a-leak-is-not-a-wrong-answer-so-no-assertion-will-find-one">2⅔. A leak is not a wrong answer, so no assertion will find one</a><a href="#2-measure-by-comparing-not-by-reading-a-number">2¾. Measure by comparing, not by reading a number</a><a href="#2-seen-once-and-not-reproduced">2⅞. Seen once and not reproduced</a><a href="#3-reporting">3. Reporting</a><a href="#4-what-will-not-work-on-your-platform-and-should-not">4. What will not work on your platform, and should not</a></div></div></div>
 <footer>
   <div><p class="base">keal-view — application windows written in Keal, where the drawing is Keal too. Apache 2.0.</p></div>
   <div class="fcol"><span class="h">PROJECT</span><a href="index.html">Home</a><a href="gallery.html">Gallery</a><a href="architecture.html">Architecture</a><a href="https://github.com/geneacta/keal-view">keal-view on GitHub</a></div><div class="fcol"><span class="h">DOCS</span><a href="guide.html">The guide</a><a href="widgets.html">The reference</a><a href="porting.html">Porting to a new platform</a><a href="coming-from.html">Coming from another toolkit</a></div><div class="fcol"><span class="h">KEAL</span><a href="https://geneacta.github.io/keal/">The language&#x27;s site</a><a href="https://github.com/geneacta/keal">Keal on GitHub</a><a href="https://geneacta.github.io/keal/docs.html">Language docs</a><a href="https://geneacta.github.io/keal/tour.html">The language tour</a></div>

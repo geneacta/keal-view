@@ -183,6 +183,42 @@ with its ×. Press *Ranger* to put it all back.
 
 ---
 
+## 2⅜. A key that navigates must not type
+
+Everything in §1 goes through events this repository made up, which is the
+right way to test the framework and cannot test the **backend** — the thing
+that makes the events. So there is a bench for that, and it needs a person:
+
+```sh
+tools/build.sh tests/bench.keal && build/bench
+```
+
+A text field at the top, an editor below it, and a character count at the
+bottom. The count is the instrument. **Press every arrow, Home, End, Page Up
+and Down, and forward Delete, and the count must not move.** Then Shift with
+each of them, and the selection must appear without the text changing.
+
+That test takes a minute and found a defect that had been there since the
+first day. On macOS, Cocoa answers a *character* for keys that type nothing:
+the arrows, Home, End, the function row and forward Delete all come back as
+one code point in Unicode's private-use area, U+F700 upwards. They are above
+32 and are not 127, so the guard that drops control characters let every one
+of them through — and one press of Left added one character to a document, 72
+to 73, counted on the screen. Home, End and Shift+Home in sequence replaced a
+whole line with a single unrenderable box, in a field as readily as in an
+editor.
+
+Neither of the other two backends can do it. Windows sends no `WM_CHAR` for a
+key that types nothing, and `Xutf8LookupString` answers no bytes for one. It
+was Cocoa's alone, and it survived a thousand assertions and three testers
+because **nobody had ever pressed an arrow key in a keal-view window on that
+platform.** Everything there had gone through `--snapshot`, or through
+synthesised events above the backend, and this was the backend inventing one.
+
+The lesson generalises to any backend you write: the question is not whether
+your text events are right, it is whether you make one where there should be
+none.
+
 ## 2½. Before you report an input problem, run the control
 
 Both false positives in this project's first two test passes came from the
@@ -200,8 +236,16 @@ looked like it was ignoring input. And on X11 under XWayland, `XTestFakeMotionEv
 is advertised and does nothing at all, so the first report of "hover does not
 work" was about the injector.
 
-Four, from two people, on two platforms. In each case what caught it was the
-same: an observable that should have moved and did not, checked against a
+And on macOS, System Events' `click at {x, y}` is accepted by `osascript`,
+returns success, and posts nothing that a window receives — so the first pass
+at a double click looked exactly like an editor ignoring the mouse. The
+control said otherwise within a minute: the same click did not reach a text
+field that had been taking clicks for a week. A pointer built on
+`CGEventCreateMouseEvent` and posted to `kCGHIDEventTap` works, and then the
+double click selected its word and a drag selected across four lines.
+
+Five, from three people, on three platforms. In each case what caught it was
+the same: an observable that should have moved and did not, checked against a
 program known to work — or, where no such program would answer synthetic
 events, against a control window written to do exactly what the framework
 does.
