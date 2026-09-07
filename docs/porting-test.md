@@ -246,6 +246,27 @@ not. `scrollWidth` against `clientWidth` is what tells the truth. It found two
 things the first time it ran, one of them a 605-point floor under this very
 page.
 
+**And it was wrong three times before it was right**, which is the part worth
+carrying to any instrument you write here:
+
+* it grepped the page for its own answer, and `--dump-dom` prints a script's
+  *source* as well as its result — so the pattern matched the source, found no
+  number, and reported every page clean. Every page, including one that was
+  605 wide;
+* it measured inside an iframe to get under Chrome's 500-point floor, and web
+  fonts in a `file://` iframe never finish loading there — so it measured a
+  page set in fallback faces, which is narrower than the page a reader gets;
+* it wrote its instrumented copy into a temp directory, and a page links its
+  stylesheet by a relative path — so it measured **unstyled** pages and
+  reported twelve of twenty-four overflowing when none of them did.
+
+Wrong three ways, and each time it answered. **An instrument that answers
+without measuring is worse than no instrument**, because it is believed. What
+settled it was the same control this document asks of everybody else: take the
+fix out, and see the tool go red on exactly the two pages that then overflow —
+and at the same number an independent measurement had already given. A tool
+that has never been seen to fail has not been seen to work.
+
 ## 2½. Before you report an input problem, run the control
 
 Both false positives in this project's first two test passes came from the
