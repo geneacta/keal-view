@@ -1255,6 +1255,55 @@ proc editorTests() {
     eqI("a click on a scrolled line is the character under the pointer",
         hitAt.x.toInt(), 40)
 
+    // ---- a thing placed at a point stays inside the layer that placed it
+    //
+    // A popup works out its own position because it knows its size before it is
+    // laid out. A docking drag's label does not: it is placed at the pointer
+    // and its width is whatever its text made it, so a panel dragged towards
+    // the right edge took its label off the side of the window. The container
+    // is the one place that knows both numbers.
+    val page = Rect(0.0, 0.0, 400.0, 300.0)
+    val tag = label("a label of some width").sized(160.0, 24.0).at(380.0, 290.0)
+    var tP = stack([nothing(), tag])
+    layout(ui, tP, page)
+    ok("a label placed past the right edge is pulled back",
+       right(tag.frame) <= page.w)
+    ok("and past the bottom as well", bottom(tag.frame) <= page.h)
+    ok("without leaving the layer on the other side", tag.frame.x >= 0.0)
+
+    val fits = label("here").sized(60.0, 24.0).at(40.0, 40.0)
+    var tP2 = stack([nothing(), fits])
+    layout(ui, tP2, page)
+    eqF("one that fits is left exactly where it was put", fits.frame.x, 40.0)
+    eqF("in both directions", fits.frame.y, 40.0)
+
+    // Too big to fit is left alone: moving it would trade one edge running
+    // over for the other, and the position it was given is all there was.
+    val huge = label("wide").sized(900.0, 24.0).at(30.0, 30.0)
+    var tP3 = stack([nothing(), huge])
+    layout(ui, tP3, page)
+    eqF("something wider than the layer is not moved", huge.frame.x, 30.0)
+
+    // And the thing this was actually for, through the real code path rather
+    // than a label placed by hand: a docking drag carries the panel's title at
+    // the pointer, and a panel dragged towards the right edge took it off the
+    // side of the window.
+    val dk = Dock(leaf(["files"]))
+    dk.add(Panel("files", "A panel with a fairly long title"))
+    dk.dragging = "files"
+    dk.pointerX = 390.0
+    dk.pointerY = 292.0
+    var tD = stack([nothing(), dockOverlay(dk), nothing()])
+    layout(ui, tD, page)
+    val tagD = firstPlaced(tD)
+    ok("a drag in progress places its label", tagD != null)
+    if (tagD != null) {
+        ok("and it is inside the window at the right edge",
+           right(tagD.frame) <= page.w)
+        ok("and at the bottom", bottom(tagD.frame) <= page.h)
+        ok("with something of it still visible", tagD.frame.w > 0.0)
+    }
+
     // ---- the margin
     val five = "one\ntwo\nthree\nfour\nfive"
     val bare5 = editor(five, "", 6, { s -> }).font(mono).keyed("g0").sized(240.0, 120.0)

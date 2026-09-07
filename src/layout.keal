@@ -215,6 +215,26 @@ public func sliderKnob(t: Theme = theme()): Float { return t.gap(3.5) }
 
 // -------------------------------------------------------------- arranging
 
+/// One edge of a placed child, kept inside the layer it is placed in.
+///
+/// A popup works out its own position because it knows how big it is before it
+/// is laid out. Most things that place themselves do not: a docking drag
+/// carries a label at the pointer and cannot know how wide the label's text
+/// made it, so a panel dragged towards the right edge took its label off the
+/// side of the window.
+///
+/// The container is the one place that knows both numbers — its own rectangle
+/// and the child's measured size — so the rule lives here rather than in each
+/// thing that places itself.
+///
+/// **Something too big to fit is left where it was put.** Moving it would
+/// trade one edge running over for the other, and the position it was given is
+/// the only information there was.
+func keptInside(at: Float, size: Float, lo: Float, room: Float): Float {
+    if (size >= room) { return at }
+    return clampF(at, lo, (lo + room) - size)
+}
+
 /// Give `v` the rectangle `r`, and every node under it a rectangle inside it.
 public proc arrange(ui: Ui, var v: View, r: Rect) {
     v.frame = r
@@ -229,8 +249,11 @@ public proc arrange(ui: Ui, var v: View, r: Rect) {
         while (j < v.kids.size) {
             val k = v.kids[j]
             measure(ui, k, inner.w, inner.h)
-            if (k.placed) { arrange(ui, k, Rect(k.placeX, k.placeY, k.mw, k.mh)) }
-            else { arrange(ui, k, inner) }
+            if (k.placed) {
+                arrange(ui, k, Rect(keptInside(k.placeX, k.mw, inner.x, inner.w),
+                                    keptInside(k.placeY, k.mh, inner.y, inner.h),
+                                    k.mw, k.mh))
+            } else { arrange(ui, k, inner) }
             j++
         }
         return
