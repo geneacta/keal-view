@@ -50,6 +50,21 @@ def version():
     return v
 
 
+def keal_version():
+    """Which Keal this is built against, from `KEAL_VERSION`.
+
+    Declared in a file because it was declared nowhere: no manifest, no
+    pinned tag, no workflow that fetches one. Beside `VERSION`, which this
+    repository already keeps for its own, and read the same way — a number
+    kept in a second place is a number that is wrong the day the first one
+    moves.
+    """
+    v = read("KEAL_VERSION").strip()
+    if not v:
+        raise SystemExit("ci/band.py: KEAL_VERSION is empty")
+    return v
+
+
 def counts():
     """Keal, and the C — the header plus each backend, separately."""
     keal = len(read("keal-view.keal").splitlines())
@@ -120,6 +135,9 @@ def band():
         % (repo, SHIELD % ("version", version(), "blue")),
         '  <a href="%s/tree/main/src"><img alt="written in Keal" src="%s"></a>'
         % (repo, SHIELD % ("written%20in%20Keal", pct + "%25", "brightgreen")),
+        '  <a href="%s"><img alt="Keal" src="%s"></a>'
+        % ("https://github.com/geneacta/keal/releases/tag/v" + keal_version(),
+           SHIELD % ("Keal", keal_version(), "orange")),
         "</p>",
         END,
     ])
