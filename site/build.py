@@ -34,11 +34,6 @@ SITE = os.path.join(ROOT, "site")
 # The window glyph in the corner: the thing this framework makes. Inline
 # rather than a file, so there is no binary asset to keep in step with the
 # palette it is drawn in.
-FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E"
-           "%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' "
-           "stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' "
-           "stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E")
-
 
 # ---- a small markdown converter -----------------------------------------
 # Enough of markdown for the documents this repository actually writes. It is
@@ -245,17 +240,17 @@ def page(lang, filename, title, description, body, active=None):
 <meta name="twitter:title" content="%(title)s">
 <meta name="twitter:description" content="%(desc)s">
 <meta name="twitter:image" content="%(image)s">
-<link rel="icon" href="%(favicon)s">
+<link rel="icon" type="image/png" href="%(prefix)sassets/k.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Geist:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="%(prefix)sstyle.css">
 </head>
 <body>
 <div class="wrap">
 <nav class="nav">
   <div class="nav-left">
-    <a class="mark" href="index.html" aria-label="keal-view"><span class="wordmark"></span></a>
+    <a class="mark" href="index.html"><img class="mark-k" src="%(prefix)sassets/k.png" alt=""><span class="wordmark">keal<span class="suffix">view</span></span></a>
     <div class="nav-links">%(links)s</div>
   </div>
   <div class="nav-right">
@@ -284,7 +279,6 @@ def page(lang, filename, title, description, body, active=None):
         "alt_fr": C.BASE_URL + "fr/" + filename,
         "locale": "en_GB" if lang == "en" else "fr_FR",
         "image": C.BASE_URL + "assets/studio.png",
-        "favicon": FAVICON,
         "links": links,
         "version": "v" + C.VERSION,
         "other": other,
@@ -304,9 +298,23 @@ def write(lang, filename, text):
         f.write(text)
 
 
-def cwin(name, code):
-    return ('<div class="cwin"><div class="cwin-bar"><span class="f">%s</span></div>'
-            "<pre>%s</pre></div>" % (html.escape(name), code))
+def cwin(name, code, size=None, run=None):
+    """A code block, and — where the code opens a window — that window under it.
+
+    The one thing keal-view's code blocks can show that no other site in this
+    family can: the program and what it makes, one above the other. `size` goes
+    at the right of the bar; `run` is (window HTML, caption).
+    """
+    bar = '<span class="f">%s</span>' % html.escape(name)
+    if size:
+        bar += '<span class="size">%s</span>' % html.escape(size)
+    out = ('<div class="cwin"><div class="cwin-bar">%s</div><pre>%s</pre>'
+           % (bar, code))
+    if run:
+        body, cap = run
+        out += ('<div class="cwin-run"><div class="cwin-win">%s</div>'
+                '<div class="cap">%s</div></div>' % (body, html.escape(cap)))
+    return out + "</div>"
 
 
 def shot(lang, filename, alt, caption, prefix=""):
@@ -393,7 +401,10 @@ def home(lang):
 """ % {
         "pill": L["pill"], "h1": L["h1"], "sub": L["sub"],
         "cta1": L["cta1"], "cta2": L["cta2"],
-        "hello": cwin(L["codefile"], C.HELLO_CODE),
+        "hello": cwin(L["codefile"], C.HELLO_CODE, "320 \u00d7 200 pt",
+                      ('<div class="wtext">%s</div>'
+                       '<span class="wbtn">%s</span>'
+                       % (L["win_text"], L["win_btn"]), L["win_cap"])),
         "shot": shot(lang, "studio.png", L["shot_alt"], L["shot_cap"], p),
         "bars_h": L["bars_h"], "bars_p": L["bars_p"], "barcap": L["barcap"],
         "bars": "".join(bars),
@@ -557,9 +568,11 @@ def copy_assets():
     out = os.path.join(SITE, "assets")
     os.makedirs(out, exist_ok=True)
     copied = []
-    shutil.copyfile(os.path.join(ROOT, "keal-view.png"),
-                    os.path.join(out, "keal-view.png"))
-    copied.append("keal-view.png")
+    # `assets/k.png` — the mark and the favicon — is not copied here: it lives
+    # in this directory already and is tracked. The wordmark beside it is text
+    # now, so the picture of the name that used to be masked out of an image is
+    # gone from the site; it stays in the README, where there is no stylesheet
+    # to make text out of it.
     for name in sorted(os.listdir(os.path.join(ROOT, "docs"))):
         if name.endswith(".png"):
             shutil.copyfile(os.path.join(ROOT, "docs", name), os.path.join(out, name))

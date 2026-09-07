@@ -1,19 +1,38 @@
-/* keal-view site — the same design system as the Keal site, in keal-view's
-   own colours.
+/* keal-view site — the Keal family's design system, in keal-view's hue.
 
-   The tokens below are not a second palette invented for a web page: they are
-   `darkTheme()` from src/theme.keal, the theme every keal-view window is
-   painted in, copied across value for value. A framework whose whole claim is
-   that it draws its own interface should have a site wearing the same clothes
-   as the screenshots on it. */
+   Four sites share one structure and differ in six things: the accent's hue,
+   how the black is tinted towards it, the face the big headings are set in,
+   the mark, the pattern behind the hero, and how a code block is dressed.
+   keal-view is hue 80 — amber. Keal, the parent, is mint and does not move.
+
+   These tokens used to be `darkTheme()` from src/theme.keal copied across
+   value for value, and the comment here said so. They are not any more, and
+   the claim is withdrawn rather than left standing: the site is amber and the
+   framework's own windows are still blue, so the screenshots on these pages
+   do not match the pages. That is a real seam and it is better named here
+   than discovered by a reader.
+
+   Measured rather than eyeballed, because amber on black is the riskiest of
+   the four pairs: --dim 7.1:1 on --bg, --prose 8.8:1, --accent 8.8:1 both
+   ways against --bg, --faint 3.5:1. */
 :root {
-  --bg: #0e1014; --panel: #171a21; --panel-hi: #1f232c; --panel-down: #282d38;
-  --line: #2a2f3a; --line2: #3d4451;
-  --ink: #e8ebf0; --prose: #a4adbd; --dim: #6d7686; --faint: #545c6b;
-  --accent: #3b82f6; --accent-h: #5c99f8; --accent-d: #2f6fd8;
-  --soft: rgba(59,130,246,.12); --soft2: rgba(59,130,246,.20);
+  --bg: #130f08; --panel: #1c1811; --panel-hi: #251f16; --panel-down: #2e2719;
+  --line: rgba(230,189,119,.12); --line2: rgba(230,189,119,.16);
+  --ink: #f0eae0; --prose: #bbaf9c; --dim: #a89d8a; --faint: #726756;
+  --accent: #dca744; --accent-h: #e9b452; --accent-d: #b8862f;
+  --soft: rgba(220,167,68,.12); --soft2: rgba(220,167,68,.20);
+  /* A state is not a brand hue: these three stay what they are on all four
+     sites, so that "this went wrong" reads the same everywhere. */
   --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
-  --code: #c7cedb; --str: #d9c98b;
+  --code: #d8d0c3; --kw: #e0b771; --ty: #f3d29b;
+  /* Strings go sea green, and this is the only site where the code's colours
+     step away from the accent — an amber string beside an amber keyword is one
+     colour doing two jobs. */
+  --str: #9fd3b4;
+  --mint: #f3d29b;
+  --display: Geist, Sora, sans-serif;
+  --motif: radial-gradient(rgba(220,167,68,.20) 1px, transparent 1.2px);
+  --motif-size: 12px 12px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -27,15 +46,20 @@ img { max-width: 100%; }
 .nav { display: flex; align-items: center; justify-content: space-between;
        padding: 16px 40px; border-bottom: 1px solid var(--line); }
 .nav-left { display: flex; align-items: center; gap: 36px; }
-.mark { display: flex; align-items: center; gap: 10px; }
-.mark svg { display: block; }
-/* The wordmark, painted through its own alpha rather than shown. The file is
-   dark teal on nothing — right on a light background and invisible on this
-   one — so the shape comes from the image and the colour from here. */
-.wordmark { display: block; width: 132px; height: 40px; background: var(--ink);
-            -webkit-mask: url(assets/keal-view.png) no-repeat center / contain;
-            mask: url(assets/keal-view.png) no-repeat center / contain; }
-.mark:hover .wordmark { background: var(--accent-h); }
+/* The K in an image and the name in **text**. The site used to carry a
+   picture of its own name, masked so that it could be recoloured; a name that
+   is text can be selected, searched, read aloud, and rendered in the reader's
+   own face when a web font does not arrive. A picture of a word does none of
+   those. */
+.mark { display: flex; align-items: center; gap: 9px; }
+.mark-k { display: block; width: 30px; height: 30px; object-fit: contain; }
+.wordmark { font: 700 22px Sora, sans-serif; letter-spacing: -.02em; color: var(--ink); }
+.wordmark .suffix { color: var(--accent); font-weight: 500; }
+/* keal-view's sign is a filled square with no radius: the pixel its
+   rasteriser puts down. */
+.wordmark::after { content: ""; display: inline-block; width: 7px; height: 7px;
+                   margin-left: 7px; vertical-align: 3px; background: var(--accent); }
+.mark:hover .wordmark .suffix { color: var(--accent-h); }
 .nav-links { display: flex; gap: 26px; font: 500 14px Sora, sans-serif; flex-wrap: wrap; }
 .nav-links a { color: var(--dim); }
 .nav-links a:hover { color: var(--ink); }
@@ -50,32 +74,54 @@ img { max-width: 100%; }
 /* Two GitHub buttons, because this project is only half of itself: the
    framework is here and the language it is written in is next door. The
    filled one is this repository; the outlined one is Keal. */
-.btn-gh { font: 600 13px Sora, sans-serif; color: #fff; background: var(--accent);
+.btn-gh { font: 600 13px Sora, sans-serif; color: var(--bg); background: var(--accent);
           border-radius: 8px; padding: 8px 16px; }
 .btn-gh:hover { background: var(--accent-h); }
-.btn-keal { font: 600 13px Sora, sans-serif; color: var(--ink);
+/* The one green allowed on a child's page: the parent's mint, as a foot in
+   front of its name. */
+.btn-keal { display: inline-flex; align-items: center; gap: 8px;
+            font: 600 13px Sora, sans-serif; color: var(--ink);
             border: 1px solid var(--line2); border-radius: 8px; padding: 7px 14px; }
+.btn-keal::before { content: ""; display: block; width: 10px; height: 5px;
+                    border-radius: 99px; background: #35c8a8; }
 .btn-keal:hover { border-color: var(--accent); color: var(--accent-h); }
 
 /* ---- hero ---- */
 .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 56px;
         padding: 72px 40px 60px; align-items: center; }
+
 .pill { display: inline-flex; align-items: center; gap: 8px;
-        font: 600 12px 'JetBrains Mono', monospace; color: var(--accent-h);
+        font: 600 12px 'JetBrains Mono', monospace; color: var(--mint);
         border: 1px solid var(--soft2); border-radius: 99px;
         padding: 6px 14px; margin-bottom: 26px; }
-.pill .dot { width: 6px; height: 6px; border-radius: 99px; background: var(--accent); }
+/* Square, like the sign after the wordmark and for the same reason. */
+.pill .dot { width: 6px; height: 6px; background: var(--accent); }
 .hero h1 { margin: 0 0 20px; font: 700 52px/1.12 Sora, sans-serif;
            letter-spacing: -.02em; text-wrap: pretty; }
 .hero .sub { margin: 0 0 30px; font: 400 18px/1.65 Sora, sans-serif;
              color: var(--prose); max-width: 54ch; }
 .ctas { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-.cta { display: inline-block; font: 600 15px Sora, sans-serif; color: #fff;
+.cta { display: inline-block; font: 600 15px Sora, sans-serif; color: var(--bg);
        background: var(--accent); border-radius: 10px; padding: 13px 24px; }
 .cta:hover { background: var(--accent-h); }
 .cta-line { display: inline-block; font: 600 15px Sora, sans-serif; color: var(--ink);
             border: 1px solid var(--line2); border-radius: 10px; padding: 13px 24px; }
 .cta-line:hover { border-color: var(--accent); }
+
+/* A grid item will not go narrower than its own content unless it is told it
+   may, and a code block's content is a `pre` that does not wrap. Without this
+   the column stayed as wide as the longest line of Keal on the page and pushed
+   the *whole document* off the side of a narrow window — the prose beside it
+   was cut mid-word rather than wrapped, and the nav links ran off the right.
+   `overflow-x: auto` on the `pre` cannot help while the column it sits in
+   refuses to shrink, and `overflow: hidden` on the block between them does not
+   either: the grid measures the content, not the box.
+
+   Measured rather than guessed at. A viewport of 500 points was giving a
+   document 651 wide, and the two elements past the edge were the two code
+   windows — which is how this landed here rather than on the nav, where it
+   looked like it belonged. */
+.hero > *, .duo > *, .grid2 > *, .dgrid > *, .cards > *, footer > * { min-width: 0; }
 
 /* ---- code windows ---- */
 .cwin { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
@@ -83,12 +129,29 @@ img { max-width: 100%; }
 .cwin-bar { display: flex; align-items: center; gap: 10px;
             padding: 10px 18px; border-bottom: 1px solid var(--line); }
 .cwin-bar .f { font: 500 12px 'JetBrains Mono', monospace; color: var(--dim); }
+/* The size of the window the code opens, on the right of the bar. This is the
+   one thing keal-view's code blocks can say that no other site in the family
+   can: the program and the window it makes, one above the other. */
+.cwin-bar .size { margin-left: auto; font: 500 12px 'JetBrains Mono', monospace;
+                  color: var(--faint); }
+/* And the window itself, drawn in HTML under the code. Corners at 4px because
+   it is a pixel, not a card. */
+.cwin-run { background: var(--bg); padding: 18px 22px; border-top: 1px solid var(--line); }
+.cwin-win { background: var(--panel); border: 1px solid rgba(230,189,119,.3);
+            border-radius: 4px; padding: 22px; text-align: center; }
+.cwin-win .wtext { font: 400 15px Sora, sans-serif; color: var(--ink);
+                   margin-bottom: 14px; }
+.cwin-win .wbtn { display: inline-block; font: 600 13px Sora, sans-serif;
+                  color: var(--bg); background: var(--accent);
+                  border-radius: 4px; padding: 8px 16px; }
+.cwin-run .cap { padding: 12px 0 0; font: 400 12px/1.6 Sora, sans-serif;
+                 color: var(--faint); }
 .cwin pre { margin: 0; padding: 20px 22px; font: 13.5px/1.75 'JetBrains Mono', monospace;
             color: var(--code); white-space: pre; overflow-x: auto; }
 .copy { margin-left: auto; font: 500 11px 'JetBrains Mono', monospace; color: var(--faint);
         cursor: pointer; user-select: none; }
 .copy:hover { color: var(--accent-h); }
-.k { color: var(--accent-h); } .t { color: #8fd3c0; }
+.k { color: var(--kw); } .t { color: var(--ty); }
 .s { color: var(--str); } .c { color: var(--faint); }
 
 /* ---- shots ---- */
@@ -224,3 +287,17 @@ footer .base { margin: 0 0 14px; font: 400 13px/1.6 Sora, sans-serif;
   .nav { flex-wrap: wrap; gap: 12px; padding: 14px 20px; }
   .hero, .band, .duo, .cards, .grid2, .dgrid, footer { padding-left: 20px; padding-right: 20px; }
 }
+
+/* ---- the six things that make this site keal-view's rather than Keal's ----
+   Five are in the tokens above. The last two rules are the other two: the face
+   the big headings are set in, and the pattern behind the hero. */
+.hero h1, .duo h2, .gs-head h2, .band h1, .band h2, .doc-head h1, .prose h1 {
+  font-family: var(--display);
+}
+.hero { background-image: var(--motif); background-size: var(--motif-size); }
+/* Geist carries a little less than Sora at the same size. This sits after the
+   breakpoints above, so it would otherwise put 56px back on a narrow window —
+   the narrow size is repeated here at the same 980px the rest of the sheet
+   uses, rather than at a second number invented for this rule. */
+.hero h1 { font-size: 56px; }
+@media (max-width: 980px) { .hero h1 { font-size: 38px; } }

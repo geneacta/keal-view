@@ -120,6 +120,12 @@ HOME = {
         "cta1": "Read the guide →",
         "cta2": "Every widget there is",
         "codefile": "hello.keal",
+        # The window that code opens, drawn under it in HTML. Not a screenshot:
+        # a picture of a window would go stale the day a colour moved, and this
+        # is three elements.
+        "win_text": "Clicked 3 times",
+        "win_btn": "Click me",
+        "win_cap": "Every pixel above came out of a loop written in Keal.",
         "shot_alt": "A docked workspace built with keal-view",
         "shot_cap": "<b>Every pixel above</b> — the rounded corners, the anti-aliased borders, "
                     "the shadows, the glyphs — came out of a loop written in Keal.",
@@ -229,6 +235,9 @@ HOME = {
         "cta1": "Lire le guide →",
         "cta2": "Tous les widgets qui existent",
         "codefile": "bonjour.keal",
+        "win_text": "Clic\u00e9 3 fois",
+        "win_btn": "Clique-moi",
+        "win_cap": "Chaque pixel ci-dessus est sorti d\u2019une boucle \u00e9crite en Keal.",
         "shot_alt": "Un espace de travail à panneaux construit avec keal-view",
         "shot_cap": "<b>Chaque pixel ci-dessus</b> — les coins arrondis, les bordures "
                     "anti-crénelées, les ombres, les glyphes — est sorti d'une boucle écrite en "

@@ -20,17 +20,17 @@
 <meta name="twitter:title" content="keal-view — application windows, written in Keal">
 <meta name="twitter:description" content="A cross-platform GUI framework in which the drawing is Keal: the rasteriser, the TrueType engine, the layout, the widgets and the docking are all .keal files. The C underneath opens a window and shows a finished buffer.">
 <meta name="twitter:image" content="https://geneacta.github.io/keal-view/assets/studio.png">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1.6' y='3.6' width='22.8' height='18.8' rx='4.5' fill='none' stroke='%233b82f6' stroke-width='2'/%3E%3Cpath d='M2 9.6h22' stroke='%233b82f6' stroke-width='2'/%3E%3Ccircle cx='6.2' cy='6.6' r='1.25' fill='%233b82f6'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="assets/k.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Geist:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap">
 <nav class="nav">
   <div class="nav-left">
-    <a class="mark" href="index.html" aria-label="keal-view"><span class="wordmark"></span></a>
+    <a class="mark" href="index.html"><img class="mark-k" src="assets/k.png" alt=""><span class="wordmark">keal<span class="suffix">view</span></span></a>
     <div class="nav-links"><a href="index.html" class="tab-active">Home</a><a href="guide.html">Guide</a><a href="widgets.html">Reference</a><a href="gallery.html">Gallery</a><a href="architecture.html">Architecture</a><a href="coming-from.html">Coming from…</a><a href="porting.html">Porting</a></div>
   </div>
   <div class="nav-right">
@@ -49,7 +49,7 @@
     <div class="ctas"><a class="cta" href="guide.html">Read the guide →</a>
       <a class="cta-line" href="gallery.html">Every widget there is</a></div>
   </div>
-  <div><div class="cwin"><div class="cwin-bar"><span class="f">hello.keal</span></div><pre><span class="k">import</span> <span class="s">"keal-view/keal-view.keal"</span>
+  <div><div class="cwin"><div class="cwin-bar"><span class="f">hello.keal</span><span class="size">320 × 200 pt</span></div><pre><span class="k">import</span> <span class="s">"keal-view/keal-view.keal"</span>
 
 <span class="k">val</span> clicks = state(<span class="s">0</span>)
 
@@ -58,7 +58,7 @@ runApp(<span class="s">"Hello"</span>, <span class="s">320</span>, <span class="
         label(<span class="s">"Clicked ${clicks.get()} times"</span>).fontSize(<span class="s">20.0</span>).centered(),
         button(<span class="s">"Click me"</span>, { -&gt; clicks.set(clicks.get() + <span class="s">1</span>) }).kindOf(primary)
     ]).gaps(<span class="s">12.0</span>).padAll(<span class="s">24.0</span>).aligned(mainCenter, crossCenter).grows()
-})</pre></div></div>
+})</pre><div class="cwin-run"><div class="cwin-win"><div class="wtext">Clicked 3 times</div><span class="wbtn">Click me</span></div><div class="cap">Every pixel above came out of a loop written in Keal.</div></div></div></div>
 </section>
 
 <section class="band"><div class="shot"><img src="assets/studio.png" alt="A docked workspace built with keal-view" loading="lazy"><div class="cap"><b>Every pixel above</b> — the rounded corners, the anti-aliased borders, the shadows, the glyphs — came out of a loop written in Keal.</div></div></section>

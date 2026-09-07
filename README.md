@@ -5,12 +5,7 @@
 </p>
 <!-- keal-view-band:end -->
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/keal-view-dark.png">
-    <img src="keal-view.png" alt="keal-view" width="320">
-  </picture>
-</p>
+<img src="site/assets/k.png" alt="" width="96" align="left">
 
 # keal-view — application windows, written in Keal
 
