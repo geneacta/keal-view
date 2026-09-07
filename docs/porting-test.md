@@ -227,6 +227,25 @@ for a week, so until somebody has pressed the keys the answer for those two is
 there and inert behind the portal, so this test needs a person and not a
 harness.
 
+## 2⅖. Two instruments that need a person, and what each is for
+
+Both live in this repository, both take a minute, and neither can be a gate —
+one needs a window and a keyboard, the other needs a browser.
+
+```sh
+tools/build.sh tests/bench.keal && build/bench   # §2⅜ — a key that navigates
+tools/site-width.sh                              # the site, at six widths
+```
+
+The second is not about the framework at all; it is here because it belongs
+beside the first. A page whose content is wider than the window scrolls
+sideways as a whole, and **a screenshot cannot show it**: headless Chrome will
+not make a window narrower than 500 points, so a capture asked for at 375 is a
+500-point page cropped, and it looks the same whether the defect is there or
+not. `scrollWidth` against `clientWidth` is what tells the truth. It found two
+things the first time it ran, one of them a 605-point floor under this very
+page.
+
 ## 2½. Before you report an input problem, run the control
 
 Both false positives in this project's first two test passes came from the

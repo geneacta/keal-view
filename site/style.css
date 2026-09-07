@@ -117,10 +117,10 @@ img { max-width: 100%; }
    refuses to shrink, and `overflow: hidden` on the block between them does not
    either: the grid measures the content, not the box.
 
-   Measured rather than guessed at. A viewport of 500 points was giving a
-   document 651 wide, and the two elements past the edge were the two code
-   windows — which is how this landed here rather than on the nav, where it
-   looked like it belonged. */
+   Measured rather than guessed at, by `tools/site-width.sh`: a viewport of
+   500 points was giving a document 651 wide, and the two elements past the
+   edge were the two code windows — which is how this landed here rather than
+   on the nav, where it looked like it belonged. */
 .hero > *, .duo > *, .grid2 > *, .dgrid > *, .cards > *, footer > * { min-width: 0; }
 
 /* ---- code windows ---- */
@@ -226,7 +226,16 @@ a.card:hover { border-color: var(--accent); }
 .prose li { margin: 7px 0; font: 400 15.5px/1.7 Sora, sans-serif; color: var(--prose); }
 .prose a { color: var(--accent-h); text-decoration: underline; text-underline-offset: 3px; }
 .prose a:hover { color: var(--accent); }
-.prose code { font: 13.5px 'JetBrains Mono', monospace; color: var(--accent-h);
+/* A long name in running text — `AreDpiAwarenessContextsEqual(...)` is
+   seventy-five characters — is one unbreakable word, and an unbreakable word
+   wider than the column pushes the whole page sideways rather than sticking
+   out of its paragraph. `break-word` breaks it only when it does not fit on a
+   line of its own, so nothing shorter is ever cut. Found by measuring
+   `scrollWidth` against `clientWidth` on every page at six widths: seven were
+   equal at 320 points and the porting guide was 605 wide at every width below
+   700 — a floor, which is what an unbreakable word makes. */
+.prose code { overflow-wrap: break-word;
+              font: 13.5px 'JetBrains Mono', monospace; color: var(--accent-h);
               background: var(--soft); padding: 1px 5px; border-radius: 4px; }
 .prose pre { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
              padding: 16px 18px; overflow-x: auto; margin: 16px 0; }
