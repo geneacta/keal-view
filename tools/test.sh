@@ -20,7 +20,36 @@ fi
 # Which compiler, said out loud: keal-view uses language features that arrived
 # because it asked for them, so a stale one refuses in ways that look like this
 # repository's fault.
-echo "compiler: $("$KEAL_BIN" version) at $KEAL_BIN"
+#
+# **And where it came from.** The compiler is preferred from a sibling checkout
+# of the language, which is what lets the two be developed together and is how
+# every language defect this project found was found early. On a machine where
+# somebody else is working in that checkout, it also means a build here depends
+# on their uncommitted state — and the version string does not say so, because
+# a working tree calls itself whatever the last release was.
+#
+# That cost an hour once: a half-finished rename in the language's runtime made
+# every program here fail to compile, and the report that went out named a
+# *released* version as broken. It was a working tree. So the line below says
+# which revision, and whether that tree is clean, before anything is built with
+# it.
+say_compiler() {
+  where=$1
+  dir=$(cd "$(dirname "$where")" && pwd)
+  rev=""
+  if git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+    rev=$(git -C "$dir" describe --tags --always --dirty 2>/dev/null)
+    if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+      rev="$rev — a working tree with uncommitted changes, not a release"
+    fi
+  fi
+  if [ -n "$rev" ]; then
+    echo "compiler: $("$KEAL_BIN" version) at $KEAL_BIN [$rev]"
+  else
+    echo "compiler: $("$KEAL_BIN" version) at $KEAL_BIN"
+  fi
+}
+say_compiler "$KEAL_BIN"
 
 "$ROOT/tools/build.sh" "$ROOT/tests/units.keal" >/dev/null
 # Compiled and not run: it needs a window, and a person. Built here so that it
