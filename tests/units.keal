@@ -1411,6 +1411,51 @@ proc editorTests() {
             ui.scrollOf(edj.id), before)
     }
 
+    // What an application that holds a caret is really relying on: that moving
+    // the caret runs `build` again, and that `build` sees where it went. An
+    // application drawing anything derived from the caret — a matching
+    // bracket, a highlighted line — is one edit behind without it, which is
+    // not a stale-looking interface but a silently wrong one.
+    //
+    // Asserted rather than read. Every caret path calls `invalidate()` today,
+    // and reading that is how one would conclude it, and reading is what has
+    // been wrong all week.
+    val heldB = caretAt(0)
+    val bsrc = state("abcdef")
+    var builds = 0
+    var sawAt = 0 - 1
+    val appB = App("t", 400, 300)
+    appB.build = { ->
+        builds = builds + 1
+        sawAt = heldB.at
+        column([editor(bsrc.get(), "", 4, { s -> bsrc.set(s) })
+                    .keyed("b").caret(heldB).sized(300.0, 90.0)])
+    }
+    var tB = stack([appB.build(), appB.overlay(), popupLayer()])
+    layout(ui, tB, area)
+    val edb = firstEditor(tB)
+    if (edb != null) {
+        ui.focus = edb.id
+        heldB.at = 0
+        heldB.anchor = 0
+        val before = builds
+        tB = deliver(ui, appB, tB, area, [pressed(keyRight())])
+        ok("moving the caret builds the tree again", builds > before)
+        eqI("and the build that ran saw where the caret went", sawAt, 1)
+
+        // A click as well as a key, because they are different paths and only
+        // one of them was written with this in mind.
+        val edb2 = firstEditor(tB)
+        if (edb2 != null) {
+            val inB = editorInner(ui, edb2)
+            val was = builds
+            tB = deliver(ui, appB, tB, area,
+                         [down(inB.x + 200.0, inB.y + 4.0), up(inB.x + 200.0, inB.y + 4.0)])
+            ok("and a click does too", builds > was)
+            eqI("with the build seeing the click's caret", sawAt, heldB.at)
+        }
+    }
+
     // A field takes one as readily, because the two share every operation that
     // works on offsets.
     val heldF = caretAt(0)
