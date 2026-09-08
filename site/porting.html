@@ -185,9 +185,12 @@ page.</p><p>The third is for the days the language changes underneath. This fram
 the language it is written in are developed together, and a change that costs a
 few per cent on a compiler compiling itself can cost more here: a paint loop is
 dense in small calls. Run it before and after and compare — one reading says
-nothing, the machine is usually busy, and six runs took a minute. Across
-keal 1.2.0 → 1.3.0, which put a call trace at every runtime failure site, a
-steady-state repaint of five thousand lines went from 9.3 ms to 10.4–11.0.</p><p>**And <code>site-width.sh</code> was wrong three times before it was right**, which is the
+nothing, the machine is usually busy, and six runs took a minute.</p><p>It earned its place the first time it ran. A call trace added at every runtime
+failure site cost the language +2.6 % on a compiler compiling itself and <strong>+11
+to +35 % here</strong>, depending on which of the three columns you read — and the
+spread is the finding: the more work a call does, the less the frame pays. A
+measurement taken from outside cannot separate the language&#x27;s change from your
+own, so take it before and after <strong>one</strong> change, and say which when you cannot.</p><p>**And <code>site-width.sh</code> was wrong three times before it was right**, which is the
 part worth carrying to any instrument you write here:</p><ul><li>it grepped the page for its own answer, and <code>--dump-dom</code> prints a script&#x27;s
 <em>source</em> as well as its result — so the pattern matched the source, found no
 number, and reported every page clean. Every page, including one that was
