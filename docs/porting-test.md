@@ -233,8 +233,9 @@ Both live in this repository, both take a minute, and neither can be a gate —
 one needs a window and a keyboard, the other needs a browser.
 
 ```sh
-tools/build.sh tests/bench.keal && build/bench   # §2⅜ — a key that navigates
-tools/site-width.sh                              # the site, at six widths
+tools/build.sh tests/bench.keal && build/bench       # §2⅜ — a key that navigates
+tools/site-width.sh                                  # the site, at 500 points
+tools/build.sh tests/paintcost.keal && build/paintcost  # what a frame costs
 ```
 
 The second is not about the framework at all; it is here because it belongs
@@ -246,8 +247,16 @@ not. `scrollWidth` against `clientWidth` is what tells the truth. It found two
 things the first time it ran, one of them a 605-point floor under this very
 page.
 
-**And it was wrong three times before it was right**, which is the part worth
-carrying to any instrument you write here:
+The third is for the days the language changes underneath. This framework and
+the language it is written in are developed together, and a change that costs a
+few per cent on a compiler compiling itself can cost more here: a paint loop is
+dense in small calls. Run it before and after and compare — one reading says
+nothing, the machine is usually busy, and six runs took a minute. Across
+keal 1.2.0 → 1.3.0, which put a call trace at every runtime failure site, a
+steady-state repaint of five thousand lines went from 9.3 ms to 10.4–11.0.
+
+**And `site-width.sh` was wrong three times before it was right**, which is the
+part worth carrying to any instrument you write here:
 
 * it grepped the page for its own answer, and `--dump-dom` prints a script's
   *source* as well as its result — so the pattern matched the source, found no

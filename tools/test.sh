@@ -56,6 +56,10 @@ say_compiler "$KEAL_BIN"
 # cannot rot between the days somebody uses it — which is the only reason a
 # bench nobody runs automatically stays worth having.
 "$ROOT/tools/build.sh" "$ROOT/tests/bench.keal" >/dev/null
+# Compiled and not run, like the bench: it takes seconds and answers a question
+# nobody asks every commit. Built so it cannot rot between the days it matters,
+# which are the days the language changes underneath.
+"$ROOT/tools/build.sh" "$ROOT/tests/paintcost.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/tests/shapes.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/tests/text.keal" >/dev/null
 "$ROOT/tools/build.sh" "$ROOT/examples/calculator.keal" >/dev/null
