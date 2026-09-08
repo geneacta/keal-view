@@ -158,6 +158,41 @@ make the width of a string depend on where the string begins, and the caret —
 placed by measuring — would come away from the letters, which are placed by
 drawing.
 
+### Moving the caret from outside
+
+Go to a line, jump to a search result, comment out the line the caret is on,
+move to the matching bracket: none of those can be said by handing a widget a
+new string — they are about *where* somebody is in it. So an application can
+hold the caret:
+
+```keal
+val cur = caretAt(0)
+
+editor(src.get(), "", 30, { s -> src.set(s) }).caret(cur)
+
+// anywhere, from any handler
+cur.at = offsetOfLine(12)
+cur.anchor = cur.at
+invalidate()
+```
+
+`at` and `anchor` are character offsets, the same ones everything else in the
+text machinery works on; they are equal when nothing is selected. Read them
+whenever you like — the widget writes them back every time the user moves the
+caret. Write them and the caret goes there, clamped to the text rather than
+indexed past it, because the offsets an application holds come from a compiler
+or a search and the buffer may be shorter by the time they arrive.
+
+Two-way needs a rule for who wins, and it is this: **a difference from what the
+widget last wrote means the application has spoken, and the widget adopts it.**
+A jump also throws away what the caret remembers between keystrokes — the
+column a run of Up and Down is aiming for — because an offset somebody named
+says nothing about a column somebody was aiming at.
+
+Without a `caret`, the framework keeps the caret in the state it retains by
+identity, which is right for every widget that has not asked. Works on a
+`field` as it does on an `editor`.
+
 ### Text in more than one colour
 
 `.coloured([InkRun(start, end, ink), …])` paints stretches of a field's or an

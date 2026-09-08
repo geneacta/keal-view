@@ -79,7 +79,28 @@ and DEL take no room and draw nothing at all. Four spaces is an <em>advance</em>
 not a tab stop: a stop&#x27;s width depends on the column it starts at, which would
 make the width of a string depend on where the string begins, and the caret —
 placed by measuring — would come away from the letters, which are placed by
-drawing.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
+drawing.</p><h3 id="moving-the-caret-from-outside">Moving the caret from outside</h3><p>Go to a line, jump to a search result, comment out the line the caret is on,
+move to the matching bracket: none of those can be said by handing a widget a
+new string — they are about <em>where</em> somebody is in it. So an application can
+hold the caret:</p><pre><code>val cur = caretAt(0)
+
+editor(src.get(), &quot;&quot;, 30, { s -&gt; src.set(s) }).caret(cur)
+
+// anywhere, from any handler
+cur.at = offsetOfLine(12)
+cur.anchor = cur.at
+invalidate()</code></pre><p><code>at</code> and <code>anchor</code> are character offsets, the same ones everything else in the
+text machinery works on; they are equal when nothing is selected. Read them
+whenever you like — the widget writes them back every time the user moves the
+caret. Write them and the caret goes there, clamped to the text rather than
+indexed past it, because the offsets an application holds come from a compiler
+or a search and the buffer may be shorter by the time they arrive.</p><p>Two-way needs a rule for who wins, and it is this: <strong>a difference from what the
+widget last wrote means the application has spoken, and the widget adopts it.</strong>
+A jump also throws away what the caret remembers between keystrokes — the
+column a run of Up and Down is aiming for — because an offset somebody named
+says nothing about a column somebody was aiming at.</p><p>Without a <code>caret</code>, the framework keeps the caret in the state it retains by
+identity, which is right for every widget that has not asked. Works on a
+<code>field</code> as it does on an <code>editor</code>.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
 editor&#x27;s text in colours of their own. <code>[start, end)</code> are offsets into the
 text; anything no run covers keeps the ordinary ink. Runs must not overlap and
 must already be in order — nothing sorts them, because whatever made them knew

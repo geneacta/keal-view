@@ -58,6 +58,52 @@ public val primary = 1
 public val quiet = 2
 public val danger = 3
 
+/// Where a text widget's caret and selection are, when the application wants
+/// to *say* and not only to know.
+///
+/// A caret normally lives in the state the framework retains by identity,
+/// because the tree is thrown away and rebuilt whenever anything changes and a
+/// caret in a view would be reset by the next keystroke. That is the right
+/// home for it while nobody has asked, and every `field` and `editor` written
+/// so far has not asked.
+///
+/// An application that owns the buffer eventually does: go to a line, jump to
+/// a search result, comment out the line the caret is on, move to the matching
+/// bracket. None of those can be expressed by handing the widget a new string
+/// — they are about *where* somebody is in it — and there is no way to build
+/// them from outside without this.
+///
+/// Hold one, hand it to the widget with `caret`, and read `at` and `anchor`
+/// whenever you like. Writing them moves the caret; the widget writes them
+/// back whenever the user does.
+public class Caret(public var at: Int, public var anchor: Int) {
+    /// What the widget last wrote here. A difference means the application has
+    /// spoken since, and the widget adopts it; equality means nobody but the
+    /// widget has. Two-way binding needs a rule for who wins, and this is the
+    /// whole of it.
+    var toldAt: Int = 0 - 1
+    var toldAnchor: Int = 0 - 1
+
+    /// Has the application moved this since the widget last wrote it?
+    public func moved(): Bool {
+        return (this.at != this.toldAt) or (this.anchor != this.toldAnchor)
+    }
+
+    /// The widget saying where it has just put the caret. Both fields and both
+    /// records in one call, because a record updated without its field — or
+    /// either one of the pair without the other — is a widget that will adopt
+    /// its own move next frame and undo whatever came after it.
+    public proc told(at: Int, anchor: Int) {
+        this.at = at
+        this.anchor = anchor
+        this.toldAt = at
+        this.toldAnchor = anchor
+    }
+}
+
+/// A caret at the start of the text, with nothing selected.
+public func caretAt(at: Int): Caret { return Caret(at, at) }
+
 /// A mark in an editor's margin, on a line: an error, a warning, a breakpoint.
 ///
 /// `line` counts **from one**, as the numbers beside it do — said in the type
@@ -143,6 +189,9 @@ public class View {
     public var gutter: Bool = false
     /// What to mark in that margin — see `LineMark`.
     public var marks: List<LineMark> = []
+    /// The application's hold on this widget's caret, or null while the
+    /// framework keeps it. See `caret`.
+    public var caretRef: Caret? = null
     /// Answers the pointer with `onDrag` rather than with a click.
     public var draggable: Bool = false
     /// A view that is not a control but still takes a click — what makes a
@@ -348,6 +397,23 @@ public class View {
     public func gutter(marks: List<LineMark> = []): View {
         this.gutter = true
         this.marks = marks
+        return this
+    }
+
+    /// Let the application hold this widget's caret and selection.
+    ///
+    ///     val cur = caretAt(0)
+    ///     editor(src.get(), "", 30, { s -> src.set(s) }).caret(cur)
+    ///
+    /// Read `cur.at` and `cur.anchor` from anywhere; write them and the caret
+    /// moves. Call `invalidate()` after writing from a handler, as you would
+    /// after changing anything else the interface is drawn from.
+    ///
+    /// Works on a `field` as it does on an `editor`, for the reason everything
+    /// else here does: they differ in four keys and share every operation that
+    /// works on offsets.
+    public func caret(c: Caret): View {
+        this.caretRef = c
         return this
     }
 

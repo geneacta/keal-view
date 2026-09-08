@@ -1255,6 +1255,128 @@ proc editorTests() {
     eqI("a click on a scrolled line is the character under the pointer",
         hitAt.x.toInt(), 40)
 
+    // ---- the caret an application holds
+    //
+    // Go to a line, jump to a search result, comment out the line the caret is
+    // on, move to the matching bracket: none of them can be said by handing a
+    // widget a new string, and all of them are about *where* somebody is in
+    // it. So an application can hold the caret, and the framework keeps
+    // holding it for everyone who does not ask.
+    val held = caretAt(0)
+    val src2 = state("one\ntwo\nthree")
+    val appC = App("t", 400, 300)
+    appC.build = { -> column([editor(src2.get(), "", 4, { s -> src2.set(s) })
+                                  .keyed("held").caret(held).sized(300.0, 90.0)]) }
+    var tC = stack([appC.build(), appC.overlay(), popupLayer()])
+    layout(ui, tC, area)
+    val ed2 = firstEditor(tC)
+    ok("the tree has the editor", ed2 != null)
+    if (ed2 != null) {
+        ui.focus = ed2.id
+        // Reading: the user types, and the application is told where the caret
+        // went without having asked.
+        tC = deliver(ui, appC, tC, area, [typed("X")])
+        eqI("typing moves the caret the application holds", held.at, 1)
+        eqI("and takes the anchor with it", held.anchor, 1)
+        ok("and the text is what was typed", src2.get() == "Xone\ntwo\nthree")
+
+        // Writing: the application says where, and the widget goes there. This
+        // is "go to line" and there is no other way to express it.
+        held.at = 8
+        held.anchor = 8
+        var tC2 = stack([appC.build(), appC.overlay(), popupLayer()])
+        layout(ui, tC2, area)
+        val ed3 = firstEditor(tC2)
+        if (ed3 != null) {
+            eqI("the application can put the caret where it likes",
+                caretIn(ui, ed3), 8)
+            // And having adopted it, the widget must not keep re-adopting: a
+            // move after the jump has to survive the next frame, or every
+            // keystroke would be undone by the jump that preceded it.
+            dispatch(ui, appC, tC2, pressed(keyRight()))
+            eqI("a key after a jump moves on from where the jump left it",
+                caretIn(ui, ed3), 9)
+            eqI("and the application is told about that too", held.at, 9)
+        }
+
+        // A selection, said by the application and read off the picture — the
+        // shape a search result takes when it jumps to its match.
+        held.at = 4
+        held.anchor = 8
+        var tC3 = stack([appC.build(), appC.overlay(), popupLayer()])
+        layout(ui, tC3, area)
+        val ed4 = firstEditor(tC3)
+        if (ed4 != null) {
+            ui.focus = ed4.id
+            ui.canvas.clear(ui.theme.bg)
+            paint(ui, tC3)
+            val inC = editorInner(ui, ed4)
+            ok("a selection the application asked for is painted",
+               blueBox(inC).w > 6.0)
+        }
+
+        // Out of range is clamped and not indexed: the offsets an application
+        // holds come from somewhere else — a compiler, a search — and the
+        // buffer can be shorter by the time they arrive.
+        held.at = 9999
+        held.anchor = 0 - 5
+        var tC4 = stack([appC.build(), appC.overlay(), popupLayer()])
+        layout(ui, tC4, area)
+        val ed5 = firstEditor(tC4)
+        if (ed5 != null) {
+            eqI("a caret past the end lands on the end",
+                caretIn(ui, ed5), src2.get().length)
+            eqI("and is reported back where it really is", held.at, src2.get().length)
+        }
+    }
+
+    // What a held caret must not cost: the things the caret remembers between
+    // keystrokes. Two mutations passed every assertion above — one that made
+    // the widget adopt its own move on every frame, and one that kept the goal
+    // column across an application's jump — because nothing here had yet
+    // pressed Down on an editor whose caret was held.
+    val heldG = caretAt(0)
+    val gsrc = state("aaaaaaaaaa\nbb\naaaaaaaaaa")
+    val appG = App("t", 400, 300)
+    appG.build = { -> column([editor(gsrc.get(), "", 4, { s -> gsrc.set(s) })
+                                  .font(mono).keyed("g").caret(heldG).sized(300.0, 90.0)]) }
+    var tG0 = stack([appG.build(), appG.overlay(), popupLayer()])
+    layout(ui, tG0, area)
+    val edg = firstEditor(tG0)
+    if (edg != null) {
+        ui.focus = edg.id
+        val lsg = editorLines(ui, edg)
+        heldG.at = 8
+        heldG.anchor = 8
+        eqI("the application put the caret in the eighth column", caretIn(ui, edg), 8)
+        dispatch(ui, appG, tG0, pressed(keyDown()))
+        eqI("Down on to a short row goes as far as it reaches",
+            caretIn(ui, edg), lsg[1].end)
+        dispatch(ui, appG, tG0, pressed(keyDown()))
+        // The column has to survive a frame in which the widget told the
+        // application where the caret is — which is every frame.
+        eqI("and Down again still remembers the column, with the caret held",
+            caretIn(ui, edg), lsg[2].start + 8)
+
+        // And a jump must throw that column away. An offset the application
+        // named says nothing about which column somebody was aiming for.
+        heldG.at = 0
+        heldG.anchor = 0
+        dispatch(ui, appG, tG0, pressed(keyDown()))
+        eqI("after a jump, Down aims at the column it jumped to, not the old one",
+            caretIn(ui, edg), lsg[1].start)
+    }
+
+    // A field takes one as readily, because the two share every operation that
+    // works on offsets.
+    val heldF = caretAt(0)
+    val fv = field("abcdef", "", { s -> }).keyed("hf").caret(heldF).sized(200.0, 30.0)
+    var tF = column([fv])
+    layout(ui, tF, area)
+    heldF.at = 3
+    heldF.anchor = 3
+    eqI("a field's caret can be held too", caretIn(ui, fv), 3)
+
     // ---- a thing placed at a point stays inside the layer that placed it
     //
     // A popup works out its own position because it knows its size before it is

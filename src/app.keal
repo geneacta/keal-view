@@ -355,15 +355,13 @@ public proc dispatch(var ui: Ui, var app: App, var root: View, e: Event) {
             // Two clicks take the word, three take the line.
             if (e.clicks == 2) {
                 val w = wordAround(h.label, ui.caretOf(h.id, 0))
-                ui.setAnchor(h.id, w.x.toInt())
-                ui.setCaret(h.id, w.y.toInt())
+                putCaret(ui, h, w.y.toInt(), w.x.toInt())
             }
             // Three take the line, which in an editor is the line the
             // pointer is on and not the whole text.
             if (e.clicks >= 3) {
                 val ln = lineUnder(ui, h)
-                ui.setAnchor(h.id, ln.x.toInt())
-                ui.setCaret(h.id, ln.y.toInt())
+                putCaret(ui, h, ln.y.toInt(), ln.x.toInt())
             }
         }
         if (h.kind == kSlider) { sliderToPointer(ui, h, e.x) }
@@ -572,8 +570,7 @@ proc caretToPointer(var ui: Ui, var v: View, e: Event, extend: Bool) {
         val shown = if (v.password) { "•".repeat(v.label.length) } else { v.label }
         at = ui.fonts.indexAt(shown, e.x - v.frame.x - padX + shift, st, sc)
     }
-    ui.setCaret(v.id, at)
-    if (not extend) { ui.setAnchor(v.id, at) }
+    putCaret(ui, v, at, if (extend) { ui.anchorOf(v.id, at) } else { at })
     forgetHints(ui, v)
     // The row the pointer was actually on, kept: at a word cut there is no
     // character between the end of one row and the start of the next, so the
@@ -592,9 +589,47 @@ proc caretToPointer(var ui: Ui, var v: View, e: Event, extend: Bool) {
 /// line. The caret was never drawn — an unfocused editor draws none — so
 /// nothing looked wrong except that the file began in the wrong place, which
 /// reads as a scrolling bug rather than a caret one.
-public func caretIn(ui: Ui, v: View): Int {
+public func caretIn(var ui: Ui, v: View): Int {
     val n = v.label.length
+    // If the application holds this caret and has moved it since we last
+    // wrote here, it wins. This is the single place that answers "where is the
+    // caret", so it is the single place that has to notice somebody else
+    // answering — everything below reads through it.
+    adoptCaret(ui, v, n)
     return clampI(ui.caretOf(v.id, if (v.kind == kEditor) { 0 } else { n }), 0, n)
+}
+
+/// Take the application's word for where the caret is, if it has given one
+/// since the last time the widget spoke.
+proc adoptCaret(var ui: Ui, v: View, n: Int) {
+    val c = v.caretRef
+    if (c == null) { return }
+    if (not c.moved()) { return }
+    val at = clampI(c.at, 0, n)
+    val anc = clampI(c.anchor, 0, n)
+    ui.setCaret(v.id, at)
+    ui.setAnchor(v.id, anc)
+    // Everything the caret remembers between keystrokes is about how it got
+    // where it is, and it got here by being told. A goal column kept from
+    // before a jump would send the next Down somewhere nobody asked for.
+    ui.setMemo(mixId(v.id, 10), 0.0 - 1.0)
+    ui.setMemo(mixId(v.id, 11), 0.0 - 1.0)
+    c.told(at, anc)
+}
+
+/// Move the caret, and tell the application if it is holding it.
+///
+/// Every path that moves a caret goes through here — a click, a drag, a key,
+/// a keystroke that replaces a selection, a delete, select-all. They used to
+/// each call `setCaret` and `setAnchor` in their own order, which was fine
+/// while nobody was listening and is exactly how one of six would have been
+/// missed once somebody was.
+public proc putCaret(var ui: Ui, var v: View, at: Int, anchor: Int) {
+    ui.setCaret(v.id, at)
+    ui.setAnchor(v.id, anchor)
+    val c = v.caretRef
+    if (c == null) { return }
+    c.told(at, anchor)
 }
 
 /// The line the caret is on, as an ordered pair of offsets. A field has one
@@ -654,7 +689,7 @@ proc moveCaretByLine(var ui: Ui, var v: View, down: Bool, extend: Bool) {
 }
 
 /// The current selection, as an ordered pair of character offsets.
-func selOf(ui: Ui, v: View): Rect {
+func selOf(var ui: Ui, v: View): Rect {
     val n = v.label.length
     val car = caretIn(ui, v)
     val anc = clampI(ui.anchorOf(v.id, car), 0, n)
@@ -667,8 +702,7 @@ proc insert(var ui: Ui, var v: View, s: String) {
     val a = sel.x.toInt()
     val b = sel.y.toInt()
     v.onString(v.label.take(a) + s + v.label.drop(b))
-    ui.setCaret(v.id, a + s.length)
-    ui.setAnchor(v.id, a + s.length)
+    putCaret(ui, v, a + s.length, a + s.length)
     forgetHints(ui, v)
     invalidate()
 }
@@ -682,8 +716,7 @@ proc deleteSel(var ui: Ui, var v: View, backwards: Bool) {
     }
     if (a == b) { return }
     v.onString(v.label.take(a) + v.label.drop(b))
-    ui.setCaret(v.id, a)
-    ui.setAnchor(v.id, a)
+    putCaret(ui, v, a, a)
     forgetHints(ui, v)
     invalidate()
 }
@@ -696,9 +729,8 @@ proc moveCaret(var ui: Ui, var v: View, to: Int, extend: Bool) {
     // never been clicked, so it has no anchor, and `anchorOf` would answer the
     // caret — which is where the caret is going, so the selection would be
     // empty however far it ran. Pin the anchor where the caret was.
-    if (extend) { ui.setAnchor(v.id, clampI(ui.anchorOf(v.id, from), 0, n)) }
-    else { ui.setAnchor(v.id, at) }
-    ui.setCaret(v.id, at)
+    val anc = if (extend) { clampI(ui.anchorOf(v.id, from), 0, n) } else { at }
+    putCaret(ui, v, at, anc)
     forgetHints(ui, v)
     invalidate()
 }
@@ -763,7 +795,7 @@ proc pressed(var ui: Ui, var root: View, e: Event) {
     val sel = selOf(ui, f)
 
     if (e.cmd()) {
-        if (e.text == "a") { ui.setAnchor(f.id, 0); ui.setCaret(f.id, n); invalidate(); return }
+        if (e.text == "a") { putCaret(ui, f, n, 0); invalidate(); return }
         if ((e.text == "c") or (e.text == "x")) {
             if (sel.x != sel.y) {
                 kvClipboardSet(f.label.substring(sel.x.toInt(), sel.y.toInt()))
