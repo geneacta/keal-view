@@ -189,6 +189,13 @@ A jump also throws away what the caret remembers between keystrokes — the
 column a run of Up and Down is aiming for — because an offset somebody named
 says nothing about a column somebody was aiming at.
 
+**And a jump lands with a few lines under it**, where a keystroke moves the
+page as little as it can. They are different questions: a caret that moved by
+one line is where its reader already was, and scrolling further would drag the
+page under their eyes; a caret the application placed arrives somewhere nobody
+was looking. Nothing has to ask for this — an offset that came from outside is
+a jump, and the widget knows which of the two it received.
+
 Without a `caret`, the framework keeps the caret in the state it retains by
 identity, which is right for every widget that has not asked. Works on a
 `field` as it does on an `editor`.

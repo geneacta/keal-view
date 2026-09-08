@@ -98,7 +98,12 @@ or a search and the buffer may be shorter by the time they arrive.</p><p>Two-way
 widget last wrote means the application has spoken, and the widget adopts it.</strong>
 A jump also throws away what the caret remembers between keystrokes — the
 column a run of Up and Down is aiming for — because an offset somebody named
-says nothing about a column somebody was aiming at.</p><p>Without a <code>caret</code>, the framework keeps the caret in the state it retains by
+says nothing about a column somebody was aiming at.</p><p><strong>And a jump lands with a few lines under it</strong>, where a keystroke moves the
+page as little as it can. They are different questions: a caret that moved by
+one line is where its reader already was, and scrolling further would drag the
+page under their eyes; a caret the application placed arrives somewhere nobody
+was looking. Nothing has to ask for this — an offset that came from outside is
+a jump, and the widget knows which of the two it received.</p><p>Without a <code>caret</code>, the framework keeps the caret in the state it retains by
 identity, which is right for every widget that has not asked. Works on a
 <code>field</code> as it does on an <code>editor</code>.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
 editor&#x27;s text in colours of their own. <code>[start, end)</code> are offsets into the

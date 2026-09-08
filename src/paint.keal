@@ -529,9 +529,23 @@ public func editorScroll(var ui: Ui, v: View, lines: List<Line>): Float {
     if (ui.memoOf(mixId(v.id, 9), -1.0).toInt() != caret) {
         val row = caretRow(ui, v, lines, caret)
         val top = row.toFloat() * lh
-        if (top < off) { off = top }
-        if ((top + lh) > (off + inner.h)) { off = top + lh - inner.h }
+        // How much of the text has to come with it. A caret that moved by a
+        // keystroke brings none: scrolling by more than it needs would move
+        // the page under somebody's eyes while they are reading it, and a line
+        // at the edge is where they just were. A caret the **application**
+        // placed is a jump — a search result, a diagnostic, a line asked for
+        // by number — and it arrives somewhere nobody was looking, so it comes
+        // with a few lines of context or it lands with nothing under it.
+        //
+        // The framework can tell the two apart because `adoptCaret` knows the
+        // offset came from outside; a rule that centred everything could not,
+        // and would fight a caret that moved one line.
+        val jumped = ui.memoOf(mixId(v.id, 13), 0.0) > 0.5
+        val edge = if (jumped) { (lh * 3.0).min(((inner.h - lh) / 2.0).max(0.0)) } else { 0.0 }
+        if (top - edge < off) { off = top - edge }
+        if ((top + lh + edge) > (off + inner.h)) { off = top + lh + edge - inner.h }
         off = clampF(off, 0.0, room)
+        ui.setMemo(mixId(v.id, 13), 0.0)
         ui.setMemo(mixId(v.id, 9), caret.toFloat())
         // And sideways, for an editor that does not fold: the caret can be
         // anywhere along a line as long as the line is, and following it down

@@ -614,6 +614,10 @@ proc adoptCaret(var ui: Ui, v: View, n: Int) {
     // before a jump would send the next Down somewhere nobody asked for.
     ui.setMemo(mixId(v.id, 10), 0.0 - 1.0)
     ui.setMemo(mixId(v.id, 11), 0.0 - 1.0)
+    // This one arrived from outside, so it is a jump and not a step: it lands
+    // somewhere nobody was looking, and `editorScroll` brings a few lines with
+    // it rather than putting it against an edge.
+    ui.setMemo(mixId(v.id, 13), 1.0)
     c.told(at, anc)
 }
 
