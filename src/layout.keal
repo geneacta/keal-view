@@ -355,10 +355,67 @@ public proc arrange(ui: Ui, var v: View, r: Rect) {
 }
 
 /// Measure and place a whole tree inside `r`.
-public proc layout(ui: Ui, var root: View, r: Rect) {
+public proc layout(var ui: Ui, var root: View, r: Rect) {
     identify(root, 7919, 0)
     measure(ui, root, r.w, r.h)
     arrange(ui, root, r)
+    syncFocus(ui, root)
+}
+
+/// Give the keyboard to whichever widget the application has asked for, and
+/// tell every widget holding a `Focus` whether it has it.
+///
+/// Here rather than at each of the five places `ui.focus` is written — a
+/// click, Tab, Escape twice, and a click on nothing. Chasing five sites is how
+/// one of five gets missed, and this walk already visits every node with its
+/// identity just assigned, which is the one moment both halves of the question
+/// can be answered at once.
+///
+/// It runs inside `layout`, which runs inside the event batch after a rebuild,
+/// so a handler that asks for the keyboard has it before the next event in the
+/// same batch — not a frame later.
+///
+/// **Two walks, and the second one is why.** Deciding and telling in the same
+/// pass makes the answer depend on the order the tree happens to be in: a
+/// widget visited before the keyboard moved is told it still has it, and never
+/// asked again. So the first walk settles where the keyboard is and the second
+/// tells everybody. Decide, then say — the same discipline as writing a
+/// caret's two halves in one call.
+proc syncFocus(var ui: Ui, v: View) {
+    claimFocus(ui, v)
+    reportFocus(ui, v)
+}
+
+/// The first walk: an application that has changed its mind gets its way.
+proc claimFocus(var ui: Ui, v: View) {
+    val f = v.focusRef
+    if (f != null) {
+        if (f.moved()) {
+            // Wanting it takes it; not wanting it gives it back to nothing,
+            // which is what Escape does.
+            if (f.has) { ui.focus = v.id } else {
+                if (ui.focus == v.id) { ui.focus = 0 }
+            }
+        }
+    }
+    var i = 0
+    while (i < v.kids.size) {
+        claimFocus(ui, v.kids[i])
+        i++
+    }
+}
+
+/// The second walk: everybody is told where the keyboard ended up, whether
+/// they asked or not. That last part is what makes "has the user left my box"
+/// a question an application can answer.
+proc reportFocus(var ui: Ui, v: View) {
+    val f = v.focusRef
+    if (f != null) { f.holds(ui.focus == v.id) }
+    var i = 0
+    while (i < v.kids.size) {
+        reportFocus(ui, v.kids[i])
+        i++
+    }
 }
 
 // ------------------------------------------------------------ hit testing

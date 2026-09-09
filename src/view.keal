@@ -120,6 +120,39 @@ public class Caret(public var at: Int, public var anchor: Int) {
 /// A caret at the start of the text, with nothing selected.
 public func caretAt(at: Int): Caret { return Caret(at, at) }
 
+/// Whether a widget has the keyboard, when the application wants to *say* and
+/// not only to know.
+///
+/// The same shape as `Caret` and for the same reason. The framework keeps the
+/// focus for everyone who has not asked — Tab walks it, a click moves it,
+/// Escape gives it back — and an application that needs to put the keyboard
+/// somewhere cannot: `⌘F` should land in a search box, and a search box cannot
+/// be typed into unless somebody can say so.
+///
+/// Hold one, hand it to a widget with `focus`, and read `has` whenever you
+/// like. Write it and the keyboard moves; the widget writes it back when a
+/// click or a Tab moves the keyboard somewhere else, so "has the user left my
+/// box" is answerable too.
+///
+/// Setting `has` to false gives the keyboard to nothing, which is what Escape
+/// does. To move it from one widget to another, set the other one to true —
+/// the widget losing it is told.
+public class Focus(public var has: Bool) {
+    var was: Bool = false
+
+    /// Has the application changed this since the widget last wrote it?
+    public func moved(): Bool { return this.has != this.was }
+
+    /// The widget saying whether it has the keyboard now.
+    public proc holds(v: Bool) {
+        this.has = v
+        this.was = v
+    }
+}
+
+/// A hold on the keyboard, wanting it or not.
+public func focusHeld(wanted: Bool = false): Focus { return Focus(wanted) }
+
 /// A mark in an editor's margin, on a line: an error, a warning, a breakpoint.
 ///
 /// `line` counts **from one**, as the numbers beside it do — said in the type
@@ -208,6 +241,9 @@ public class View {
     /// The application's hold on this widget's caret, or null while the
     /// framework keeps it. See `caret`.
     public var caretRef: Caret? = null
+    /// The application's hold on this widget's place in the keyboard's
+    /// attention, or null while the framework keeps it. See `focus`.
+    public var focusRef: Focus? = null
     /// Answers the pointer with `onDrag` rather than with a click.
     public var draggable: Bool = false
     /// A view that is not a control but still takes a click — what makes a
@@ -430,6 +466,22 @@ public class View {
     /// works on offsets.
     public func caret(c: Caret): View {
         this.caretRef = c
+        return this
+    }
+
+    /// Let the application put the keyboard here, and know when it leaves.
+    ///
+    ///     val searching = focusHeld()
+    ///     field(term.get(), "search", { s -> term.set(s) }).focus(searching)
+    ///
+    ///     // in a ⌘F handler
+    ///     searching.has = true
+    ///     invalidate()
+    ///
+    /// Any widget that can take the keyboard takes one — a `field`, an
+    /// `editor`, a button, a checkbox.
+    public func focus(f: Focus): View {
+        this.focusRef = f
         return this
     }
 

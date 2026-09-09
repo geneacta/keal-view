@@ -211,6 +211,32 @@ Without a `caret`, the framework keeps the caret in the state it retains by
 identity, which is right for every widget that has not asked. Works on a
 `field` as it does on an `editor`.
 
+### Putting the keyboard somewhere
+
+`⌘F` should land in a search box, and a search box cannot be typed into unless
+somebody can say so. The framework keeps the focus for every widget that has
+not asked — Tab walks it, a click moves it, Escape gives it back — and an
+application can hold it instead:
+
+```keal
+val searching = focusHeld()
+
+field(term.get(), "search", { s -> term.set(s) }).focus(searching)
+
+// in a ⌘F handler
+searching.has = true
+invalidate()
+```
+
+Read `has` whenever you like: the widget writes it back when a click or a Tab
+moves the keyboard elsewhere, so *has the user left my box* is a question you
+can answer. Setting it to false gives the keyboard to nothing, which is what
+Escape does; to move it from one widget to another, ask on the other one — the
+one losing it is told.
+
+Any widget that can take the keyboard takes a `focus`: a field, an editor, a
+button, a checkbox, a radio, a toggle.
+
 ### Text in more than one colour
 
 `.coloured([InkRun(start, end, ink), …])` paints stretches of a field's or an

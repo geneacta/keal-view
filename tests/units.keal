@@ -1551,6 +1551,57 @@ proc editorTests() {
     heldF.anchor = 3
     eqI("a field's caret can be held too", caretIn(ui, fv), 3)
 
+    // ---- the keyboard, when the application wants to put it somewhere
+    //
+    // `⌘F` should land in a search box, and a search box cannot be typed into
+    // unless somebody can say so. Same shape as the caret: the application
+    // holds it, the widget adopts what it is told and writes back what happens.
+    val fA = focusHeld()
+    val fB = focusHeld()
+    val boxA = field("a", "", { s -> }).keyed("fa").focus(fA).sized(120.0, 30.0)
+    val boxB = field("b", "", { s -> }).keyed("fb").focus(fB).sized(120.0, 30.0)
+    var tFo = stack([column([boxA, boxB]), nothing(), nothing()])
+    ui.focus = 0
+    layout(ui, tFo, area)
+    ok("nobody has the keyboard to start with", (not fA.has) and (not fB.has))
+
+    // The application asks for it.
+    fA.has = true
+    layout(ui, tFo, area)
+    eqI("asking for the keyboard gets it", ui.focus, boxA.id)
+    ok("and the one that asked knows it has it", fA.has)
+    ok("while the other knows it does not", not fB.has)
+
+    // Moving it: ask on the other one, and the first is told it lost it.
+    fB.has = true
+    layout(ui, tFo, area)
+    eqI("asking on another moves it", ui.focus, boxB.id)
+    ok("the new one has it", fB.has)
+    ok("and the old one is told it lost it", not fA.has)
+
+    // A Tab is the framework moving it, and both are told.
+    ui.focus = 0
+    layout(ui, tFo, area)
+    dispatch(ui, app, tFo, pressed(keyTab()))
+    layout(ui, tFo, area)
+    ok("Tab gives it to the first, and it knows", fA.has)
+    ok("and the second knows it has not", not fB.has)
+
+    // Giving it back to nothing, which is what Escape does.
+    fA.has = false
+    layout(ui, tFo, area)
+    eqI("saying no gives the keyboard to nothing", ui.focus, 0)
+    ok("and nobody claims it", (not fA.has) and (not fB.has))
+
+    // A click moves it, and the holder is told without having asked — which is
+    // the half that makes "has the user left my box" answerable.
+    dispatch(ui, app, tFo, moveTo(centerX(boxB.frame), centerY(boxB.frame)))
+    dispatch(ui, app, tFo, down(centerX(boxB.frame), centerY(boxB.frame)))
+    dispatch(ui, app, tFo, up(centerX(boxB.frame), centerY(boxB.frame)))
+    layout(ui, tFo, area)
+    ok("a click on the second gives it the keyboard", fB.has)
+    ok("and the first is told", not fA.has)
+
     // ---- a thing placed at a point stays inside the layer that placed it
     //
     // A popup works out its own position because it knows its size before it is

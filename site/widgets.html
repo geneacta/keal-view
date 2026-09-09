@@ -112,7 +112,21 @@ event batch and paints after it, so a handler reading <code>screen</code> during
 keystroke that moved the caret sees where the caret was before it — one
 character out. Open what you are anchoring on the frame after the move.</p><p>Without a <code>caret</code>, the framework keeps the caret in the state it retains by
 identity, which is right for every widget that has not asked. Works on a
-<code>field</code> as it does on an <code>editor</code>.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
+<code>field</code> as it does on an <code>editor</code>.</p><h3 id="putting-the-keyboard-somewhere">Putting the keyboard somewhere</h3><p><code>⌘F</code> should land in a search box, and a search box cannot be typed into unless
+somebody can say so. The framework keeps the focus for every widget that has
+not asked — Tab walks it, a click moves it, Escape gives it back — and an
+application can hold it instead:</p><pre><code>val searching = focusHeld()
+
+field(term.get(), &quot;search&quot;, { s -&gt; term.set(s) }).focus(searching)
+
+// in a ⌘F handler
+searching.has = true
+invalidate()</code></pre><p>Read <code>has</code> whenever you like: the widget writes it back when a click or a Tab
+moves the keyboard elsewhere, so <em>has the user left my box</em> is a question you
+can answer. Setting it to false gives the keyboard to nothing, which is what
+Escape does; to move it from one widget to another, ask on the other one — the
+one losing it is told.</p><p>Any widget that can take the keyboard takes a <code>focus</code>: a field, an editor, a
+button, a checkbox, a radio, a toggle.</p><h3 id="text-in-more-than-one-colour">Text in more than one colour</h3><p><code>.coloured([InkRun(start, end, ink), …])</code> paints stretches of a field&#x27;s or an
 editor&#x27;s text in colours of their own. <code>[start, end)</code> are offsets into the
 text; anything no run covers keeps the ordinary ink. Runs must not overlap and
 must already be in order — nothing sorts them, because whatever made them knew
