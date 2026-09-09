@@ -1456,6 +1456,91 @@ proc editorTests() {
         }
     }
 
+    // Where the caret is *on the screen*, which is what anchors a completion
+    // list under it or a type beside it. The application already holds the
+    // caret, so the rectangle is written there rather than into a new object.
+    val heldR = caretAt(0)
+    val rsrc = state("aaaa\nbbbb\ncccc")
+    val appR = App("t", 400, 300)
+    appR.build = { -> column([editor(rsrc.get(), "", 4, { s -> rsrc.set(s) })
+                                  .font(mono).keyed("r").caret(heldR).sized(300.0, 90.0)]) }
+    var tR = stack([appR.build(), appR.overlay(), popupLayer()])
+    layout(ui, tR, area)
+    eqF("nothing is known until a frame has been drawn", heldR.screen.w, 0.0)
+    val edr = firstEditor(tR)
+    if (edr != null) {
+        ui.canvas.clear(ui.theme.bg)
+        paint(ui, tR)
+        val innR = editorInner(ui, edr)
+        val lhR = ui.fonts.lineHeight(ui.styleFor(edr), sc)
+        ok("after a frame it has a size", heldR.screen.w > 0.0)
+        ok("and is inside the editor", holds(grow(innR, 2.0), heldR.screen.x, heldR.screen.y))
+        val atStart = heldR.screen.x
+
+        // Along a line, and then down one.
+        heldR.at = 2
+        heldR.anchor = 2
+        ui.canvas.clear(ui.theme.bg)
+        paint(ui, tR)
+        ok("it moves along as the caret does", heldR.screen.x > atStart)
+        val onRow0 = heldR.screen.y
+
+        heldR.at = 7
+        heldR.anchor = 7
+        ui.canvas.clear(ui.theme.bg)
+        paint(ui, tR)
+        ok("and down a row when the caret goes down one",
+           (heldR.screen.y - onRow0 - lhR).abs() < 1.5)
+
+        // It is where the caret is *painted*, read from the pixels rather than
+        // from the same arithmetic that wrote it — otherwise this asserts that
+        // a number equals itself.
+        ui.focus = edr.id
+        ui.time = 0.0
+        ui.canvas.clear(ui.theme.bg)
+        paint(ui, tR)
+        val ink = blueBox(innR)
+        ok("a caret was painted", ink.w > 0.0)
+        if (ink.w > 0.0) {
+            ok("and the rectangle is where the ink is",
+               ((ink.x - heldR.screen.x).abs() < 2.0)
+               and ((ink.y - heldR.screen.y).abs() < 2.5))
+        }
+
+        // Published for an unfocused editor too: something anchored to a caret
+        // still needs to know where it would be.
+        ui.focus = 0
+        heldR.at = 1
+        heldR.anchor = 1
+        ui.canvas.clear(ui.theme.bg)
+        paint(ui, tR)
+        ok("an editor nobody is typing in still says where its caret is",
+           heldR.screen.w > 0.0)
+    }
+
+    // And it follows the sideways scroll, which is the case a rectangle taken
+    // from the text's own coordinates would get wrong.
+    val heldS = caretAt(0)
+    val ssrc = state("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    val appS = App("t", 400, 300)
+    appS.build = { ->
+        val e = editor(ssrc.get(), "", 3, { s -> ssrc.set(s) }).font(mono).keyed("s")
+        column([e.wrappingLines(false).caret(heldS).sized(150.0, 70.0)])
+    }
+    var tS = stack([appS.build(), appS.overlay(), popupLayer()])
+    layout(ui, tS, area)
+    val eds = firstEditor(tS)
+    if (eds != null) {
+        heldS.at = 49
+        heldS.anchor = 49
+        ui.canvas.clear(ui.theme.bg)
+        paint(ui, tS)
+        val innS = editorInner(ui, eds)
+        ok("the text scrolled sideways to reach the caret", editorShift(ui, eds) > 0.0)
+        ok("and the rectangle is still inside the box, not off the end of it",
+           (heldS.screen.x >= (innS.x - 2.0)) and (heldS.screen.x <= (right(innS) + 2.0)))
+    }
+
     // A field takes one as readily, because the two share every operation that
     // works on offsets.
     val heldF = caretAt(0)

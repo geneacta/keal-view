@@ -89,6 +89,22 @@ public class Caret(public var at: Int, public var anchor: Int) {
         return (this.at != this.toldAt) or (this.anchor != this.toldAnchor)
     }
 
+    /// Where the caret is on the screen, in window points, as the last frame
+    /// drew it. Written by the widget and never read by it.
+    ///
+    /// This is what anchors something to the caret: a completion list under
+    /// it, a type shown beside it, a signature above it. `openMenu` already
+    /// takes a point; this is the point.
+    ///
+    /// **It is the last frame's**, and that is worth knowing exactly. A
+    /// keystroke rebuilds the tree inside the event batch but paints after it,
+    /// so a handler reading this during the keystroke that moved the caret
+    /// sees where the caret was before that keystroke — one character out. Open
+    /// what you are anchoring on the frame *after* the move and it is exact.
+    ///
+    /// Zero width until a frame has been drawn with this widget in it.
+    public var screen: Rect = Rect(0.0, 0.0, 0.0, 0.0)
+
     /// The widget saying where it has just put the caret. Both fields and both
     /// records in one call, because a record updated without its field — or
     /// either one of the pair without the other — is a widget that will adopt

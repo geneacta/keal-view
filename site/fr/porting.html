@@ -190,7 +190,15 @@ failure site cost the language +2.6 % on a compiler compiling itself and <strong
 to +35 % here</strong>, depending on which of the three columns you read — and the
 spread is the finding: the more work a call does, the less the frame pays. A
 measurement taken from outside cannot separate the language&#x27;s change from your
-own, so take it before and after <strong>one</strong> change, and say which when you cannot.</p><p>**And <code>site-width.sh</code> was wrong three times before it was right**, which is the
+own, so take it before and after <strong>one</strong> change, and say which when you cannot.</p><p><strong>A mutation that does not compile is not a mutation that escaped.</strong> This is
+about the other instrument used constantly here — breaking the code on purpose
+to see whether an assertion notices. If the build fails and the runner is not
+told, it runs the <em>previous</em> binary, every check passes, and the report reads
+&quot;not caught&quot; for a change that never ran. One mutation in this project&#x27;s
+history did exactly that and was investigated as a gap in the tests. So:</p><pre><code>if ! tools/build.sh tests/units.keal &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;DID NOT BUILD — says nothing&quot;; return
+fi</code></pre><p>The same shape as everything below: an instrument that answers without
+measuring is worse than none, because it is believed.</p><p>**And <code>site-width.sh</code> was wrong three times before it was right**, which is the
 part worth carrying to any instrument you write here:</p><ul><li>it grepped the page for its own answer, and <code>--dump-dom</code> prints a script&#x27;s
 <em>source</em> as well as its result — so the pattern matched the source, found no
 number, and reported every page clean. Every page, including one that was

@@ -196,6 +196,17 @@ page under their eyes; a caret the application placed arrives somewhere nobody
 was looking. Nothing has to ask for this — an offset that came from outside is
 a jump, and the widget knows which of the two it received.
 
+`cur.screen` is where the caret is on the screen, in window points, as the last
+frame drew it — the point to anchor something to it: a completion list under
+it, a type beside it. It follows the sideways scroll, and it is written whether
+or not the widget has the keyboard, because something anchored to a caret still
+needs to know where it would be.
+
+**It is the last frame's**, exactly. A keystroke rebuilds the tree inside the
+event batch and paints after it, so a handler reading `screen` during the
+keystroke that moved the caret sees where the caret was before it — one
+character out. Open what you are anchoring on the frame after the move.
+
 Without a `caret`, the framework keeps the caret in the state it retains by
 identity, which is right for every widget that has not asked. Works on a
 `field` as it does on an `editor`.

@@ -396,6 +396,11 @@ proc paintField(var ui: Ui, v: View) {
         // colouring them would draw the shape of the password.
         val runs = if (v.password) { emptyRuns() } else { v.inkRuns }
         drawRuns(ui, c, runs, shown, 0, inner.x - shift, baseline, st, ui.inkFor(v))
+        val fcr = v.caretRef
+        if (fcr != null) {
+            fcr.screen = Rect(inner.x + cx - shift, inner.y + (inner.h - lh) / 2.0,
+                              t.hairline * 1.4, lh)
+        }
         if (focused) {
             // A caret that blinks means a frame drawn with nothing having
             // happened — so the loop is told to expect one, and told **when**.
@@ -772,15 +777,21 @@ proc paintEditor(var ui: Ui, v: View) {
         i++
     }
 
+    // Where the caret is, computed whether or not it is drawn: an unfocused
+    // editor shows none, and something anchored to it — a completion list, a
+    // type beside it — still needs to know where it would be.
+    val crow = caretRow(ui, v, lines, caret)
+    val cl = lines[crow]
+    val cx = ui.fonts.xOfIndex(v.label.substring(cl.start, cl.end), caret - cl.start, st, sc)
+    val cy = inner.y + (crow.toFloat() * lh) - off
+    val cw = t.hairline * 1.4
+    val cr = v.caretRef
+    if (cr != null) { cr.screen = Rect(left + cx, cy, cw, lh) }
     if (focused) {
-        val row = caretRow(ui, v, lines, caret)
-        val l = lines[row]
-        val cx = ui.fonts.xOfIndex(v.label.substring(l.start, l.end), caret - l.start, st, sc)
-        val cy = inner.y + (row.toFloat() * lh) - off
         val period = 530.0
         ui.wakeIn(period - (ui.time % period))
         if (((ui.time / period).toInt() % 2) == 0) {
-            c.fillRect(Rect(left + cx, cy + 1.0, t.hairline * 1.4, lh - 2.0), t.accent)
+            c.fillRect(Rect(left + cx, cy + 1.0, cw, lh - 2.0), t.accent)
         }
     }
     c.pop()

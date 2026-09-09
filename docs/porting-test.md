@@ -260,6 +260,22 @@ spread is the finding: the more work a call does, the less the frame pays. A
 measurement taken from outside cannot separate the language's change from your
 own, so take it before and after **one** change, and say which when you cannot.
 
+**A mutation that does not compile is not a mutation that escaped.** This is
+about the other instrument used constantly here — breaking the code on purpose
+to see whether an assertion notices. If the build fails and the runner is not
+told, it runs the *previous* binary, every check passes, and the report reads
+"not caught" for a change that never ran. One mutation in this project's
+history did exactly that and was investigated as a gap in the tests. So:
+
+```sh
+if ! tools/build.sh tests/units.keal >/dev/null 2>&1; then
+  echo "DID NOT BUILD — says nothing"; return
+fi
+```
+
+The same shape as everything below: an instrument that answers without
+measuring is worse than none, because it is believed.
+
 **And `site-width.sh` was wrong three times before it was right**, which is the
 part worth carrying to any instrument you write here:
 
