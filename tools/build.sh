@@ -49,9 +49,21 @@ case $(uname -s) in
     # exits cleanly when it cannot, and flips on nothing but the PATH order.
     # Linking statically removes the import and the failure with it.
     #
-    # The released binaries never showed it because the CI image has only one
-    # MinGW, not because they were static. This makes that difference stop
-    # mattering.
+    # Two wrong explanations were offered for why the released binaries never
+    # showed it, one each, and `objdump -p` settled it: their whole import
+    # table is GDI32, KERNEL32, USER32. **No pthread DLL at all** — so a
+    # download was never exposed, on any machine, however many MinGWs it has.
+    # The CI's gcc produces a binary with nothing for the loader to resolve.
+    #
+    # So this flag protects the **developer**, not the download, and it earns
+    # its place by making the property explicit rather than accidental: a
+    # runner image that changes its toolchain would otherwise start shipping
+    # the import with nobody noticing until a download span.
+    #
+    # And the requirement that creates the import is our own. Keal's error
+    # says a Windows build needs "MinGW-w64 (a POSIX-threads build, which
+    # actors need)" — so the machine that follows the instructions correctly
+    # is the machine that gets bitten.
     LINK="-static -lgdi32 -luser32"
     ;;
   *) echo "keal-view has no backend for $(uname -s)" >&2; exit 1 ;;
