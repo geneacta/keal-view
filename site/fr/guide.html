@@ -67,7 +67,21 @@ Building a few hundred nodes is tens of microseconds, and what you get for it
 is that the view function is a pure function of the state, with nothing to
 invalidate and nothing to forget to invalidate.</p><p><code>update</code> reads and writes in one go, and <code>invalidate()</code> says &quot;something
 changed&quot; for anything that does not live in a cell:</p><pre><code>clicks.update({ n -&gt; n + 1 })
-invalidate()                      // a timer fired, a file finished loading</code></pre><hr><h2 id="2-where-the-state-lives">2¾. Where the state lives</h2><p>Cells are one answer and they are the right one for a small program. Past a
+invalidate()                      // a timer fired, a file finished loading</code></pre><h3 id="watching-something-that-changes-on-its-own">Watching something that changes on its own</h3><p>A window at rest builds nothing and draws nothing — that is what makes an idle
+keal-view window cost no processor at all, and it leaves an application no way
+to notice a file growing under it. <code>wakeIn(ms)</code> asks to be built again later:</p><pre><code>app.build = { -&gt;
+    if (building.get()) {
+        log.set(readFile(&quot;build.log&quot;) ?: &quot;&quot;)
+        wakeIn(120.0)             // ask again in a tenth of a second
+    }
+    …
+}</code></pre><p><strong>One frame, not a subscription.</strong> An application that wants another asks
+again, so a poll somebody forgot to stop dies by itself. Stop asking and the
+window goes as quiet as one that never started — measured with <code>--trace</code>: two
+seconds of watching, then nothing at all.</p><p>When two things ask, the sooner wins: a blinking caret and a log being watched
+share one wake-up between them. And it <strong>rebuilds</strong>, where the wake-ups a caret
+asks for only repaint — watching a file is pointless if <code>build</code> does not run to
+read it.</p><hr><h2 id="2-where-the-state-lives">2¾. Where the state lives</h2><p>Cells are one answer and they are the right one for a small program. Past a
 certain size an application usually wants its state and the things that change
 it in the same object — and a lambda can capture <code>this</code>, so it can:</p><pre><code>class TodoList {
     var tasks: List&lt;Task&gt; = []

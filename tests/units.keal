@@ -1551,6 +1551,41 @@ proc editorTests() {
     heldF.anchor = 3
     eqI("a field's caret can be held too", caretIn(ui, fv), 3)
 
+    // ---- asking to be built again, later
+    //
+    // A window at rest builds nothing, which is what makes it cost no
+    // processor — and leaves an application no way to watch a file something
+    // else is writing. `wakeIn` is that and only that.
+    ok("nothing is pending to start with", wakeWaiting() < 0.0)
+    val revA = revision()
+    takeWake()
+    eqI("and asking for a frame nobody wanted changes nothing", revision(), revA)
+
+    wakeIn(5000.0)
+    ok("asking puts something in the diary", wakeWaiting() > 4000.0)
+    val revB = revision()
+    takeWake()
+    eqI("but the moment has not come, so nothing is built", revision(), revB)
+    ok("and it is still pending", wakeWaiting() > 4000.0)
+
+    // The sooner wins, both ways round, which is what lets a blinking caret
+    // and a log being watched share one wake-up.
+    wakeIn(30.0)
+    ok("a sooner ask moves it earlier", wakeWaiting() < 200.0)
+    wakeIn(9000.0)
+    ok("and a later one does not push it back", wakeWaiting() < 200.0)
+
+    // Wait for it, and it fires exactly once.
+    val until = kvNow() + 60.0
+    while (kvNow() < until) { }
+    val revC = revision()
+    takeWake()
+    ok("once the moment comes, the tree is built again", revision() > revC)
+    ok("and nothing is pending after it", wakeWaiting() < 0.0)
+    val revD = revision()
+    takeWake()
+    eqI("one frame, not a subscription — it does not fire twice", revision(), revD)
+
     // ---- the keyboard, when the application wants to put it somewhere
     //
     // `⌘F` should land in a search box, and a search box cannot be typed into

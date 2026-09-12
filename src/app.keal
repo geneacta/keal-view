@@ -48,6 +48,59 @@ public class App(public var title: String, public var width: Int, public var hei
     public var onStop: () -> Unit = { -> }
 }
 
+// -------------------------------------------------------- asking for later
+
+/// When the application last asked to be rebuilt, as a moment rather than a
+/// delay, or -1 for nothing pending.
+var wakeAt: Float = 0.0 - 1.0
+
+/// Ask to be built again, later.
+///
+///     wakeIn(120.0)      // in a handler, or in `build` itself
+///
+/// A window at rest draws nothing and builds nothing: the tree is a function of
+/// the state, so when nothing has changed there is nothing to do, and that is
+/// what makes an idle keal-view window cost no processor at all. Which leaves
+/// an application with no way to watch anything that changes on its own — a
+/// file a detached build is writing to, a clock, a download's size.
+///
+/// This is that, and only that: **one frame, not a subscription.** An
+/// application that wants another asks again, so a poll somebody forgot to stop
+/// dies by itself instead of spinning the loop for ever. When two things ask,
+/// the sooner wins, which is the rule `Ui.wakeIn` already used for animations
+/// — a blinking caret and a log being watched share one wake-up.
+///
+/// It bumps the revision when it fires, which is what separates it from the
+/// wake-ups a caret asks for: those repaint, and this **rebuilds**. Watching a
+/// file is pointless if `build` does not run to read it.
+///
+/// Nothing is asked and nothing is paid when nobody calls it.
+public proc wakeIn(ms: Float) {
+    val at = kvNow() + ms.max(1.0)
+    if ((wakeAt < 0.0) or (at < wakeAt)) { wakeAt = at }
+}
+
+/// Has the moment arrived? Answers once and forgets, so that the frame it asks
+/// for is one frame.
+///
+/// The run loop's, not an application's — an application wants `wakeIn`. It is
+/// public for the same reason `keepOn` is: the arithmetic of *when* is worth
+/// asserting with numbers, and a test that could only reach it by running a
+/// window would be asserting the window.
+public proc takeWake() {
+    if (wakeAt < 0.0) { return }
+    if (kvNow() < wakeAt) { return }
+    wakeAt = 0.0 - 1.0
+    invalidate()
+}
+
+/// How long until it, in milliseconds, or -1 when nothing is pending. The run
+/// loop's, like `takeWake`.
+public func wakeWaiting(): Float {
+    if (wakeAt < 0.0) { return 0.0 - 1.0 }
+    return (wakeAt - kvNow()).max(1.0)
+}
+
 /// Open the window and run until it is closed.
 ///
 /// Every keal-view program also understands
@@ -162,6 +215,11 @@ public proc run(var app: App) {
             }
         }
 
+        // An application that asked to be built again gets its frame here, at
+        // the top, so the rebuild below happens in this turn rather than the
+        // next one.
+        takeWake()
+
         kvSurface(kvWidth(), kvHeight())
         canvas.begin(kvSurfaceW(), kvSurfaceH(), kvScale())
         val area = canvas.bounds()
@@ -250,6 +308,12 @@ public proc run(var app: App) {
         }
 
         if (running) {
+            // An application waiting on something merges into the same
+            // request an animation makes: `ui.wakeIn` keeps the sooner, so a
+            // blinking caret and a log being watched cost one wake-up between
+            // them and not two.
+            val soon = wakeWaiting()
+            if (soon >= 0.0) { ui.wakeIn(soon) }
             // Something that asked for a frame says when it wants it; anything
             // else waits for the user, for as long as that takes.
             if (ui.animating()) { kvWait(ui.nextFrameIn.round().max(1)) }

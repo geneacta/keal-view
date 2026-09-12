@@ -66,6 +66,32 @@ clicks.update({ n -> n + 1 })
 invalidate()                      // a timer fired, a file finished loading
 ```
 
+### Watching something that changes on its own
+
+A window at rest builds nothing and draws nothing — that is what makes an idle
+keal-view window cost no processor at all, and it leaves an application no way
+to notice a file growing under it. `wakeIn(ms)` asks to be built again later:
+
+```keal
+app.build = { ->
+    if (building.get()) {
+        log.set(readFile("build.log") ?: "")
+        wakeIn(120.0)             // ask again in a tenth of a second
+    }
+    …
+}
+```
+
+**One frame, not a subscription.** An application that wants another asks
+again, so a poll somebody forgot to stop dies by itself. Stop asking and the
+window goes as quiet as one that never started — measured with `--trace`: two
+seconds of watching, then nothing at all.
+
+When two things ask, the sooner wins: a blinking caret and a log being watched
+share one wake-up between them. And it **rebuilds**, where the wake-ups a caret
+asks for only repaint — watching a file is pointless if `build` does not run to
+read it.
+
 ---
 
 ## 2¾. Where the state lives
