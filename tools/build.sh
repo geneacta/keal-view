@@ -35,7 +35,24 @@ case $(uname -s) in
     ;;
   MINGW*|MSYS*|CYGWIN*|Windows_NT)
     BACKEND=$ROOT/runtime/kv_win32.c
-    LINK="-lgdi32 -luser32"
+    # `-static` is not tidiness. A keal-view program built here imports one
+    # non-system DLL, `libwinpthread-1.dll`, and Windows resolves that along
+    # the PATH. The ordinary developer machine has **two** of them and they
+    # are different files — Git for Windows ships one in `Git\mingw64\bin`
+    # and a separate MinGW ships the `gcc` this needs. Whichever comes first
+    # wins, and when Git's wins the threads that drain a child process's pipes
+    # never finish: `runCommand` spins one thread at 100% forever, with no
+    # error of any kind.
+    #
+    # Measured on Windows 11 by reducing it to eleven lines — a window that
+    # runs `git --version` — which spins when the child can be started and
+    # exits cleanly when it cannot, and flips on nothing but the PATH order.
+    # Linking statically removes the import and the failure with it.
+    #
+    # The released binaries never showed it because the CI image has only one
+    # MinGW, not because they were static. This makes that difference stop
+    # mattering.
+    LINK="-static -lgdi32 -luser32"
     ;;
   *) echo "keal-view has no backend for $(uname -s)" >&2; exit 1 ;;
 esac
